@@ -436,7 +436,7 @@ class AsyncChatGPT:
                 if not inspect.iscoroutinefunction(self.exit_callback_function):
                     self.exit_callback_function(self)
         finally:
-            await self.session.close()
+            self.session.close()
 
     def build_request_headers(self) -> dict:
         """
