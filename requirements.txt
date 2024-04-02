@@ -1,2 +1,6 @@
 curl_cffi==0.5.9
+websockets==12.0certifi==2024.2.2
+cffi==1.16.0
+curl_cffi==0.6.2
+pycparser==2.22
 websockets==12.0
