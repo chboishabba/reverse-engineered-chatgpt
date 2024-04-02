@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="re_gpt",
-    version="3.0.2",
+    version="4.0.0",
     author="Zai-Kun",
     description="Unofficial reverse-engineered ChatGPT API in Python.",
     long_description=open("README.md").read(),
@@ -12,8 +12,5 @@ setup(
         "Bug Tracker": "https://github.com/Zai-Kun/reverse-engineered-chatgpt/issues",
     },
     packages=find_packages(),
-    install_requires=[
-        "curl_cffi==0.5.9",
-        "websockets==12.0"
-    ],
+    install_requires=["curl_cffi==0.5.9", "websockets==12.0"],
 )
