@@ -165,3 +165,5 @@ funcaptcha_bin
 test/
 config.ini
 test.py
+*.sublime-project
+*.sublime-workspace
