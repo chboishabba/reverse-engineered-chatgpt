@@ -1,21 +1,22 @@
 import asyncio
+import base64
 import ctypes
 import inspect
 import json
-import uuid
 import re
-import websockets
-import base64
+import uuid
 from typing import AsyncGenerator, Callable, Optional
 
+import websockets
 from curl_cffi.requests import AsyncSession
+
 from .errors import (
     BackendError,
+    InvalidModelName,
     InvalidSessionToken,
     RetryError,
     TokenNotProvided,
     UnexpectedResponseError,
-    InvalidModelName,
 )
 from .utils import async_get_binary_path, get_model_slug
 
@@ -97,10 +98,16 @@ class AsyncConversation:
         try:
             full_message = None
             while True:
-                response = self.send_message(payload=payload) if not self.chatgpt.websocket_mode else self.send_websocket_message(payload=payload)
+                response = (
+                    self.send_message(payload=payload)
+                    if not self.chatgpt.websocket_mode
+                    else self.send_websocket_message(payload=payload)
+                )
                 async for chunk in response:
-                    decoded_chunk = chunk.decode() if isinstance(chunk, bytes) else chunk
-                    
+                    decoded_chunk = (
+                        chunk.decode() if isinstance(chunk, bytes) else chunk
+                    )
+
                     server_response += decoded_chunk
                     for line in decoded_chunk.splitlines():
                         if not line.startswith("data: "):
@@ -158,12 +165,14 @@ class AsyncConversation:
                 response_queue.put_nowait(chunk)
 
             url = CHATGPT_API.format("conversation")
-            
+
             headers = self.chatgpt.build_request_headers()
             # Add Chat Requirements Token
             chat_requriments_token = await self.chatgpt.create_chat_requirements_token()
             if chat_requriments_token:
-                headers["openai-sentinel-chat-requirements-token"] = chat_requriments_token
+                headers[
+                    "openai-sentinel-chat-requirements-token"
+                ] = chat_requriments_token
 
             await self.chatgpt.session.post(
                 url=url,
@@ -180,7 +189,7 @@ class AsyncConversation:
             if chunk is None:
                 break
             yield chunk
-    
+
     async def send_websocket_message(self, payload: dict) -> AsyncGenerator[str, None]:
         """
         Send a message payload via WebSocket and receive the response.
@@ -198,28 +207,34 @@ class AsyncConversation:
 
         async def perform_request():
             nonlocal websocket_request_id
-            
+
             url = CHATGPT_API.format("conversation")
             headers = self.chatgpt.build_request_headers()
             # Add Chat Requirements Token
             chat_requriments_token = await self.chatgpt.create_chat_requirements_token()
             if chat_requriments_token:
-                headers["openai-sentinel-chat-requirements-token"] = chat_requriments_token
+                headers[
+                    "openai-sentinel-chat-requirements-token"
+                ] = chat_requriments_token
 
-            response = (await self.chatgpt.session.post(
-                url=url,
-                headers=headers,
-                json=payload,
-            )).json()
+            response = (
+                await self.chatgpt.session.post(
+                    url=url,
+                    headers=headers,
+                    json=payload,
+                )
+            ).json()
 
             websocket_request_id = response.get("websocket_request_id")
-            
+
             if websocket_request_id is None:
-                raise UnexpectedResponseError("WebSocket request ID not found in response", response)
-            
+                raise UnexpectedResponseError(
+                    "WebSocket request ID not found in response", response
+                )
+
             if websocket_request_id not in self.chatgpt.ws_conversation_map:
                 self.chatgpt.ws_conversation_map[websocket_request_id] = response_queue
-            
+
         asyncio.create_task(perform_request())
 
         while True:
@@ -229,7 +244,6 @@ class AsyncConversation:
             yield chunk
 
         del self.chatgpt.ws_conversation_map[websocket_request_id]
-    
 
     async def build_message_payload(self, user_input: str) -> dict:
         """
@@ -399,7 +413,7 @@ class AsyncChatGPT:
         self.session_token = session_token
         self.auth_token = auth_token
         self.session = None
-        
+
         self.websocket_mode = websocket_mode
         self.ws_loop = None
         self.ws_conversation_map = {}
@@ -423,7 +437,7 @@ class AsyncChatGPT:
             self.auth_token = await self.fetch_auth_token()
 
         if not self.websocket_mode:
-           self.websocket_mode = await self.check_websocket_availability()
+            self.websocket_mode = await self.check_websocket_availability()
 
         if self.websocket_mode:
             await self.ensure_websocket()
@@ -436,7 +450,10 @@ class AsyncChatGPT:
                 if not inspect.iscoroutinefunction(self.exit_callback_function):
                     self.exit_callback_function(self)
         finally:
-            self.session.close()
+            if inspect.iscoroutinefunction(self.session.close):
+                await self.session.close()
+            else:
+                self.session.close()
 
     def build_request_headers(self) -> dict:
         """
@@ -585,48 +602,56 @@ class AsyncChatGPT:
             bool: True if WebSocket is available, otherwise False.
         """
         url = CHATGPT_API.format("accounts/check/v4-2023-04-27")
-        response = (await self.session.get(
-            url=url, headers=self.build_request_headers()
-        )).json()
-        
-        if 'account_ordering' in response and 'accounts' in response:
-            account_id = response['account_ordering'][0]
-            if account_id in response['accounts']:
-                return 'shared_websocket' in response['accounts'][account_id]['features']
+        response = (
+            await self.session.get(url=url, headers=self.build_request_headers())
+        ).json()
+
+        if "account_ordering" in response and "accounts" in response:
+            account_id = response["account_ordering"][0]
+            if account_id in response["accounts"]:
+                return (
+                    "shared_websocket" in response["accounts"][account_id]["features"]
+                )
 
         return False
-    
+
     async def ensure_websocket(self):
         if not self.ws_loop:
-            ws_url_rsp = (await self.session.post(WS_REGISTER_URL, headers=self.build_request_headers())).json()
-            ws_url = ws_url_rsp['wss_url']
+            ws_url_rsp = (
+                await self.session.post(
+                    WS_REGISTER_URL, headers=self.build_request_headers()
+                )
+            ).json()
+            ws_url = ws_url_rsp["wss_url"]
             access_token = self.extract_access_token(ws_url)
-            self.ws_loop = asyncio.create_task(self.listen_to_websocket(ws_url, access_token))
+            self.ws_loop = asyncio.create_task(
+                self.listen_to_websocket(ws_url, access_token)
+            )
 
     def extract_access_token(self, url):
-        match = re.search(r'access_token=([^&]*)', url)
+        match = re.search(r"access_token=([^&]*)", url)
         if match:
             return match.group(1)
         else:
             return None
-        
+
     async def listen_to_websocket(self, ws_url: str, access_token: str):
-        headers = {'Authorization': f'Bearer {access_token}'}
+        headers = {"Authorization": f"Bearer {access_token}"}
         async with websockets.connect(ws_url, extra_headers=headers) as websocket:
             while True:
                 message = await websocket.recv()
                 message_data = json.loads(message)
                 body_encoded = message_data.get("body", "")
                 ws_id = message_data.get("websocket_request_id", "")
-                decoded_body = base64.b64decode(body_encoded).decode('utf-8')
+                decoded_body = base64.b64decode(body_encoded).decode("utf-8")
                 response_queue = self.ws_conversation_map.get(ws_id)
                 if response_queue is None:
                     continue
-                if 'title_generation' in decoded_body:
+                if "title_generation" in decoded_body:
                     # skip
                     continue
                 response_queue.put_nowait(decoded_body)
-                if '[DONE]' in decoded_body or '[ERROR]' in decoded_body:
+                if "[DONE]" in decoded_body or "[ERROR]" in decoded_body:
                     await response_queue.put(None)
                     continue
 
