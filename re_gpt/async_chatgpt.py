@@ -23,6 +23,7 @@ from .utils import async_get_binary_path, get_model_slug
 # Constants
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
 CHATGPT_API = "https://chat.openai.com/backend-api/{}"
+CHATGPT_FREE_API = "https://chat.openai.com/backend-anon/{}"
 BACKUP_ARKOSE_TOKEN_GENERATOR = "https://arkose-token-generator.zaieem.repl.co/token"
 WS_REGISTER_URL = CHATGPT_API.format("register-websocket")
 
@@ -417,6 +418,11 @@ class AsyncChatGPT:
         self.websocket_mode = websocket_mode
         self.ws_loop = None
         self.ws_conversation_map = {}
+        
+        # do not need session mode
+        self.free_mode = True if self.session_token is None else False
+        self.auth_cookie = None
+        self.devive_id = str(uuid.uuid4())
 
     async def __aenter__(self):
         self.session = AsyncSession(
@@ -432,9 +438,12 @@ class AsyncChatGPT:
             self.tried_downloading_binary = True
 
         if not self.auth_token:
-            if self.session_token is None:
-                raise TokenNotProvided
-            self.auth_token = await self.fetch_auth_token()
+            if not self.free_mode:
+                if self.session_token is None:
+                    raise TokenNotProvided
+                self.auth_token = await self.fetch_auth_token()
+            else:
+                self.auth_cookie = await self.fetch_free_mode_cookies()
 
         if not self.websocket_mode:
             self.websocket_mode = await self.check_websocket_availability()
@@ -468,11 +477,16 @@ class AsyncChatGPT:
             "Accept-Language": "en-US",
             "Accept-Encoding": "gzip, deflate, br",
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.auth_token}",
             "Origin": "https://chat.openai.com",
             "Alt-Used": "chat.openai.com",
             "Connection": "keep-alive",
+            "Oai-device-id": self.devive_id,
         }
+
+        if self.free_mode:
+            headers["Cookie"] = ';'.join([f"{key}={value}" for key, value in self.auth_cookie.items()])
+        else:
+            headers["Authorization"] = f"Bearer {self.auth_token}"
 
         return headers
 
@@ -602,16 +616,20 @@ class AsyncChatGPT:
             bool: True if WebSocket is available, otherwise False.
         """
         url = CHATGPT_API.format("accounts/check/v4-2023-04-27")
-        response = (
-            await self.session.get(url=url, headers=self.build_request_headers())
-        ).json()
 
-        if "account_ordering" in response and "accounts" in response:
-            account_id = response["account_ordering"][0]
-            if account_id in response["accounts"]:
-                return (
-                    "shared_websocket" in response["accounts"][account_id]["features"]
-                )
+        headers = self.build_request_headers()
+        
+        raw_response = (await self.session.get(
+            url=url, headers=headers
+        ))
+        try:
+            response = raw_response.json()
+            if 'account_ordering' in response and 'accounts' in response:
+                account_id = response['account_ordering'][0]
+                if account_id in response['accounts']:
+                    return 'shared_websocket' in response['accounts'][account_id]['features']
+        except:
+            raise UnexpectedResponseError('Could not enable ws_mode', raw_response.text)
 
         return False
 
@@ -663,9 +681,33 @@ class AsyncChatGPT:
             str: chat requirements token
         """
         url = CHATGPT_API.format("sentinel/chat-requirements")
+
+        if self.free_mode:
+            url = CHATGPT_FREE_API.format("sentinel/chat-requirements")
+
         response = await self.session.post(
             url=url, headers=self.build_request_headers()
         )
         body = response.json()
         token = body.get("token", None)
         return token
+
+    async def fetch_free_mode_cookies(self):
+        home_url = "https://chat.openai.com/"
+        headers = {
+            "User-Agent": USER_AGENT,
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Alt-Used": "chat.openai.com",
+            "Connection": "keep-alive",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-GPC": "1",
+        }
+
+        response = await self.session.get(url=home_url, headers=headers)
+        response_cookies = response.cookies
+        self.devive_id = response_cookies.get("oai-did")
+        
+        return response_cookies

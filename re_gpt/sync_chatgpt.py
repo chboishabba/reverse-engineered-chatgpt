@@ -21,6 +21,7 @@ from .async_chatgpt import (
     AsyncConversation,
     MODELS,
     WS_REGISTER_URL,
+    CHATGPT_FREE_API,
 )
 from .errors import (
     BackendError,
@@ -380,9 +381,12 @@ class SyncChatGPT(AsyncChatGPT):
             self.tried_downloading_binary = True
 
         if not self.auth_token:
-            if self.session_token is None:
-                raise TokenNotProvided
-            self.auth_token = self.fetch_auth_token()
+            if not self.free_mode:
+                if self.session_token is None:
+                    raise TokenNotProvided
+                self.auth_token = self.fetch_auth_token()
+            else:
+                self.auth_cookie = self.fetch_free_mode_cookies()
             
         # automaticly check the status of websocket_mode
         if not self.websocket_mode:
@@ -534,16 +538,20 @@ class SyncChatGPT(AsyncChatGPT):
             bool: True if WebSocket is available, otherwise False.
         """
         url = CHATGPT_API.format("accounts/check/v4-2023-04-27")
-        response = (self.session.get(
-            url=url, headers=self.build_request_headers()
-        )).json()
-        
-        if 'account_ordering' in response and 'accounts' in response:
-            account_id = response['account_ordering'][0]
-            if account_id in response['accounts']:
-                return 'shared_websocket' in response['accounts'][account_id]['features']
 
-        return False
+        headers = self.build_request_headers()
+        
+        raw_response = self.session.get(
+            url=url, headers=headers
+        )
+        try:
+            response = raw_response.json()
+            if 'account_ordering' in response and 'accounts' in response:
+                account_id = response['account_ordering'][0]
+                if account_id in response['accounts']:
+                    return 'shared_websocket' in response['accounts'][account_id]['features']
+        except:
+            raise UnexpectedResponseError('Could not enable ws_mode', raw_response.text)
     
     async def ensure_websocket(self):
         ws_url_rsp = self.session.post(WS_REGISTER_URL, headers=self.build_request_headers()).json()
@@ -592,9 +600,33 @@ class SyncChatGPT(AsyncChatGPT):
             str: chat requirements token
         """
         url = CHATGPT_API.format("sentinel/chat-requirements")
+        
+        if self.free_mode:
+            url = CHATGPT_FREE_API.format("sentinel/chat-requirements")
+        
         response = self.session.post(
             url=url, headers=self.build_request_headers()
         )
         body = response.json()
         token = body.get("token", None)
         return token
+
+    def fetch_free_mode_cookies(self):
+        home_url = "https://chat.openai.com/"
+        headers = {
+            "User-Agent": USER_AGENT,
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Alt-Used": "chat.openai.com",
+            "Connection": "keep-alive",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-GPC": "1",
+        }
+
+        response = self.session.get(url=home_url, headers=headers)
+        response_cookies = response.cookies
+        self.devive_id = response_cookies.get("oai-did")
+
+        return response_cookies
