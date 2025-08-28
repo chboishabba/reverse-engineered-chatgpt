@@ -608,6 +608,40 @@ class AsyncChatGPT:
 
         return response.json()
 
+    async def list_all_conversations(self, limit: int = 28) -> list[dict]:
+        """Asynchronously retrieve metadata for all conversations.
+
+        Args:
+            limit: Maximum number of conversations to fetch per request.
+
+        Returns:
+            List of dictionaries containing ``id``, ``title`` and
+            ``last_updated`` for each conversation.
+        """
+
+        conversations: list[dict] = []
+        offset = 0
+
+        while True:
+            data = await self.retrieve_chats(offset=offset, limit=limit)
+            items = data.get("items", [])
+
+            for item in items:
+                conversations.append(
+                    {
+                        "id": item.get("id"),
+                        "title": item.get("title"),
+                        "last_updated": item.get("update_time"),
+                    }
+                )
+
+            if len(items) < limit:
+                break
+
+            offset += limit
+
+        return conversations
+
     async def check_websocket_availability(self) -> bool:
         """
         Check if WebSocket is available.
