@@ -480,12 +480,19 @@ class SyncChatGPT(AsyncChatGPT):
         }
 
         response = self.session.get(url=url, headers=headers)
+        try:
+            response.raise_for_status()
+        except Exception as e:
+            raise InvalidSessionToken from e
         response_json = response.json()
 
-        if "accessToken" in response_json:
-            return response_json["accessToken"]
+        access_token = response_json.get("accessToken")
+        if access_token:
+            return access_token
 
-        raise InvalidSessionToken
+        raise UnexpectedResponseError(
+            "accessToken missing in auth response", response.text
+        )
 
     def set_custom_instructions(
         self,
