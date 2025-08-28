@@ -191,7 +191,10 @@ python examples/select_chat.py --limit 5
 
 Use the numeric menu to pick a conversation from the current page.  Press
 `n` for the next page, `p` for the previous page or `q` to quit.  Fetched
-metadata is written to `conversations.json`.
+metadata is written to `conversations.json`.  After selecting a conversation,
+its full history is saved to `conversation_<id>.json` and displayed twenty
+messages at a time.  Navigate the message viewer with `n`, `p` and `q` before
+continuing the chat.
 
 ## More Examples
 
