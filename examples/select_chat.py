@@ -50,12 +50,14 @@ def _extract_messages(chat: Dict) -> List[Dict]:
         content = content_parts[0].strip()
         if not content:
             continue
+
         # ``create_time`` is sometimes ``None`` for system messages; fallback to ``0``
         # so that sorting works and these messages appear first.
         messages.append(
             {
                 "role": msg.get("author", {}).get("role", ""),
                 "content": content,
+                "content": content_parts[0],
                 "create_time": msg.get("create_time") or 0,
             }
         )

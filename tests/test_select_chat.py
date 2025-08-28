@@ -2,7 +2,8 @@ from pathlib import Path
 import builtins
 
 
-def test_extract_messages_handles_none_create_time_and_skips_blank():
+
+def test_extract_messages_handles_none_create_time():
     # Provide a dummy session token so importing the example does not fail
     config = Path("config.ini")
     config.write_text("[session]\ntoken=dummy\n")
@@ -60,3 +61,4 @@ def test_page_messages_format(monkeypatch, capsys):
     _page_messages(messages)
     out = capsys.readouterr().out
     assert out == "user: Hello\n\nassistant: Hi\n\n"
+
