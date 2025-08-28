@@ -1,21 +1,3 @@
-from re_gpt import SyncChatGPT
-
-# consts
-session_token = "__Secure-next-auth.session-token here"
-
-# Create ChatGPT instance using the session token
-with SyncChatGPT(session_token=session_token) as chatgpt:
-    conversations = chatgpt.list_all_conversations()
-
-    for idx, conv in enumerate(conversations):
-        print(f"{idx}: {conv['title']}")
-
-    selected = int(input("Select conversation number: "))
-    conversation = chatgpt.get_conversation(conversations[selected]["id"])
-
-    prompt = input("Enter your prompt: ")
-    for message_chunk in conversation.chat(prompt):
-        print(message_chunk["content"], flush=True, end="")
 """Select and resume an existing ChatGPT conversation.
 
 This example lists all available conversations and lets the user choose one
@@ -27,17 +9,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from typing import List, Dict
+from typing import Dict, List
 
 from re_gpt import SyncChatGPT, AsyncChatGPT
+from re_gpt.config import get_session_token
 
-# Replace with your own session token
-SESSION_TOKEN = "__Secure-next-auth.session-token here"
+SESSION_TOKEN = get_session_token()
 
 
 def choose_conversation(conversations: List[Dict]) -> str:
     """Prompt the user to select a conversation from ``conversations``."""
-
     for idx, conv in enumerate(conversations, start=1):
         title = conv.get("title") or "(no title)"
         print(f"{idx}. {title}")
@@ -89,4 +70,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

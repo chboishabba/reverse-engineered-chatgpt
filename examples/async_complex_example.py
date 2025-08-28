@@ -3,6 +3,7 @@ import configparser
 import sys
 
 from re_gpt import AsyncChatGPT
+from re_gpt.config import get_session_token
 
 # Load configuration from 'config.ini'
 config = configparser.ConfigParser()
@@ -36,7 +37,7 @@ def print_chat(chat):
 async def main():
     async with AsyncChatGPT(
         # proxies=None,  # Optional proxies for network requests
-        session_token=chat_session["token"],  # Use the session token for authentication
+        session_token=get_session_token(),  # Use the session token for authentication
     ) as chatgpt:
         if chat_session["conversation_id"]:
             conversation = chatgpt.get_conversation(chat_session["conversation_id"])

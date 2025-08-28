@@ -1,7 +1,8 @@
 from re_gpt import SyncChatGPT
+from re_gpt.config import get_session_token
 
 # consts
-session_token = "__Secure-next-auth.session-token here"
+session_token = get_session_token()
 conversation_id = None  # Set it to the conversation ID if you want to continue an existing chat or None to create a new chat
 
 # Create ChatGPT instance using the session token

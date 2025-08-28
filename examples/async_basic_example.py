@@ -2,9 +2,10 @@ import asyncio
 import sys
 
 from re_gpt import AsyncChatGPT
+from re_gpt.config import get_session_token
 
 # consts
-session_token = "__Secure-next-auth.session-token here"
+session_token = get_session_token()
 conversation_id = None  # Set it to the conversation ID if you want to continue an existing chat or None to create a new chat
 
 # If the Python version is 3.8 or higher and the platform is Windows, set the event loop policy

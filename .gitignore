@@ -167,3 +167,4 @@ config.ini
 test.py
 *.sublime-project
 *.sublime-workspace
+.chatgpt_session

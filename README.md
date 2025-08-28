@@ -88,13 +88,18 @@ pip install re-gpt
 ```
 
 ## Usage
+Before running the examples, store your session token in a configuration file.
+Copy `config.example.ini` to `config.ini` and replace the token value, or create
+`~/.chatgpt_session` containing only your token. The helper
+`re_gpt.config.get_session_token()` reads the token from these locations.
 
 ### Basic example
 
 ```python
 from re_gpt import SyncChatGPT
+from re_gpt.config import get_session_token
 
-session_token = "__Secure-next-auth.session-token here"
+session_token = get_session_token()
 conversation_id = None # conversation ID here
 
 
@@ -115,8 +120,9 @@ with SyncChatGPT(session_token=session_token) as chatgpt:
 
 ```python
 from re_gpt import SyncChatGPT
+from re_gpt.config import get_session_token
 
-session_token = "__Secure-next-auth.session-token here"
+session_token = get_session_token()
 
 with SyncChatGPT(session_token=session_token) as chatgpt:
     conversations = chatgpt.list_all_conversations()
@@ -141,9 +147,10 @@ import asyncio
 import sys
 
 from re_gpt import AsyncChatGPT
+from re_gpt.config import get_session_token
 
-session_token = "__Secure-next-auth.session-token here"
-conversation_id = conversation_id = None # conversation ID here
+session_token = get_session_token()
+conversation_id = None # conversation ID here
 
 if sys.version_info >= (3, 8) and sys.platform.lower().startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -187,6 +194,7 @@ For a more complex example, check out the [examples](/examples) folder in the re
 2. Open the developer tools in your browser.
 3. Go to the `Application` tab and open the `Cookies` section for `https://chatgpt.com`.
 4. Copy the value for `__Secure-next-auth.session-token` from the `chatgpt.com` cookies and save it.
+5. Save the token in `config.ini` (based on `config.example.ini`) or in `~/.chatgpt_session` so the examples can load it automatically.
 
 ## TODO
 

@@ -87,12 +87,17 @@ pip install re-gpt
 
 ## 使用方法
 
+在运行示例之前，请将会话令牌保存到配置文件中。将 `config.example.ini`
+复制为 `config.ini` 并替换其中的令牌值，或者在家目录创建一个仅包含令牌的
+`~/.chatgpt_session` 文件。`re_gpt.config.get_session_token()` 会从这些位置读取令牌。
+
 ### 简单示例
 
 ``` python
 from re_gpt import SyncChatGPT
+from re_gpt.config import get_session_token
 
-session_token = "__Secure-next-auth.session-token here"
+session_token = get_session_token()
 conversation_id = None # 这里填写对话ID
 
 
@@ -116,8 +121,9 @@ import asyncio
 import sys
 
 from re_gpt import AsyncChatGPT
+from re_gpt.config import get_session_token
 
-session_token = "__Secure-next-auth.session-token here"
+session_token = get_session_token()
 conversation_id = None # 这里填写对话ID
 
 if sys.version_info >= (3, 8) and sys.platform.lower().startswith("win"):
@@ -151,6 +157,7 @@ if __name__ == "__main__":
 2. 打开浏览器的开发者工具。
 3. 转到`Application`标签页并打开 `https://chatgpt.com` 的 `Cookies` 部分。
 4. 从 `chatgpt.com` 的 `Cookies` 中复制`__Secure-next-auth.session-token`的值并保存。
+5. 将令牌保存到 `config.ini`（基于 `config.example.ini`）或 `~/.chatgpt_session`，示例会自动读取。
 
 ## 待办事项
 
