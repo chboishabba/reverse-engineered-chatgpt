@@ -91,8 +91,9 @@ pip install re-gpt
 
 ``` python
 from re_gpt import SyncChatGPT
+from re_gpt.utils import get_session_token
 
-session_token = "__Secure-next-auth.session-token here"
+session_token = get_session_token()
 conversation_id = None # 这里填写对话ID
 
 
@@ -116,8 +117,9 @@ import asyncio
 import sys
 
 from re_gpt import AsyncChatGPT
+from re_gpt.utils import get_session_token
 
-session_token = "__Secure-next-auth.session-token here"
+session_token = get_session_token()
 conversation_id = None # 这里填写对话ID
 
 if sys.version_info >= (3, 8) and sys.platform.lower().startswith("win"):
