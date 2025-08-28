@@ -359,7 +359,11 @@ For a more complex example, check out the [examples](/examples) folder in the re
 
 ### Obtaining The Session Token
 
-1. Go to <https://chatgpt.com/> and log in or sign up.
+<<<<<<< HEAD
+1. Go to <https://chatgpt.com/chat> and log in or sign up.
+=======
+1. Go to <https://chatgpt.com/chat> and log in or sign up.
+>>>>>>> 040197a (Replace deprecated chat.openai.com URLs with chatgpt.com)
 2. Open the developer tools in your browser.
 3. Go to the `Application` tab and open the `Cookies` section for `https://chatgpt.com`.
 4. Copy the value for `__Secure-next-auth.session-token` from the `chatgpt.com` cookies and save it.

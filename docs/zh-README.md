@@ -149,7 +149,11 @@ if __name__ == "__main__":
 
 ### 获取会话令牌
 
-1. 访问<https://chatgpt.com/>并登录或注册。
+<<<<<<< HEAD
+1. 访问<https://chatgpt.com/chat>并登录或注册。
+=======
+1. 访问<https://chatgpt.com/chat>并登录或注册。
+>>>>>>> 040197a (Replace deprecated chat.openai.com URLs with chatgpt.com)
 2. 打开浏览器的开发者工具。
 3. 转到`Application`标签页并打开 `https://chatgpt.com` 的 `Cookies` 部分。
 4. 从 `chatgpt.com` 的 `Cookies` 中复制`__Secure-next-auth.session-token`的值并保存。
