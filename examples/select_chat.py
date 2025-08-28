@@ -92,26 +92,27 @@ def choose_conversation_sync(chatgpt: SyncChatGPT, limit: int) -> Optional[str]:
 
     while True:
         page = chatgpt.list_conversations_page(offset, limit)
+        items = page.get("items", [])
 
-        if not page and offset != 0:
+        if not items and offset != 0:
             print("No conversations on this page.")
             offset = max(0, offset - limit)
             continue
 
-        for conv in page:
+        for conv in items:
             cid = conv["id"]
             if cid not in seen_ids:
                 seen_ids.add(cid)
                 all_conversations.append(conv)
         _dump_conversations(all_conversations)
 
-        for idx, conv in enumerate(page, start=1):
+        for idx, conv in enumerate(items, start=1):
             title = conv.get("title") or "(no title)"
             print(f"{idx}. {title}")
 
         cmd = input("Select conversation or command (n/p/q): ").strip().lower()
         if cmd == "n":
-            if len(page) < limit:
+            if len(items) < limit:
                 print("No next page.")
             else:
                 offset += limit
@@ -122,8 +123,8 @@ def choose_conversation_sync(chatgpt: SyncChatGPT, limit: int) -> Optional[str]:
                 offset -= limit
         elif cmd == "q":
             return None
-        elif cmd.isdigit() and 1 <= int(cmd) <= len(page):
-            return page[int(cmd) - 1]["id"]
+        elif cmd.isdigit() and 1 <= int(cmd) <= len(items):
+            return items[int(cmd) - 1]["id"]
 
 
 async def choose_conversation_async(chatgpt: AsyncChatGPT, limit: int) -> Optional[str]:
@@ -135,26 +136,27 @@ async def choose_conversation_async(chatgpt: AsyncChatGPT, limit: int) -> Option
 
     while True:
         page = await chatgpt.list_conversations_page(offset, limit)
+        items = page.get("items", [])
 
-        if not page and offset != 0:
+        if not items and offset != 0:
             print("No conversations on this page.")
             offset = max(0, offset - limit)
             continue
 
-        for conv in page:
+        for conv in items:
             cid = conv["id"]
             if cid not in seen_ids:
                 seen_ids.add(cid)
                 all_conversations.append(conv)
         _dump_conversations(all_conversations)
 
-        for idx, conv in enumerate(page, start=1):
+        for idx, conv in enumerate(items, start=1):
             title = conv.get("title") or "(no title)"
             print(f"{idx}. {title}")
 
         cmd = input("Select conversation or command (n/p/q): ").strip().lower()
         if cmd == "n":
-            if len(page) < limit:
+            if len(items) < limit:
                 print("No next page.")
             else:
                 offset += limit
@@ -165,8 +167,8 @@ async def choose_conversation_async(chatgpt: AsyncChatGPT, limit: int) -> Option
                 offset -= limit
         elif cmd == "q":
             return None
-        elif cmd.isdigit() and 1 <= int(cmd) <= len(page):
-            return page[int(cmd) - 1]["id"]
+        elif cmd.isdigit() and 1 <= int(cmd) <= len(items):
+            return items[int(cmd) - 1]["id"]
 
 
 def run_sync(limit: int) -> None:
