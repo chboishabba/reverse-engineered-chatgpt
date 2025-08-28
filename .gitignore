@@ -164,6 +164,7 @@ funcaptcha_bin
 .vscode
 test/
 config.ini
+.chatgpt_session
 test.py
 *.sublime-project
 *.sublime-workspace

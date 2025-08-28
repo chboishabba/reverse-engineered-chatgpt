@@ -1,6 +1,10 @@
+import configparser
 import hashlib
 import os
 import platform
+from pathlib import Path
+
+from .errors import TokenNotProvided
 
 current_os = platform.system()
 current_file_directory = "/".join(
@@ -135,3 +139,38 @@ def get_model_slug(chat):
                 role = message["message"]["author"]["role"]
                 if role == "assistant":
                     return message["message"]["metadata"]["model_slug"]
+
+
+def get_session_token(config_path: str = "config.ini") -> str:
+    """Retrieve the ChatGPT session token.
+
+    The search order is ``config.ini`` in the current working directory and
+    ``~/.chatgpt_session`` in the user's home directory.
+
+    Args:
+        config_path (str, optional): Path to the configuration file. Defaults
+            to ``"config.ini"``.
+
+    Returns:
+        str: The session token string.
+
+    Raises:
+        TokenNotProvided: If no token is found in either location.
+    """
+
+    config_file = Path(config_path)
+    parser = configparser.ConfigParser()
+
+    if config_file.is_file():
+        parser.read(config_file)
+        token = parser.get("session", "token", fallback="").strip()
+        if token and token != "YOUR_SESSION_TOKEN":
+            return token
+
+    session_file = Path.home() / ".chatgpt_session"
+    if session_file.is_file():
+        token = session_file.read_text(encoding="utf-8").strip()
+        if token:
+            return token
+
+    raise TokenNotProvided()
