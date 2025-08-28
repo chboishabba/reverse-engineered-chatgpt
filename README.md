@@ -40,6 +40,7 @@
       <ul>
         <li><a href="#prerequisites">Prerequisites</a></li>
         <li><a href="#installation">Installation</a></li>
+        <li><a href="#configuration">Configuration</a></li>
         <li><a href="#obtaining-session-token">Obtaining Session Token</a></li>
       </ul>
     </li>
@@ -86,6 +87,16 @@ ChatGPT has an official API which can be used to interface your Python code to i
 ```sh
 pip install re-gpt
 ```
+
+### Configuration
+
+Copy `sampleconfig.ini` to `config.ini` and update the placeholder values:
+
+```sh
+cp sampleconfig.ini config.ini
+```
+
+Edit `config.ini` and replace `token` with your ChatGPT session token and `conversation_id` with the ID of an existing conversation if you want to resume one.
 
 ## Usage
 
