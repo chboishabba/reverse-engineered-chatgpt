@@ -458,14 +458,14 @@ class SyncChatGPT(AsyncChatGPT):
 
         Returns: authentication token.
         """
-        url = "https://chat.openai.com/api/auth/session"
+        url = "https://chatgpt.com/api/auth/session"
         cookies = {"__Secure-next-auth.session-token": self.session_token}
 
         headers = {
             "User-Agent": USER_AGENT,
             "Accept": "*/*",
             "Accept-Language": "en-US,en;q=0.5",
-            "Alt-Used": "chat.openai.com",
+            "Alt-Used": "chatgpt.com",
             "Connection": "keep-alive",
             "Sec-Fetch-Dest": "empty",
             "Sec-Fetch-Mode": "cors",
@@ -655,12 +655,12 @@ class SyncChatGPT(AsyncChatGPT):
         return token
 
     def fetch_free_mode_cookies(self):
-        home_url = "https://chat.openai.com/"
+        home_url = "https://chatgpt.com/"
         headers = {
             "User-Agent": USER_AGENT,
             "Accept": "*/*",
             "Accept-Language": "en-US,en;q=0.5",
-            "Alt-Used": "chat.openai.com",
+            "Alt-Used": "chatgpt.com",
             "Connection": "keep-alive",
             "Sec-Fetch-Dest": "empty",
             "Sec-Fetch-Mode": "cors",
