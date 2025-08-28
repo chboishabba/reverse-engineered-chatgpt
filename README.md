@@ -183,14 +183,15 @@ if __name__ == "__main__":
 
 ### Resume existing chat
 
-List your existing conversations and choose one to continue:
+Page through your existing conversations and choose one to continue:
 
 ```bash
-python examples/select_chat.py
+python examples/select_chat.py --limit 5
 ```
 
-Use the numeric menu to pick a conversation from the list and the script will
-resume that chat.
+Use the numeric menu to pick a conversation from the current page.  Press
+`n` for the next page, `p` for the previous page or `q` to quit.  Fetched
+metadata is written to `conversations.json`.
 
 ## More Examples
 
