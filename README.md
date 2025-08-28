@@ -46,6 +46,7 @@
     <li><a href="#usage">Usage</a>
         <ul>
         <li><a href="#basic-example">Example Usage</a></li>
+        <li><a href="#resume-a-previous-conversation-interactively">Resume a previous conversation interactively</a></li>
         </ul>
     </li>
     <li><a href="#roadmap">Roadmap</a></li>
@@ -109,6 +110,29 @@ with SyncChatGPT(session_token=session_token) as chatgpt:
         print(message["content"], flush=True, end="")
 
 ```
+
+### Resume a previous conversation interactively
+
+```python
+from re_gpt import SyncChatGPT
+
+session_token = "__Secure-next-auth.session-token here"
+
+with SyncChatGPT(session_token=session_token) as chatgpt:
+    conversations = chatgpt.list_all_conversations()
+    for idx, conv in enumerate(conversations):
+        print(f"{idx}: {conv['title']}")
+
+    selected = int(input("Select conversation number: "))
+    conversation = chatgpt.get_conversation(conversations[selected]["id"])
+
+    prompt = input("Enter your prompt: ")
+    for message in conversation.chat(prompt):
+        print(message["content"], flush=True, end="")
+```
+
+See [examples/select_chat.py](examples/select_chat.py) for the full script.
+
 
 ### Basic async example
 
