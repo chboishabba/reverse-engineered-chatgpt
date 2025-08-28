@@ -142,6 +142,17 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+### Resume existing chat
+
+List your existing conversations and choose one to continue:
+
+```bash
+python examples/select_chat.py
+```
+
+Use the numeric menu to pick a conversation from the list and the script will
+resume that chat.
+
 ## More Examples
 
 For a more complex example, check out the [examples](/examples) folder in the repository.
