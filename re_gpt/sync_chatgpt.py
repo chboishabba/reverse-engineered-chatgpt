@@ -515,9 +515,18 @@ class SyncChatGPT(AsyncChatGPT):
 
         return response.json()
 
-    def retrieve_chats(
+    def list_conversations_page(
         self, offset: Optional[int] = 0, limit: Optional[int] = 28
     ) -> dict:
+        """Retrieve a single page of conversations.
+
+        Args:
+            offset (Optional[int]): Starting index of the page.
+            limit (Optional[int]): Maximum number of conversations to return.
+
+        Returns:
+            dict: JSON response containing one page of conversations.
+        """
         params = {
             "offset": offset,
             "limit": limit,
