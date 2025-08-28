@@ -7,6 +7,7 @@ from re_gpt.config import get_session_token
 config = configparser.ConfigParser()
 config.read("config.ini")
 chat_session = config["session"]
+session_token = get_session_token()
 
 # ANSI color codes for console text formatting
 GREEN = "\033[92m"
@@ -31,7 +32,7 @@ def print_chat(chat):
 def main():
     with SyncChatGPT(
         # proxies=None,  # Optional proxies for network requests
-        session_token=get_session_token(),  # Use the session token for authentication
+        session_token=session_token,  # Use the session token for authentication
     ) as chatgpt:
         if chat_session["conversation_id"]:
             conversation = chatgpt.get_conversation(chat_session["conversation_id"])

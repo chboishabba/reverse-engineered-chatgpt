@@ -1,51 +1,40 @@
-"""Utility helpers for loading the ChatGPT session token."""
-
 from __future__ import annotations
 
-import configparser
+from configparser import ConfigParser
 from pathlib import Path
-from typing import Optional
+from typing import Iterable
 
 
-DEFAULT_CONFIG_PATHS = [Path("config.ini"), Path.home() / ".chatgpt_session"]
-
-
-def get_session_token(path: Optional[str] = None) -> str:
+def get_session_token(config_file: str | Path | None = None) -> str:
     """Return the ChatGPT session token.
 
-    The token can be stored either as plain text in a file or inside an INI
-    file under ``[session]`` with the key ``token``. If ``path`` is ``None``,
-    the function searches the default locations ``config.ini`` in the current
-    working directory and ``~/.chatgpt_session``.
+    The token is read from one of the following locations (in order):
 
-    Args:
-        path: Optional path to the configuration file.
+    1. ``config_file`` if provided.
+    2. ``config.ini`` in the current working directory.
+    3. ``~/.chatgpt_session`` in the user's home directory.
 
-    Returns:
-        The session token as a string.
-
-    Raises:
-        FileNotFoundError: If no suitable configuration file is found.
-        KeyError: If the configuration file does not contain the token.
+    ``config.ini`` files must contain a ``[session]`` section with a ``token``
+    field. ``~/.chatgpt_session`` should contain only the raw token value.
     """
 
-    paths = [Path(path).expanduser()] if path else DEFAULT_CONFIG_PATHS
+    candidates: Iterable[Path | None] = (
+        Path(config_file).expanduser() if config_file else None,
+        Path("config.ini"),
+        Path.home() / ".chatgpt_session",
+    )
 
-    for cfg_path in paths:
-        if not cfg_path.exists():
+    for path in candidates:
+        if not path or not path.is_file():
             continue
-
-        if cfg_path.suffix in {".ini", ".cfg"}:
-            parser = configparser.ConfigParser()
-            parser.read(cfg_path)
-            try:
-                return parser["session"]["token"].strip()
-            except KeyError as exc:
-                raise KeyError("Session token not found in config file") from exc
+        if path.suffix == ".ini":
+            parser = ConfigParser()
+            parser.read(path)
+            if parser.has_option("session", "token"):
+                return parser.get("session", "token").strip()
         else:
-            return cfg_path.read_text().strip()
+            return path.read_text().strip()
 
     raise FileNotFoundError(
-        "No session token file found. Provide a path or create config.ini or "
-        "~/.chatgpt_session",
+        "Session token not found. Create config.ini or ~/.chatgpt_session with your token."
     )
