@@ -47,11 +47,16 @@ def _extract_messages(chat: Dict) -> List[Dict]:
         content_parts = msg.get("content", {}).get("parts") or []
         if not content_parts:
             continue
+        content = content_parts[0].strip()
+        if not content:
+            continue
+
         # ``create_time`` is sometimes ``None`` for system messages; fallback to ``0``
         # so that sorting works and these messages appear first.
         messages.append(
             {
                 "role": msg.get("author", {}).get("role", ""),
+                "content": content,
                 "content": content_parts[0],
                 "create_time": msg.get("create_time") or 0,
             }
@@ -68,7 +73,8 @@ def _page_messages(messages: List[Dict]) -> None:
     while True:
         end = min(total, offset + MESSAGE_PAGE_SIZE)
         for msg in messages[offset:end]:
-            print(f"{msg['role']}: {msg['content']}\n")
+            print(f"{msg['role']}: {msg['content']}")
+            print()
 
         cmd = input("Command (n/p/q): ").strip().lower()
         if cmd == "n":
