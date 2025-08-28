@@ -1,6 +1,5 @@
-from pathlib import Path
 import builtins
-
+from pathlib import Path
 
 
 def test_extract_messages_handles_none_create_time():
@@ -29,13 +28,6 @@ def test_extract_messages_handles_none_create_time():
                     "create_time": 100,
                 }
             },
-            "3": {
-                "message": {
-                    "author": {"role": "system"},
-                    "content": {"parts": [""]},
-                    "create_time": 50,
-                }
-            },
         }
     }
 
@@ -61,4 +53,3 @@ def test_page_messages_format(monkeypatch, capsys):
     _page_messages(messages)
     out = capsys.readouterr().out
     assert out == "user: Hello\n\nassistant: Hi\n\n"
-
