@@ -69,4 +69,4 @@ def main():
 if __name__ == "__main__":
     main()
 
-# Note: The 'conversation_id' will be found in the chat's url: 'https://chat.openai.com/c/conversation_id'
+# Note: The 'conversation_id' will be found in the chat's url: 'https://chatgpt.com/c/conversation_id'
