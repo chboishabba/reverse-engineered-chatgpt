@@ -6,8 +6,13 @@ This example demonstrates how to page through existing conversations using
 ``list_conversations_page(offset, limit)``.  Use ``n`` for the next page,
 ``p`` for the previous page or enter the conversation number to continue.
 Fetched metadata is written to ``conversations.json`` while only the current
-page is printed.  The script works with both synchronous and asynchronous
-clients.
+page is printed.
+
+After picking a conversation, its full history is downloaded and written to
+``conversation_<id>.json``.  Messages are shown a page at a time (20 entries
+per page) and can be navigated with ``n`` for next, ``p`` for previous and
+``q`` to quit the viewer before resuming the chat.  The script works with both
+synchronous and asynchronous clients.
 """
 
 import argparse
@@ -21,12 +26,61 @@ from re_gpt.utils import get_session_token
 
 SESSION_TOKEN = get_session_token()
 
+MESSAGE_PAGE_SIZE = 20
+
 
 def _dump_conversations(conversations: List[Dict]) -> None:
     """Persist ``conversations`` to ``conversations.json``."""
 
     with open("conversations.json", "w", encoding="utf-8") as f:
         json.dump(conversations, f, indent=2)
+
+
+def _extract_messages(chat: Dict) -> List[Dict]:
+    """Return ordered messages from a conversation ``chat`` mapping."""
+
+    messages = []
+    for node in chat.get("mapping", {}).values():
+        msg = node.get("message")
+        if not msg:
+            continue
+        content_parts = msg.get("content", {}).get("parts") or []
+        if not content_parts:
+            continue
+        messages.append(
+            {
+                "role": msg.get("author", {}).get("role", ""),
+                "content": content_parts[0],
+                "create_time": msg.get("create_time", 0),
+            }
+        )
+    messages.sort(key=lambda m: m["create_time"])
+    return messages
+
+
+def _page_messages(messages: List[Dict]) -> None:
+    """Display ``messages`` in pages and allow navigation commands."""
+
+    offset = 0
+    total = len(messages)
+    while True:
+        end = min(total, offset + MESSAGE_PAGE_SIZE)
+        for msg in messages[offset:end]:
+            print(f"{msg['role']}: {msg['content']}\n")
+
+        cmd = input("Command (n/p/q): ").strip().lower()
+        if cmd == "n":
+            if end >= total:
+                print("No next page.")
+            else:
+                offset += MESSAGE_PAGE_SIZE
+        elif cmd == "p":
+            if offset == 0:
+                print("Already at first page.")
+            else:
+                offset -= MESSAGE_PAGE_SIZE
+        elif cmd == "q":
+            break
 
 
 def choose_conversation_sync(chatgpt: SyncChatGPT, limit: int) -> Optional[str]:
@@ -121,6 +175,12 @@ def run_sync(limit: int) -> None:
         if conversation_id is None:
             return
         conversation = chatgpt.get_conversation(conversation_id)
+        chat = conversation.fetch_chat()
+        with open(
+            f"conversation_{conversation_id}.json", "w", encoding="utf-8"
+        ) as f:
+            json.dump(chat, f, indent=2)
+        _page_messages(_extract_messages(chat))
 
         while True:
             prompt = input("user: ")
@@ -135,6 +195,12 @@ async def run_async(limit: int) -> None:
         if conversation_id is None:
             return
         conversation = chatgpt.get_conversation(conversation_id)
+        chat = await conversation.fetch_chat()
+        with open(
+            f"conversation_{conversation_id}.json", "w", encoding="utf-8"
+        ) as f:
+            json.dump(chat, f, indent=2)
+        _page_messages(_extract_messages(chat))
 
         while True:
             prompt = input("user: ")
