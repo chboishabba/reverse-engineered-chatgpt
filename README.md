@@ -90,13 +90,14 @@ pip install re-gpt
 
 ### Configuration
 
-Copy `sampleconfig.ini` to `config.ini` and update the placeholder values:
+Copy `config.example.ini` to `config.ini` and update the placeholder values or
+store your token in a `~/.chatgpt_session` file:
 
 ```sh
-cp sampleconfig.ini config.ini
+cp config.example.ini config.ini
 ```
 
-Edit `config.ini` and replace `token` with your ChatGPT session token and `conversation_id` with the ID of an existing conversation if you want to resume one.
+Edit `config.ini` and replace `token` with your ChatGPT session token and `conversation_id` with the ID of an existing conversation if you want to resume one. If a `config.ini` is not found, `get_session_token` will look for a token in `~/.chatgpt_session` instead.
 
 ## Usage
 
@@ -104,8 +105,9 @@ Edit `config.ini` and replace `token` with your ChatGPT session token and `conve
 
 ```python
 from re_gpt import SyncChatGPT
+from re_gpt.utils import get_session_token
 
-session_token = "__Secure-next-auth.session-token here"
+session_token = get_session_token()
 conversation_id = None # conversation ID here
 
 
@@ -126,8 +128,9 @@ with SyncChatGPT(session_token=session_token) as chatgpt:
 
 ```python
 from re_gpt import SyncChatGPT
+from re_gpt.utils import get_session_token
 
-session_token = "__Secure-next-auth.session-token here"
+session_token = get_session_token()
 
 with SyncChatGPT(session_token=session_token) as chatgpt:
     conversations = chatgpt.list_all_conversations()
@@ -152,8 +155,9 @@ import asyncio
 import sys
 
 from re_gpt import AsyncChatGPT
+from re_gpt.utils import get_session_token
 
-session_token = "__Secure-next-auth.session-token here"
+session_token = get_session_token()
 conversation_id = conversation_id = None # conversation ID here
 
 if sys.version_info >= (3, 8) and sys.platform.lower().startswith("win"):

@@ -12,9 +12,10 @@ import sys
 from typing import Dict, List
 
 from re_gpt import AsyncChatGPT, SyncChatGPT
+from re_gpt.utils import get_session_token
 
 # Replace with your own session token
-SESSION_TOKEN = "__Secure-next-auth.session-token here"
+SESSION_TOKEN = get_session_token()
 
 
 def choose_conversation(conversations: List[Dict]) -> str:
