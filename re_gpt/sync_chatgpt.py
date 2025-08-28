@@ -61,9 +61,16 @@ class SyncConversation(AsyncConversation):
             chat = response.json()
             self.parent_id = list(chat.get("mapping", {}))[-1]
             model_slug = get_model_slug(chat)
-            self.model = [
-                key for key, value in MODELS.items() if value["slug"] == model_slug
-            ][0]
+            self.model = next(
+                (
+                    key
+                    for key, value in MODELS.items()
+                    if value["slug"] == model_slug
+                ),
+                None,
+            )
+            if self.model is None:
+                self.model = model_slug
         except Exception as e:
             error = e
         if error is not None:
@@ -238,6 +245,9 @@ class SyncConversation(AsyncConversation):
         if self.conversation_id and (self.parent_id is None or self.model is None):
             self.fetch_chat()  # it will automatically fetch the chat and set the parent id
 
+        if self.model not in MODELS:
+            raise InvalidModelName(self.model, MODELS)
+
         payload = {
             "conversation_mode": {"conversation_mode": {"kind": "primary_assistant"}},
             "conversation_id": self.conversation_id,
@@ -274,6 +284,9 @@ class SyncConversation(AsyncConversation):
         Returns:
             dict: Payload containing message information for continuation.
         """
+        if self.model not in MODELS:
+            raise InvalidModelName(self.model, MODELS)
+
         payload = {
             "conversation_mode": {"conversation_mode": {"kind": "primary_assistant"}},
             "action": "continue",
