@@ -63,11 +63,11 @@
 
 ### 灵感来源
 
-ChatGPT有一个官方API，可以用于将您的Python代码与之接口，但它需要使用API密钥。这个API密钥只能通过拥有[ChatGPT Plus](https://openai.com/blog/chatgpt-plus)账户获得，这需要20美元/月（截至2023年5月11日）。但是，您可以通过使用[ChatGPT网页界面](https://chat.openai.com/)免费使用ChatGPT。本项目旨在将您的代码与ChatGPT网页版本接口，这样您就可以在不使用API密钥的情况下在Python代码中使用ChatGPT。
+ChatGPT有一个官方API，可以用于将您的Python代码与之接口，但它需要使用API密钥。这个API密钥只能通过拥有[ChatGPT Plus](https://openai.com/blog/chatgpt-plus)账户获得，这需要20美元/月（截至2023年5月11日）。但是，您可以通过使用[ChatGPT网页界面](https://chatgpt.com/)免费使用ChatGPT。本项目旨在将您的代码与ChatGPT网页版本接口，这样您就可以在不使用API密钥的情况下在Python代码中使用ChatGPT。
 
 ### 工作原理
 
-[ChatGPT](https://chat.openai.com/)网页界面的请求已经被反向工程，并直接集成到Python请求中。因此，使用此脚本进行的任何请求都模拟为用户直接在网站上进行的请求。因此，它是免费的，不需要API密钥。
+[ChatGPT](https://chatgpt.com/)网页界面的请求已经被反向工程，并直接集成到Python请求中。因此，使用此脚本进行的任何请求都模拟为用户直接在网站上进行的请求。因此，它是免费的，不需要API密钥。
 
 ### 构建使用
 
@@ -147,7 +147,7 @@ if __name__ == "__main__":
 
 ### 获取会话令牌
 
-1. 访问<https://chat.openai.com/chat>并登录或注册。
+1. 访问<https://chatgpt.com/chat>并登录或注册。
 2. 打开浏览器的开发者工具。
 3. 转到`Application`标签页并打开`Cookies`部分。
 4. 复制`__Secure-next-auth.session-token`的值并保存。
