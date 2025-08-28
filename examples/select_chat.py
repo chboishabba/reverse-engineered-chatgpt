@@ -2,37 +2,124 @@ from __future__ import annotations
 
 """Select and resume an existing ChatGPT conversation.
 
-This example lists all available conversations and lets the user choose one
-to continue. It works with both synchronous and asynchronous clients.
+This example demonstrates how to page through existing conversations using
+``list_conversations_page(offset, limit)``.  Use ``n`` for the next page,
+``p`` for the previous page or enter the conversation number to continue.
+Fetched metadata is written to ``conversations.json`` while only the current
+page is printed.  The script works with both synchronous and asynchronous
+clients.
 """
 
 import argparse
 import asyncio
+import json
 import sys
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from re_gpt import AsyncChatGPT, SyncChatGPT
 from re_gpt.utils import get_session_token
 
-# Replace with your own session token
 SESSION_TOKEN = get_session_token()
 
 
-def choose_conversation(conversations: List[Dict]) -> str:
-    """Prompt the user to select a conversation from ``conversations``."""
+def _dump_conversations(conversations: List[Dict]) -> None:
+    """Persist ``conversations`` to ``conversations.json``."""
 
-    for idx, conv in enumerate(conversations, start=1):
-        title = conv.get("title") or "(no title)"
-        print(f"{idx}. {title}")
-
-    choice = int(input("Select a conversation: "))
-    return conversations[choice - 1]["id"]
+    with open("conversations.json", "w", encoding="utf-8") as f:
+        json.dump(conversations, f, indent=2)
 
 
-def run_sync() -> None:
+def choose_conversation_sync(chatgpt: SyncChatGPT, limit: int) -> Optional[str]:
+    """Page through conversations using ``limit`` and return a chosen ID."""
+
+    offset = 0
+    all_conversations: List[Dict] = []
+    seen_ids = set()
+
+    while True:
+        page = chatgpt.list_conversations_page(offset, limit)
+
+        if not page and offset != 0:
+            print("No conversations on this page.")
+            offset = max(0, offset - limit)
+            continue
+
+        for conv in page:
+            cid = conv["id"]
+            if cid not in seen_ids:
+                seen_ids.add(cid)
+                all_conversations.append(conv)
+        _dump_conversations(all_conversations)
+
+        for idx, conv in enumerate(page, start=1):
+            title = conv.get("title") or "(no title)"
+            print(f"{idx}. {title}")
+
+        cmd = input("Select conversation or command (n/p/q): ").strip().lower()
+        if cmd == "n":
+            if len(page) < limit:
+                print("No next page.")
+            else:
+                offset += limit
+        elif cmd == "p":
+            if offset == 0:
+                print("Already at first page.")
+            else:
+                offset -= limit
+        elif cmd == "q":
+            return None
+        elif cmd.isdigit() and 1 <= int(cmd) <= len(page):
+            return page[int(cmd) - 1]["id"]
+
+
+async def choose_conversation_async(chatgpt: AsyncChatGPT, limit: int) -> Optional[str]:
+    """Asynchronous version of :func:`choose_conversation_sync`."""
+
+    offset = 0
+    all_conversations: List[Dict] = []
+    seen_ids = set()
+
+    while True:
+        page = await chatgpt.list_conversations_page(offset, limit)
+
+        if not page and offset != 0:
+            print("No conversations on this page.")
+            offset = max(0, offset - limit)
+            continue
+
+        for conv in page:
+            cid = conv["id"]
+            if cid not in seen_ids:
+                seen_ids.add(cid)
+                all_conversations.append(conv)
+        _dump_conversations(all_conversations)
+
+        for idx, conv in enumerate(page, start=1):
+            title = conv.get("title") or "(no title)"
+            print(f"{idx}. {title}")
+
+        cmd = input("Select conversation or command (n/p/q): ").strip().lower()
+        if cmd == "n":
+            if len(page) < limit:
+                print("No next page.")
+            else:
+                offset += limit
+        elif cmd == "p":
+            if offset == 0:
+                print("Already at first page.")
+            else:
+                offset -= limit
+        elif cmd == "q":
+            return None
+        elif cmd.isdigit() and 1 <= int(cmd) <= len(page):
+            return page[int(cmd) - 1]["id"]
+
+
+def run_sync(limit: int) -> None:
     with SyncChatGPT(session_token=SESSION_TOKEN) as chatgpt:
-        conversations = chatgpt.list_all_conversations()
-        conversation_id = choose_conversation(conversations)
+        conversation_id = choose_conversation_sync(chatgpt, limit)
+        if conversation_id is None:
+            return
         conversation = chatgpt.get_conversation(conversation_id)
 
         while True:
@@ -42,10 +129,11 @@ def run_sync() -> None:
             print()
 
 
-async def run_async() -> None:
+async def run_async(limit: int) -> None:
     async with AsyncChatGPT(session_token=SESSION_TOKEN) as chatgpt:
-        conversations = await chatgpt.list_all_conversations()
-        conversation_id = choose_conversation(conversations)
+        conversation_id = await choose_conversation_async(chatgpt, limit)
+        if conversation_id is None:
+            return
         conversation = chatgpt.get_conversation(conversation_id)
 
         while True:
@@ -60,14 +148,20 @@ def main() -> None:
     parser.add_argument(
         "--async", action="store_true", dest="use_async", help="Use AsyncChatGPT"
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Number of conversations per page",
+    )
     args = parser.parse_args()
 
     if args.use_async:
         if sys.version_info >= (3, 8) and sys.platform.lower().startswith("win"):
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-        asyncio.run(run_async())
+        asyncio.run(run_async(args.limit))
     else:
-        run_sync()
+        run_sync(args.limit)
 
 
 if __name__ == "__main__":
