@@ -639,7 +639,7 @@ class AsyncChatGPT:
         offset = 0
 
         while True:
-            data = await self.retrieve_chats(offset=offset, limit=limit)
+            data = await self.list_conversations_page(offset=offset, limit=limit)
             items = data.get("items", [])
 
             for item in items:
