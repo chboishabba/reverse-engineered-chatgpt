@@ -181,6 +181,47 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+### Send messages programmatically
+
+Both the synchronous and asynchronous clients stream assistant replies by
+`POST`ing conversation payloads to the ChatGPT `conversation` endpoint.  The
+`SyncConversation.chat` and `AsyncConversation.chat` helpers take care of
+constructing the JSON body, attaching the chat requirements token and decoding
+the streamed response chunks for you.
+
+```python
+from re_gpt import SyncChatGPT
+from re_gpt.utils import get_session_token
+
+session_token = get_session_token()
+
+with SyncChatGPT(session_token=session_token) as chatgpt:
+    conversation = chatgpt.create_new_conversation()
+    for message in conversation.chat("Explain HTTP POST streaming"):
+        print(message["content"], end="", flush=True)
+```
+
+The asynchronous API exposes the same behaviour through
+`AsyncConversation.chat` which awaits the POST response while yielding
+assistant messages:
+
+```python
+import asyncio
+
+from re_gpt import AsyncChatGPT
+from re_gpt.utils import get_session_token
+
+
+async def main():
+    async with AsyncChatGPT(session_token=get_session_token()) as chatgpt:
+        conversation = chatgpt.create_new_conversation()
+        async for message in conversation.chat("List POST parameters"):
+            print(message["content"], end="", flush=True)
+
+
+asyncio.run(main())
+```
+
 ### Resume existing chat
 
 Page through your existing conversations and choose one to continue:
