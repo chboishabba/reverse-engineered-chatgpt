@@ -47,9 +47,28 @@ def _extract_messages(chat: Dict) -> List[Dict]:
         content_parts = msg.get("content", {}).get("parts") or []
         if not content_parts:
             continue
-        content = content_parts[0].strip()
-        if not content:
+
+        normalized_parts: List[str] = []
+        for part in content_parts:
+            if isinstance(part, str):
+                text = part.strip()
+            elif isinstance(part, dict):
+                text = str(
+                    part.get("text")
+                    or part.get("content")
+                    or part.get("title")
+                    or ""
+                ).strip()
+            else:
+                text = ""
+
+            if text:
+                normalized_parts.append(text)
+
+        if not normalized_parts:
             continue
+
+        content = "\n".join(normalized_parts)
 
         # ``create_time`` is sometimes ``None`` for system messages; fallback to ``0``
         # so that sorting works and these messages appear first.
@@ -57,7 +76,6 @@ def _extract_messages(chat: Dict) -> List[Dict]:
             {
                 "role": msg.get("author", {}).get("role", ""),
                 "content": content,
-                "content": content_parts[0],
                 "create_time": msg.get("create_time") or 0,
             }
         )
