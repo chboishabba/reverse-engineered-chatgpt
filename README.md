@@ -88,6 +88,26 @@ ChatGPT has an official API which can be used to interface your Python code to i
 pip install re-gpt
 ```
 
+### Run the interactive CLI locally
+
+On macOS or Linux you can bootstrap a local development environment and start the
+interactive CLI with the provided helper script:
+
+```sh
+./scripts/run_app.sh
+```
+
+The script creates (or reuses) a `.venv` virtual environment in the project
+root, upgrades `pip`, installs the package in editable mode, and then launches
+the interactive CLI module.
+
+> [!NOTE]
+> The script relies on Bash and POSIX-style paths. Windows users can run it from
+> Windows Subsystem for Linux (WSL) or follow the same steps manually using
+> PowerShell (`python -m venv .venv`, `.venv\\Scripts\\Activate.ps1`, then
+> `pip install --upgrade pip` and `pip install -e .`) before starting the CLI
+> with `python -m re_gpt.cli`.
+
 ### Configuration
 
 Copy `config.example.ini` to `config.ini` and update the placeholder values or
