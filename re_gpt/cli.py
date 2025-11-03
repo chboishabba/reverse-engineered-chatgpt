@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Iterable, Optional
+from typing import Dict, Iterable, List, Optional
 
 from .errors import InvalidSessionToken, TokenNotProvided
 from .sync_chatgpt import SyncChatGPT, SyncConversation
@@ -11,6 +11,9 @@ from .utils import get_session_token
 
 # Exit commands recognised by the CLI.
 EXIT_COMMANDS = {"exit", "quit", "q"}
+
+# Number of conversations to show per page when browsing history.
+CONVERSATION_PAGE_SIZE = 10
 
 
 def print_token_instructions() -> None:
@@ -98,12 +101,135 @@ def obtain_session_token() -> str:
             )
 
 
+def _print_conversation_page(items: List[Dict], offset: int) -> None:
+    """Display the current page of conversation titles."""
+
+    if not items:
+        print("No conversations on this page.")
+        return
+
+    start = offset + 1
+    end = offset + len(items)
+    print(f"\nShowing conversations {start}-{end}:")
+    for index, conversation in enumerate(items, start=1):
+        title = conversation.get("title") or "(no title)"
+        print(f"  {index}. {title}")
+
+
+def _pick_conversation_id(chatgpt: SyncChatGPT) -> Optional[str]:
+    """Interactively choose a conversation ID or return ``None`` for new."""
+
+    offset = 0
+    seen_ids = set()
+    cached_conversations: List[Dict] = []
+    current_page: List[Dict] = []
+    needs_refresh = True
+
+    print(
+        "\nConversation selection commands: 'view', 'next', 'prev', "
+        "'search <keyword>', a number to select, or press Enter for a new chat."
+    )
+
+    while True:
+        if needs_refresh:
+            page = chatgpt.list_conversations_page(offset, CONVERSATION_PAGE_SIZE)
+            items = page.get("items", [])
+
+            if not items:
+                if offset == 0:
+                    print("No saved conversations found.")
+                    return None
+                print("No conversations on this page.")
+                offset = max(0, offset - CONVERSATION_PAGE_SIZE)
+                needs_refresh = True
+                continue
+
+            current_page = items
+            for conversation in items:
+                conversation_id = conversation.get("id")
+                if conversation_id and conversation_id not in seen_ids:
+                    seen_ids.add(conversation_id)
+                    cached_conversations.append(conversation)
+            _print_conversation_page(current_page, offset)
+            needs_refresh = False
+
+        try:
+            command = input(
+                "Select conversation (view/next/prev/search/#/<id>/Enter for new): "
+            ).strip()
+        except EOFError:
+            print("\nInput stream closed. Starting a new conversation.")
+            return None
+
+        if not command:
+            return None
+
+        normalized = command.lower()
+
+        if normalized == "view":
+            _print_conversation_page(current_page, offset)
+            continue
+
+        if normalized == "next":
+            if len(current_page) < CONVERSATION_PAGE_SIZE:
+                print("No next page.")
+            else:
+                offset += CONVERSATION_PAGE_SIZE
+                needs_refresh = True
+            continue
+
+        if normalized == "prev":
+            if offset == 0:
+                print("Already at first page.")
+            else:
+                offset -= CONVERSATION_PAGE_SIZE
+                needs_refresh = True
+            continue
+
+        if normalized.startswith("search"):
+            parts = command.split(maxsplit=1)
+            if len(parts) == 1 or not parts[1].strip():
+                print("Please provide a keyword to search.")
+                continue
+
+            keyword = parts[1].strip().lower()
+            matches = [
+                conv
+                for conv in cached_conversations
+                if keyword in (conv.get("title") or "").lower()
+            ]
+            if not matches:
+                print(f"No conversations matching '{parts[1].strip()}'.")
+            else:
+                print(f"Found {len(matches)} conversation(s):")
+                for conv in matches:
+                    title = conv.get("title") or "(no title)"
+                    cid = conv.get("id") or ""
+                    print(f"- {title} [{cid}]")
+            continue
+
+        if command.isdigit():
+            selection = int(command)
+            if 1 <= selection <= len(current_page):
+                return current_page[selection - 1].get("id") or ""
+            print("Invalid selection number.")
+            continue
+
+        matching_cached = next(
+            (conv for conv in cached_conversations if conv.get("id") == command),
+            None,
+        )
+        if matching_cached:
+            return matching_cached.get("id") or ""
+
+        # Assume the user entered an ID that wasn't cached yet.
+        return command
+
+
 def select_conversation(chatgpt: SyncChatGPT) -> SyncConversation:
     """Create or resume a conversation based on user input."""
 
-    conversation_id = input(
-        "Enter a conversation ID to resume (leave empty for a new chat): "
-    ).strip()
+    conversation_id = _pick_conversation_id(chatgpt)
     if conversation_id:
         conversation = chatgpt.get_conversation(conversation_id)
         try:
