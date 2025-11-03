@@ -88,6 +88,26 @@ ChatGPT has an official API which can be used to interface your Python code to i
 pip install re-gpt
 ```
 
+### Run the interactive CLI locally
+
+On macOS or Linux you can bootstrap a local development environment and start the
+interactive CLI with the provided helper script:
+
+```sh
+./scripts/run_app.sh
+```
+
+The script creates (or reuses) a `.venv` virtual environment in the project
+root, upgrades `pip`, installs the package in editable mode, and then launches
+the interactive CLI module.
+
+> [!NOTE]
+> The script relies on Bash and POSIX-style paths. Windows users can run it from
+> Windows Subsystem for Linux (WSL) or follow the same steps manually using
+> PowerShell (`python -m venv .venv`, `.venv\\Scripts\\Activate.ps1`, then
+> `pip install --upgrade pip` and `pip install -e .`) before starting the CLI
+> with `python -m re_gpt.cli`.
+
 ### Configuration
 
 Copy `config.example.ini` to `config.ini` and update the placeholder values or
@@ -123,6 +143,28 @@ with SyncChatGPT(session_token=session_token) as chatgpt:
         print(message["content"], flush=True, end="")
 
 ```
+
+### Run the interactive CLI
+
+1. Clone this repository and switch into the project directory:
+
+   ```bash
+   git clone https://github.com/Zai-Kun/reverse-engineered-chatgpt.git
+   cd reverse-engineered-chatgpt
+   ```
+
+2. Ensure the launcher script is executable and run it with `bash`:
+
+   ```bash
+   chmod +x scripts/run_app.sh  # required on Unix-like systems after cloning
+   bash scripts/run_app.sh
+   ```
+
+   > **Tip for Windows users:** Run the command from a Bash-compatible environment such as Git Bash or Windows Subsystem for Linux (WSL).
+
+3. When the CLI starts, it prints guidance on how to obtain your session token and prompts you to paste it. You can review the full instructions in the [Obtaining Session Token](#obtaining-session-token) section.
+
+After pasting your token, the launcher starts an interactive ChatGPT session where you can type prompts and read streamed responses directly from your terminal.
 
 ### Resume a previous conversation interactively
 
