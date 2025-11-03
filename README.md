@@ -132,7 +132,6 @@ environment and then execute the tests. The asset download tests use an inline
 HTML fixture, so no extra files are required in the repository root. The script
 also installs the Playwright browser dependency, which requires network access
 during setup.
-
 ### Configuration
 
 Copy `config.example.ini` to `config.ini` and update the placeholder values or
