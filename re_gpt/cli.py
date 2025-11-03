@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import sys
+import time
 from typing import Iterable, Optional
 
 from .errors import InvalidSessionToken, TokenNotProvided
+from .storage import ConversationStorage, extract_ordered_messages
 from .sync_chatgpt import SyncChatGPT, SyncConversation
 from .utils import get_session_token
 
@@ -120,14 +122,57 @@ def select_conversation(chatgpt: SyncChatGPT) -> SyncConversation:
     return conversation
 
 
-def stream_response(chunks: Iterable[dict]) -> None:
-    """Stream assistant chunks to stdout."""
+def stream_response(chunks: Iterable[dict]) -> str:
+    """Stream assistant chunks to stdout and return the assembled reply."""
 
+    parts: list[str] = []
     for chunk in chunks:
         content = chunk.get("content")
         if content:
             print(content, end="", flush=True)
+            parts.append(content)
     print()  # ensure a newline after the assistant response
+    return "".join(parts)
+
+
+def handle_download_command(
+    user_input: str, chatgpt: SyncChatGPT, storage: ConversationStorage
+) -> None:
+    """Download and persist conversations based on ``user_input``."""
+
+    parts = user_input.strip().split()
+    if len(parts) == 1:
+        print("Usage: download <conversation_id|all>")
+        return
+
+    targets: list[str]
+    if parts[1].lower() == "all":
+        conversations = chatgpt.list_all_conversations()
+        targets = [conv.get("id") for conv in conversations if conv.get("id")]
+        if not targets:
+            print("No conversations available to download.")
+            return
+        print(f"Downloading {len(targets)} conversation(s)...")
+    else:
+        targets = [parts[1]]
+
+    for conversation_id in targets:
+        conversation = chatgpt.get_conversation(conversation_id)
+        try:
+            chat = conversation.fetch_chat()
+        except Exception as exc:  # noqa: BLE001 - user-friendly output.
+            print(f"Failed to fetch conversation {conversation_id}: {exc}")
+            continue
+
+        messages = extract_ordered_messages(chat)
+        json_path = storage.persist_chat(conversation_id, chat, messages)
+        print(
+            "Saved conversation {cid} (messages: {count}) to {path}".format(
+                cid=conversation_id,
+                count=len(messages),
+                path=json_path,
+            )
+        )
 
 
 def main() -> None:
@@ -135,8 +180,9 @@ def main() -> None:
 
     token = obtain_session_token()
 
-    with SyncChatGPT(session_token=token) as chatgpt:
+    with ConversationStorage() as storage, SyncChatGPT(session_token=token) as chatgpt:
         print("\nSession established. Type 'exit', 'quit', or 'q' to leave the chat.")
+        print("Use 'download <conversation_id>' or 'download all' to export chats.")
         conversation = select_conversation(chatgpt)
 
         while True:
@@ -146,15 +192,37 @@ def main() -> None:
                 print("\nEOF received. Exiting chat.")
                 break
 
-            if prompt.strip().lower() in EXIT_COMMANDS:
+            stripped_prompt = prompt.strip()
+            lowered_prompt = stripped_prompt.lower()
+
+            if lowered_prompt in EXIT_COMMANDS:
                 print("Goodbye!")
                 break
 
-            if not prompt.strip():
+            if lowered_prompt.startswith("download"):
+                handle_download_command(stripped_prompt, chatgpt, storage)
+                continue
+
+            if not stripped_prompt:
                 continue
 
             try:
-                stream_response(conversation.chat(prompt))
+                response = stream_response(conversation.chat(prompt))
+                conversation_id = conversation.conversation_id
+                if conversation_id:
+                    storage.append_message(
+                        conversation_id,
+                        author="user",
+                        content=stripped_prompt,
+                        create_time=time.time(),
+                    )
+                    if response:
+                        storage.append_message(
+                            conversation_id,
+                            author="assistant",
+                            content=response.strip(),
+                            create_time=time.time(),
+                        )
             except Exception as exc:  # noqa: BLE001
                 print(f"Encountered an error while chatting: {exc}")
 
