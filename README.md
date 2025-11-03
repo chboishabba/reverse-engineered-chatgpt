@@ -124,6 +124,28 @@ with SyncChatGPT(session_token=session_token) as chatgpt:
 
 ```
 
+### Run the interactive CLI
+
+1. Clone this repository and switch into the project directory:
+
+   ```bash
+   git clone https://github.com/Zai-Kun/reverse-engineered-chatgpt.git
+   cd reverse-engineered-chatgpt
+   ```
+
+2. Ensure the launcher script is executable and run it with `bash`:
+
+   ```bash
+   chmod +x scripts/run_app.sh  # required on Unix-like systems after cloning
+   bash scripts/run_app.sh
+   ```
+
+   > **Tip for Windows users:** Run the command from a Bash-compatible environment such as Git Bash or Windows Subsystem for Linux (WSL).
+
+3. When the CLI starts, it prints guidance on how to obtain your session token and prompts you to paste it. You can review the full instructions in the [Obtaining Session Token](#obtaining-session-token) section.
+
+After pasting your token, the launcher starts an interactive ChatGPT session where you can type prompts and read streamed responses directly from your terminal.
+
 ### Resume a previous conversation interactively
 
 ```python
