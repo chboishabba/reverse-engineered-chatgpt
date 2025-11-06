@@ -13,4 +13,7 @@ setup(
     },
     packages=find_packages(),
     install_requires=["curl_cffi==0.5.9", "websockets==12.0"],
+    extras_require={
+        "browser": ["playwright>=1.47"],
+    },
 )

@@ -499,6 +499,24 @@ class ConversationStorage:
             return []
 
         collected: dict[str, ImageAsset] = {}
+        allowed_pointer_schemes = {"file-service", "fileservice", "file", "sediment"}
+
+        def normalise_pointer(value: Optional[str]) -> Optional[str]:
+            if not value or not isinstance(value, str):
+                return None
+            stripped = value.strip()
+            if "://" not in stripped:
+                return None
+            scheme, remainder = stripped.split("://", 1)
+            scheme = scheme.strip().lower()
+            remainder = remainder.strip()
+            if not remainder:
+                return None
+            if scheme in {"fileservice", "file"}:
+                scheme = "file-service"
+            if scheme not in allowed_pointer_schemes:
+                return None
+            return f"{scheme}://{remainder}"
 
         def register(
             pointer: Optional[str],
@@ -507,11 +525,10 @@ class ConversationStorage:
             extension: Optional[str] = None,
             size: Optional[int] = None,
         ) -> None:
-            if not pointer or not isinstance(pointer, str):
+            pointer = normalise_pointer(pointer)
+            if not pointer:
                 return
-            pointer = pointer.strip()
-            if not pointer.startswith("file-service://"):
-                return
+
             file_id = self._extract_file_id(pointer)
             if not file_id:
                 return
@@ -521,10 +538,17 @@ class ConversationStorage:
                 asset = ImageAsset(pointer=pointer, file_id=file_id)
                 collected[pointer] = asset
 
+            scheme = pointer.split("://", 1)[0].lower()
+
             if mime and not asset.mime_type:
                 asset.mime_type = mime
-            if extension and not asset.extension:
+            if extension and not asset.extension and isinstance(extension, str):
                 asset.extension = extension.lstrip(".").lower()
+            if scheme == "sediment":
+                if not asset.mime_type:
+                    asset.mime_type = "image/png"
+                if not asset.extension:
+                    asset.extension = "png"
             if size and not asset.size_hint:
                 try:
                     asset.size_hint = int(size)
@@ -533,6 +557,14 @@ class ConversationStorage:
 
         def traverse(node: Any, key_hint: Optional[str] = None) -> None:
             if isinstance(node, Mapping):
+                asset_pointer = node.get("asset_pointer")
+                if isinstance(asset_pointer, str):
+                    register(
+                        asset_pointer,
+                        mime=self._mime_from_key(key_hint),
+                        extension=self._extension_from_key(key_hint),
+                        size=node.get("size_bytes") or node.get("bytes") or node.get("size"),
+                    )
                 for key, value in node.items():
                     traverse(value, key if isinstance(key, str) else key_hint)
                 return
@@ -543,30 +575,35 @@ class ConversationStorage:
                 return
 
             if isinstance(node, str):
-                if "file-service://" not in node:
-                    return
                 stripped = node.strip()
-                if stripped.startswith("file-service://"):
-                    register(
-                        stripped,
-                        mime=self._mime_from_key(key_hint),
-                        extension=self._extension_from_key(key_hint),
-                    )
-                    return
                 if stripped.startswith("{") or stripped.startswith("["):
                     try:
                         payload = json.loads(stripped)
                     except json.JSONDecodeError:
+                        pass
+                    else:
+                        traverse(payload, key_hint)
                         return
-                    traverse(payload, key_hint)
-                    return
-                match = re.search(r"file-service://[A-Za-z0-9_-]+", node)
-                if match:
+                candidate = normalise_pointer(stripped)
+                if candidate:
                     register(
-                        match.group(0),
+                        candidate,
                         mime=self._mime_from_key(key_hint),
                         extension=self._extension_from_key(key_hint),
                     )
+                    return
+                for match in re.finditer(
+                    r"(?:file-service|fileservice|sediment)://[A-Za-z0-9._-]+",
+                    node,
+                    flags=re.IGNORECASE,
+                ):
+                    candidate = normalise_pointer(match.group(0))
+                    if candidate:
+                        register(
+                            candidate,
+                            mime=self._mime_from_key(key_hint),
+                            extension=self._extension_from_key(key_hint),
+                        )
 
         for node in mapping.values():
             if not isinstance(node, Mapping):
@@ -584,7 +621,12 @@ class ConversationStorage:
                         if not isinstance(entry, Mapping):
                             continue
                         pointer = entry.get("image_url")
-                        register(pointer, mime="image/png", extension="png")
+                        register(
+                            pointer,
+                            mime="image/png",
+                            extension="png",
+                            size=entry.get("size_bytes") or entry.get("bytes"),
+                        )
                 jupyter_messages = aggregate.get("jupyter_messages") or []
                 if isinstance(jupyter_messages, Iterable) and not isinstance(jupyter_messages, (str, bytes)):
                     for jupyter in jupyter_messages:
@@ -603,6 +645,23 @@ class ConversationStorage:
             content = message.get("content")
             if content:
                 traverse(content)
+
+            meta_attachments = metadata.get("attachments")
+            if isinstance(meta_attachments, Iterable) and not isinstance(meta_attachments, (str, bytes)):
+                for attachment in meta_attachments:
+                    if not isinstance(attachment, Mapping):
+                        continue
+                    pointer = attachment.get("asset_pointer")
+                    if not pointer:
+                        attachment_id = attachment.get("id") or attachment.get("file_id")
+                        if isinstance(attachment_id, str):
+                            pointer = f"file-service://{attachment_id}"
+                    register(
+                        pointer,
+                        mime=attachment.get("mime_type"),
+                        extension=self._extension_from_mime(attachment.get("mime_type")),
+                        size=attachment.get("size") or attachment.get("bytes"),
+                    )
 
             attachments = message.get("attachments")
             if attachments:
