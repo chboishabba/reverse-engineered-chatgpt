@@ -32,11 +32,12 @@ from .errors import (
     InvalidModelName,
 )
 from .utils import sync_get_binary_path, get_model_slug
+from .storage import AssetDownload
 
 
 class SyncConversation(AsyncConversation):
-    def __init__(self, chatgpt, conversation_id: Optional[str] = None, model=None):
-        super().__init__(chatgpt, conversation_id, model)
+    def __init__(self, chatgpt, conversation_id: Optional[str] = None, model=None, title=None):
+        super().__init__(chatgpt, conversation_id, model, title)
 
     def fetch_chat(self) -> dict:
         """
@@ -60,6 +61,7 @@ class SyncConversation(AsyncConversation):
         try:
             chat = response.json()
             self.parent_id = list(chat.get("mapping", {}))[-1]
+            self.title = chat.get("title")
             model_slug = get_model_slug(chat)
             self.model = next(
                 (
@@ -132,6 +134,10 @@ class SyncConversation(AsyncConversation):
 
                             yield processed_response
                             full_message = decoded_json
+                if not full_message:
+                    raise UnexpectedResponseError(
+                        "No message received", server_response
+                    )
                 self.conversation_id = full_message["conversation_id"]
                 self.parent_id = full_message["message"]["id"]
                 if (
@@ -425,25 +431,26 @@ class SyncChatGPT(AsyncChatGPT):
             self.stop_websocket_flag = True
             self.ws_loop.join()
 
-    def get_conversation(self, conversation_id: str) -> SyncConversation:
+    def get_conversation(self, conversation_id: str, title: Optional[str] = None) -> SyncConversation:
         """
         Makes an instance of class Conversation and return it.
 
         Args:
             conversation_id (str): The ID of the conversation to fetch.
+            title (Optional[str]): The title of the conversation.
 
         Returns:
             Conversation: Conversation object.
         """
 
-        return SyncConversation(self, conversation_id)
+        return SyncConversation(self, conversation_id, title=title)
 
     def create_new_conversation(
-        self, model: Optional[str] = "gpt-3.5"
+        self, model: Optional[str] = "gpt-3.5", title: Optional[str] = None
     ) -> SyncConversation:
         if model not in MODELS:
             raise InvalidModelName(model, MODELS)
-        return SyncConversation(self, model=model)
+        return SyncConversation(self, model=model, title=title)
 
     def delete_conversation(self, conversation_id: str) -> dict:
         """
@@ -461,6 +468,81 @@ class SyncChatGPT(AsyncChatGPT):
         )
 
         return response.json()
+
+    def resolve_asset_pointer(self, asset_pointer: str) -> str:
+        """
+        Resolve an asset pointer into a downloadable URL.
+
+        Args:
+            asset_pointer (str): The asset pointer returned by the ChatGPT API.
+
+        Returns:
+            str: A signed download URL that can be used to fetch the asset.
+        """
+        if not asset_pointer:
+            raise ValueError("asset_pointer must be provided")
+
+        url = CHATGPT_API.format("asset/get")
+        headers = dict(self.build_request_headers())
+        headers["Accept"] = "application/json"
+
+        response = self.session.post(
+            url=url,
+            headers=headers,
+            json={"asset_pointer": asset_pointer},
+        )
+        if response.status_code != 200:
+            raise UnexpectedResponseError(
+                f"Failed to resolve asset pointer {asset_pointer}",
+                response.text,
+            )
+
+        try:
+            payload = response.json()
+        except Exception as exc:  # noqa: BLE001 - bubble unexpected payload issues.
+            raise UnexpectedResponseError(exc, response.text) from exc
+
+        for key in ("download_url", "url", "signed_url", "downloadUrl", "content_url"):
+            download_url = payload.get(key)
+            if download_url:
+                return download_url
+
+        raise UnexpectedResponseError(
+            f"Asset pointer {asset_pointer} did not include a download URL",
+            response.text,
+        )
+
+    def download_asset(self, asset_pointer: str) -> AssetDownload:
+        """
+        Download the binary payload for an asset pointer.
+
+        Args:
+            asset_pointer (str): Asset pointer returned by the ChatGPT API.
+
+        Returns:
+            AssetDownload: Binary payload and optional content type.
+        """
+        download_url = self.resolve_asset_pointer(asset_pointer)
+
+        response = self.session.get(
+            download_url,
+            headers={
+                "User-Agent": USER_AGENT,
+                "Accept": "*/*",
+            },
+        )
+        if response.status_code != 200:
+            raise UnexpectedResponseError(
+                f"Failed to download asset for {asset_pointer}",
+                response.text,
+            )
+
+        content_type = (
+            response.headers.get("Content-Type")
+            or response.headers.get("content-type")
+            or None
+        )
+        return AssetDownload(content=response.content, content_type=content_type)
 
     def fetch_auth_token(self) -> str:
         """
@@ -603,18 +685,25 @@ class SyncChatGPT(AsyncChatGPT):
         url = CHATGPT_API.format("accounts/check/v4-2023-04-27")
 
         headers = self.build_request_headers()
-        
-        raw_response = self.session.get(
-            url=url, headers=headers
-        )
+
+        try:
+            raw_response = self.session.get(url=url, headers=headers)
+            raw_response.raise_for_status()
+        except Exception:
+            return False
+
         try:
             response = raw_response.json()
-            if 'account_ordering' in response and 'accounts' in response:
-                account_id = response['account_ordering'][0]
-                if account_id in response['accounts']:
-                    return 'shared_websocket' in response['accounts'][account_id]['features']
-        except:
-            raise UnexpectedResponseError('Could not enable ws_mode', raw_response.text)
+        except Exception:
+            return False
+
+        if "account_ordering" in response and "accounts" in response:
+            account_id = response["account_ordering"][0]
+            account_data = response["accounts"].get(account_id, {})
+            features = account_data.get("features", [])
+            return "shared_websocket" in features
+
+        return False
     
     async def ensure_websocket(self):
         ws_url_rsp = self.session.post(WS_REGISTER_URL, headers=self.build_request_headers()).json()

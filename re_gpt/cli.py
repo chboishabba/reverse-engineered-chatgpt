@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 import sys
+import time
+import tempfile
+import subprocess
+import shutil
 from typing import Dict, Iterable, List, Optional
+import argparse
 
 from .errors import InvalidSessionToken, TokenNotProvided
 from .storage import ConversationStorage, extract_ordered_messages
@@ -38,20 +43,28 @@ def print_token_instructions() -> None:
 def verify_session_token(token: str) -> None:
     """Ensure *token* is accepted by ChatGPT."""
 
-    with SyncChatGPT(session_token=token):
-        # Entering and leaving the context validates the token by fetching an
-        # auth session.  No further action is required here.
-        pass
+    try:
+        with SyncChatGPT(session_token=token) as chatgpt:
+            # If the context manager succeeds but no auth token is present, treat as invalid.
+            if not getattr(chatgpt, "auth_token", None):
+                raise InvalidSessionToken
+    except (InvalidSessionToken, TokenNotProvided):
+        raise
+    except Exception as exc:
+        # Normalise unexpected failures during verification to InvalidSessionToken so the caller can prompt again.
+        raise InvalidSessionToken from exc
 
 
-def obtain_session_token() -> str:
+def obtain_session_token(key: Optional[str] = None) -> str:
     """Loop until a valid session token is provided.
 
     The function first tries any cached token discoverable via
     :func:`get_session_token`.  If that fails, the user is guided through
     copying the cookie value from the browser.
     """
-
+    if key:
+        return key
+        
     cached_token: Optional[str]
     try:
         cached_token = get_session_token()
@@ -117,7 +130,92 @@ def _print_conversation_page(items: List[Dict], offset: int) -> None:
         print(f"  {index}. {title}")
 
 
-def _pick_conversation_id(chatgpt: SyncChatGPT) -> Optional[str]:
+def handle_view_command(
+    argument: str,
+    chatgpt: SyncChatGPT,
+    current_page: List[Dict],
+    cached_conversations: List[Dict],
+) -> None:
+    """Handle the 'view' command to print a conversation's content."""
+    if not argument:
+        print("Usage: view <conversation_number|conversation_id|title>")
+        return
+
+    conversation_id = ""
+    if argument.isdigit():
+        selection = int(argument)
+        if 1 <= selection <= len(current_page):
+            conversation_id = current_page[selection - 1].get("id")
+        else:
+            print("Invalid selection number.")
+            return
+    else:
+        # Match by title first
+        lowered_argument = argument.lower()
+        matching_cached_by_title = next(
+            (
+                conv
+                for conv in cached_conversations
+                if (conv.get("title") or "").lower() == lowered_argument
+            ),
+            None,
+        )
+        if matching_cached_by_title:
+            conversation_id = matching_cached_by_title.get("id")
+        else:
+            # Then match by ID
+            matching_cached_by_id = next(
+                (conv for conv in cached_conversations if conv.get("id") == argument),
+                None,
+            )
+            if matching_cached_by_id:
+                conversation_id = matching_cached_by_id.get("id")
+            else:
+                print(f"Conversation '{argument}' not found.")
+                return
+
+    if not conversation_id:
+        print(f"Conversation '{argument}' not found.")
+        return
+
+    conversation_title = None
+    # Try to find the title from cached conversations if available
+    for conv in cached_conversations:
+        if conv.get("id") == conversation_id:
+            conversation_title = conv.get("title")
+            break
+
+    try:
+        conversation = chatgpt.get_conversation(conversation_id, title=conversation_title)
+        chat = conversation.fetch_chat()
+        messages = extract_ordered_messages(chat)
+
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as tmp_file:
+            tmp_file.write(f"--- Conversation: {conversation.title} ({conversation_id}) ---\n")
+            for message in messages:
+                author = message.get("author", "unknown")
+                content = message.get("content", "")
+                tmp_file.write(f"{author.capitalize()}: {content}\n")
+            tmp_file.write("--- End of conversation ---\n")
+            tmp_file_path = tmp_file.name
+
+        pager = "less"
+        if not shutil.which(pager):
+            pager = "more"
+        if not shutil.which(pager):
+            pager = "cat"
+
+        subprocess.run([pager, tmp_file_path])
+
+    except Exception as exc:
+        print(f"Failed to fetch conversation {conversation_id}: {exc}")
+    finally:
+        if 'tmp_file_path' in locals() and tmp_file_path:
+            import os
+            os.remove(tmp_file_path)
+
+
+def _pick_conversation_id(chatgpt: SyncChatGPT, storage: ConversationStorage) -> Optional[Dict]:
     """Interactively choose a conversation ID or return ``None`` for new."""
 
     offset = 0
@@ -146,6 +244,7 @@ def _pick_conversation_id(chatgpt: SyncChatGPT) -> Optional[str]:
                 continue
 
             current_page = items
+            storage.record_conversations(items)
             for conversation in items:
                 conversation_id = conversation.get("id")
                 if conversation_id and conversation_id not in seen_ids:
@@ -165,42 +264,51 @@ def _pick_conversation_id(chatgpt: SyncChatGPT) -> Optional[str]:
         if not command:
             return None
 
-        normalized = command.lower()
+        parts = command.split(maxsplit=1)
+        action = parts[0].lower()
+        argument = parts[1].strip() if len(parts) > 1 else ""
 
-        if normalized == "view":
-            _print_conversation_page(current_page, offset)
+        if action == "download":
+            handle_download_command(
+                command,
+                chatgpt,
+                storage,
+                current_page=current_page,
+                cached_conversations=cached_conversations,
+            )
+            needs_refresh = True
             continue
 
-        if normalized == "next":
+        if action == "view":
+            handle_view_command(argument, chatgpt, current_page, cached_conversations)
+            continue
+        elif action == "next":
             if len(current_page) < CONVERSATION_PAGE_SIZE:
                 print("No next page.")
             else:
                 offset += CONVERSATION_PAGE_SIZE
                 needs_refresh = True
             continue
-
-        if normalized == "prev":
+        elif action == "prev":
             if offset == 0:
                 print("Already at first page.")
             else:
                 offset -= CONVERSATION_PAGE_SIZE
                 needs_refresh = True
             continue
-
-        if normalized.startswith("search"):
-            parts = command.split(maxsplit=1)
-            if len(parts) == 1 or not parts[1].strip():
+        elif action == "search":
+            if not argument:
                 print("Please provide a keyword to search.")
                 continue
 
-            keyword = parts[1].strip().lower()
+            keyword = argument.lower()
             matches = [
                 conv
                 for conv in cached_conversations
                 if keyword in (conv.get("title") or "").lower()
             ]
             if not matches:
-                print(f"No conversations matching '{parts[1].strip()}'.")
+                print(f"No conversations matching '{argument}'.")
             else:
                 print(f"Found {len(matches)} conversation(s):")
                 for conv in matches:
@@ -212,27 +320,44 @@ def _pick_conversation_id(chatgpt: SyncChatGPT) -> Optional[str]:
         if command.isdigit():
             selection = int(command)
             if 1 <= selection <= len(current_page):
-                return current_page[selection - 1].get("id") or ""
+                selected_conv = current_page[selection - 1]
+                return {"id": selected_conv.get("id"), "title": selected_conv.get("title")}
             print("Invalid selection number.")
             continue
 
-        matching_cached = next(
+        # Match by title first
+        lowered_command = command.lower()
+        matching_cached_by_title = next(
+            (
+                conv
+                for conv in cached_conversations
+                if (conv.get("title") or "").lower() == lowered_command
+            ),
+            None,
+        )
+        if matching_cached_by_title:
+            return {"id": matching_cached_by_title.get("id"), "title": matching_cached_by_title.get("title")}
+
+        # Then match by ID
+        matching_cached_by_id = next(
             (conv for conv in cached_conversations if conv.get("id") == command),
             None,
         )
-        if matching_cached:
-            return matching_cached.get("id") or ""
+        if matching_cached_by_id:
+            return {"id": matching_cached_by_id.get("id"), "title": matching_cached_by_id.get("title")}
 
         # Assume the user entered an ID that wasn't cached yet.
-        return command
+        return {"id": command, "title": None}
 
 
-def select_conversation(chatgpt: SyncChatGPT) -> SyncConversation:
+def select_conversation(chatgpt: SyncChatGPT, storage: ConversationStorage) -> SyncConversation:
     """Create or resume a conversation based on user input."""
 
-    conversation_id = _pick_conversation_id(chatgpt)
-    if conversation_id:
-        conversation = chatgpt.get_conversation(conversation_id)
+    conversation_info = _pick_conversation_id(chatgpt, storage)
+    if conversation_info:
+        conversation_id = conversation_info.get("id")
+        conversation_title = conversation_info.get("title")
+        conversation = chatgpt.get_conversation(conversation_id, title=conversation_title)
         try:
             conversation.fetch_chat()
             print(f"Resumed conversation {conversation_id}.")
@@ -261,25 +386,98 @@ def stream_response(chunks: Iterable[dict]) -> str:
 
 
 def handle_download_command(
-    user_input: str, chatgpt: SyncChatGPT, storage: ConversationStorage
+    user_input: str,
+    chatgpt: SyncChatGPT,
+    storage: ConversationStorage,
+    current_page: Optional[List[Dict]] = None,
+    cached_conversations: Optional[List[Dict]] = None,
 ) -> None:
     """Download and persist conversations based on ``user_input``."""
 
-    parts = user_input.strip().split()
-    if len(parts) == 1:
-        print("Usage: download <conversation_id|all>")
+    parts = user_input.strip().split(maxsplit=1)
+    if len(parts) < 2:
+        print("Usage: download <conversation_id|title|all|list>")
         return
 
-    targets: list[str]
-    if parts[1].lower() == "all":
-        conversations = chatgpt.list_all_conversations()
-        targets = [conv.get("id") for conv in conversations if conv.get("id")]
+    arg = parts[1]
+    lowered_arg = arg.lower()
+    targets: list[str] = []
+    conversation_catalog: Optional[List[Dict]] = None
+
+    if lowered_arg == "list":
+        conversation_catalog = chatgpt.list_all_conversations()
+        stats = storage.record_conversations(conversation_catalog)
+        total = len(conversation_catalog)
+        print(
+            "Catalogued {total} conversation(s) "
+            "(added {added}, refreshed {updated}).".format(
+                total=total,
+                added=stats.added,
+                updated=stats.updated,
+            )
+        )
+        return
+
+    if lowered_arg == "all":
+        conversation_catalog = chatgpt.list_all_conversations()
+        stats = storage.record_conversations(conversation_catalog)
+        targets = [conv.get("id") for conv in conversation_catalog if conv.get("id")]
         if not targets:
             print("No conversations available to download.")
             return
-        print(f"Downloading {len(targets)} conversation(s)...")
-    else:
-        targets = [parts[1]]
+        print(
+            "Downloading {count} conversation(s)... (added {added}, refreshed {updated})".format(
+                count=len(targets),
+                added=stats.added,
+                updated=stats.updated,
+            )
+        )
+    elif arg.isdigit() and current_page:
+        selection = int(arg)
+        if 1 <= selection <= len(current_page):
+            conversation_id = current_page[selection - 1].get("id")
+            if conversation_id:
+                targets.append(conversation_id)
+        else:
+            print("Invalid selection number.")
+            return
+
+    if not targets:
+        found = False
+
+        collections: List[List[Dict]] = []
+        if cached_conversations:
+            collections.append(cached_conversations)
+        if conversation_catalog:
+            collections.append(conversation_catalog)
+
+        for collection in collections:
+            for conv in collection:
+                cid = conv.get("id")
+                title = (conv.get("title") or "").lower()
+                if cid == arg or title == lowered_arg:
+                    if cid:
+                        targets.append(cid)
+                        found = True
+                        break
+            if found:
+                break
+
+        if not found:
+            fallback_catalog = chatgpt.list_all_conversations()
+            storage.record_conversations(fallback_catalog)
+            for conv in fallback_catalog:
+                cid = conv.get("id")
+                title = (conv.get("title") or "").lower()
+                if cid == arg or title == lowered_arg:
+                    if cid:
+                        targets.append(cid)
+                        found = True
+                        break
+
+        if not found:
+            print(f"Conversation '{arg}' not found.")
+            return
 
     for conversation_id in targets:
         conversation = chatgpt.get_conversation(conversation_id)
@@ -290,25 +488,48 @@ def handle_download_command(
             continue
 
         messages = extract_ordered_messages(chat)
-        json_path = storage.persist_chat(conversation_id, chat, messages)
+        result = storage.persist_chat(
+            conversation_id,
+            chat,
+            messages,
+            asset_fetcher=getattr(chatgpt, "download_asset", None),
+        )
+        if result.new_messages:
+            status = f"+{result.new_messages} new message(s)"
+        else:
+            status = "no new messages"
+        asset_bits: list[str] = []
+        asset_count = len(result.asset_paths)
+        failure_count = len(result.asset_errors)
+        if asset_count:
+            asset_bits.append(f"saved {asset_count} image(s)")
+        if failure_count:
+            asset_bits.append(f"{failure_count} image(s) failed")
+        asset_info = ""
+        if asset_bits:
+            asset_info = " | " + ", ".join(asset_bits)
         print(
-            "Saved conversation {cid} (messages: {count}) to {path}".format(
+            "Saved conversation {cid} ({status}, cached {count}){assets} to {path}".format(
                 cid=conversation_id,
-                count=len(messages),
-                path=json_path,
+                status=status,
+                count=result.total_messages,
+                assets=asset_info,
+                path=result.json_path,
             )
         )
 
 
 def main() -> None:
     """Entry point for the interactive CLI."""
-
-    token = obtain_session_token()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--key", "-k", type=str, help="Session token")
+    args = parser.parse_args()
+    token = obtain_session_token(args.key)
 
     with ConversationStorage() as storage, SyncChatGPT(session_token=token) as chatgpt:
         print("\nSession established. Type 'exit', 'quit', or 'q' to leave the chat.")
-        print("Use 'download <conversation_id>' or 'download all' to export chats.")
-        conversation = select_conversation(chatgpt)
+        print("Use 'download <conversation_id|title>', 'download all', or 'download list' to export chats.")
+        conversation = select_conversation(chatgpt, storage)
 
         while True:
             try:

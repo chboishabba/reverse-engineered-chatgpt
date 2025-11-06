@@ -133,12 +133,27 @@ def sync_get_binary_path(session):
 
 
 def get_model_slug(chat):
-    for _, message in chat.get("mapping", {}).items():
-        if "message" in message:
-            if message["message"]:
-                role = message["message"]["author"]["role"]
-                if role == "assistant":
-                    return message["message"]["metadata"]["model_slug"]
+    """Return the model slug attached to a chat mapping.
+
+    Some conversations (especially older or audio-forward ones) may omit
+    ``metadata.model_slug`` entirely, so we defensively fall back to the
+    conversation-level defaults instead of raising ``KeyError``.
+    """
+
+    default_slug = chat.get("default_model_slug") or chat.get("default_model")
+
+    for message in chat.get("mapping", {}).values():
+        message_payload = message.get("message")
+        if not message_payload:
+            continue
+        if message_payload.get("author", {}).get("role") != "assistant":
+            continue
+        metadata = message_payload.get("metadata") or {}
+        slug = metadata.get("model_slug") or metadata.get("default_model_slug")
+        if slug:
+            return slug
+
+    return default_slug
 
 
 def get_session_token(config_path: str = "config.ini") -> str:
