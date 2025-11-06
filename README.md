@@ -245,20 +245,75 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### Resume existing chat
+### Send messages programmatically
 
-Page through your existing conversations and choose one to continue:
+Both the synchronous and asynchronous clients stream assistant replies by
+`POST`ing conversation payloads to the ChatGPT `conversation` endpoint.  The
+`SyncConversation.chat` and `AsyncConversation.chat` helpers take care of
+constructing the JSON body, attaching the chat requirements token and decoding
+the streamed response chunks for you.
+
+```python
+from re_gpt import SyncChatGPT
+from re_gpt.utils import get_session_token
+
+session_token = get_session_token()
+
+with SyncChatGPT(session_token=session_token) as chatgpt:
+    conversation = chatgpt.create_new_conversation()
+    for message in conversation.chat("Explain HTTP POST streaming"):
+        print(message["content"], end="", flush=True)
+```
+
+The asynchronous API exposes the same behaviour through
+`AsyncConversation.chat` which awaits the POST response while yielding
+assistant messages:
+
+```python
+import asyncio
+
+from re_gpt import AsyncChatGPT
+from re_gpt.utils import get_session_token
+
+
+async def main():
+    async with AsyncChatGPT(session_token=get_session_token()) as chatgpt:
+        conversation = chatgpt.create_new_conversation()
+        async for message in conversation.chat("List POST parameters"):
+            print(message["content"], end="", flush=True)
+
+
+asyncio.run(main())
+```
+
+### Chat from the terminal
+
+If you would rather talk to ChatGPT directly from a shell, run the synchronous
+example script.  It keeps prompting for user input, streams the assistant’s
+reply, and works for both new and existing conversations:
+
+```bash
+python examples/basic_example.py
+```
+
+Update the `conversation_id` constant in the script (or leave it as `None` to
+start fresh) before running it.  The more featureful
+[`examples/complex_example.py`](examples/complex_example.py) variant colours the
+terminal output, saves the latest `conversation_id` back to `config.ini`, and
+prints the existing message history each time the script starts.
+
+To resume an archived conversation with a full-screen selector, use the paging
+helper:
 
 ```bash
 python examples/select_chat.py --limit 5
 ```
 
-Use the numeric menu to pick a conversation from the current page.  Press
-`n` for the next page, `p` for the previous page or `q` to quit.  Fetched
-metadata is written to `conversations.json`.  After selecting a conversation,
-its full history is saved to `conversation_<id>.json` and displayed twenty
-messages at a time.  Navigate the message viewer with `n`, `p` and `q` before
-continuing the chat.
+`select_chat.py` lists your conversations page-by-page.  Pick a number to open a
+chat, press `n` for the next page, `p` for the previous page, or `q` to exit.
+The script writes fetched metadata to `conversations.json`, downloads the full
+message history to `conversation_<id>.json`, and paginates messages twenty at a
+time before handing you back to the live chat loop.
 
 ## More Examples
 
