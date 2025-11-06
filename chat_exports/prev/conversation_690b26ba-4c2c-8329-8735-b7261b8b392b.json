@@ -1,0 +1,1056 @@
+{
+  "title": "Dog bite management tips",
+  "create_time": 1762338508.945366,
+  "update_time": 1762338644.475526,
+  "mapping": {
+    "bbb23915-05e2-4494-842b-b224bebe3c99": {
+      "id": "bbb23915-05e2-4494-842b-b224bebe3c99",
+      "message": null,
+      "parent": null,
+      "children": [
+        "de54ed9c-6275-4111-bb87-81dbafd5836d"
+      ]
+    },
+    "de54ed9c-6275-4111-bb87-81dbafd5836d": {
+      "id": "de54ed9c-6275-4111-bb87-81dbafd5836d",
+      "message": {
+        "id": "de54ed9c-6275-4111-bb87-81dbafd5836d",
+        "author": {
+          "role": "system",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": null,
+        "update_time": null,
+        "content": {
+          "content_type": "text",
+          "parts": [
+            ""
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": true,
+        "weight": 0.0,
+        "metadata": {
+          "is_visually_hidden_from_conversation": true
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "bbb23915-05e2-4494-842b-b224bebe3c99",
+      "children": [
+        "f36b71e6-cce1-4a42-a564-a7dab1d78756"
+      ]
+    },
+    "f36b71e6-cce1-4a42-a564-a7dab1d78756": {
+      "id": "f36b71e6-cce1-4a42-a564-a7dab1d78756",
+      "message": {
+        "id": "f36b71e6-cce1-4a42-a564-a7dab1d78756",
+        "author": {
+          "role": "system",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": null,
+        "update_time": null,
+        "content": {
+          "content_type": "text",
+          "parts": [
+            ""
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 1.0,
+        "metadata": {
+          "is_contextual_answers_system_message": true,
+          "contextual_answers_message_type": "identity_prompt",
+          "is_visually_hidden_from_conversation": true
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "de54ed9c-6275-4111-bb87-81dbafd5836d",
+      "children": [
+        "caa4d455-1b46-4858-bcdd-bbc6b8f79bc2"
+      ]
+    },
+    "caa4d455-1b46-4858-bcdd-bbc6b8f79bc2": {
+      "id": "caa4d455-1b46-4858-bcdd-bbc6b8f79bc2",
+      "message": {
+        "id": "caa4d455-1b46-4858-bcdd-bbc6b8f79bc2",
+        "author": {
+          "role": "user",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762338508.944366,
+        "update_time": null,
+        "content": {
+          "content_type": "multimodal_text",
+          "parts": [
+            {
+              "content_type": "audio_transcription",
+              "text": "",
+              "direction": "in",
+              "decoding_id": null
+            },
+            {
+              "expiry_datetime": "2026-05-04T10:28:28.197610+00:00",
+              "content_type": "real_time_user_audio_video_asset_pointer",
+              "frames_asset_pointers": [],
+              "video_container_asset_pointer": null,
+              "audio_asset_pointer": {
+                "expiry_datetime": "2026-05-04T10:28:28.197610+00:00",
+                "content_type": "audio_asset_pointer",
+                "asset_pointer": "sediment://file_00000000ac0871f5abef614a1554f9be",
+                "size_bytes": 98478,
+                "format": "wav",
+                "metadata": {
+                  "start_timestamp": null,
+                  "end_timestamp": null,
+                  "pretokenized_vq": null,
+                  "interruptions": null,
+                  "original_audio_source": null,
+                  "transcription": null,
+                  "word_transcription": null,
+                  "start": 0.0,
+                  "end": 2.05
+                }
+              },
+              "audio_start_timestamp": 6.488513260992477
+            }
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 1.0,
+        "metadata": {
+          "voice_mode_message": true,
+          "request_id": "req_fa4315049d4d98dddb551a8555304e52/055i",
+          "message_source": null,
+          "timestamp_": "absolute",
+          "real_time_audio_has_video": false
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "f36b71e6-cce1-4a42-a564-a7dab1d78756",
+      "children": [
+        "3dc8eb5d-8f79-4f96-878f-2525269c3052"
+      ]
+    },
+    "3dc8eb5d-8f79-4f96-878f-2525269c3052": {
+      "id": "3dc8eb5d-8f79-4f96-878f-2525269c3052",
+      "message": {
+        "id": "3dc8eb5d-8f79-4f96-878f-2525269c3052",
+        "author": {
+          "role": "assistant",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762338490.605042,
+        "update_time": null,
+        "content": {
+          "content_type": "model_editable_context",
+          "model_set_context": "",
+          "repository": null,
+          "repo_summary": null,
+          "structured_context": null
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 1.0,
+        "metadata": {
+          "timestamp_": "absolute",
+          "parent_id": "caa4d455-1b46-4858-bcdd-bbc6b8f79bc2",
+          "turn_exchange_id": "4cc870cf-4b1f-4d40-b74a-b0e1df21ffca",
+          "model_switcher_deny": []
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "caa4d455-1b46-4858-bcdd-bbc6b8f79bc2",
+      "children": [
+        "cab7f82b-eb11-4915-99d3-9bfc50763d63"
+      ]
+    },
+    "cab7f82b-eb11-4915-99d3-9bfc50763d63": {
+      "id": "cab7f82b-eb11-4915-99d3-9bfc50763d63",
+      "message": {
+        "id": "cab7f82b-eb11-4915-99d3-9bfc50763d63",
+        "author": {
+          "role": "assistant",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762338509.162713,
+        "update_time": null,
+        "content": {
+          "content_type": "multimodal_text",
+          "parts": [
+            {
+              "content_type": "audio_transcription",
+              "text": "Hey there! It looks like I heard a little bit of noise but not a clear question or anything yet. Whenever you're ready, feel free to let me know what you need and we can dive right in.",
+              "direction": "out",
+              "decoding_id": null
+            },
+            {
+              "expiry_datetime": "2026-05-04T10:28:28.197672+00:00",
+              "content_type": "audio_asset_pointer",
+              "asset_pointer": "sediment://file_0000000038c4722fa3ba53fa07516f28",
+              "size_bytes": 480078,
+              "format": "wav",
+              "metadata": {
+                "start_timestamp": null,
+                "end_timestamp": null,
+                "pretokenized_vq": null,
+                "interruptions": null,
+                "original_audio_source": null,
+                "transcription": null,
+                "word_transcription": null,
+                "start": 0.0,
+                "end": 10.0
+              }
+            }
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": true,
+        "weight": 1.0,
+        "metadata": {
+          "citations": [],
+          "content_references": [],
+          "finish_details": {
+            "type": "stop",
+            "stop_tokens": [
+              200002
+            ]
+          },
+          "is_complete": true,
+          "parent_id": "3dc8eb5d-8f79-4f96-878f-2525269c3052",
+          "turn_exchange_id": "4cc870cf-4b1f-4d40-b74a-b0e1df21ffca",
+          "timestamp_": "absolute",
+          "model_switcher_deny": []
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "3dc8eb5d-8f79-4f96-878f-2525269c3052",
+      "children": [
+        "5d13d8d0-49bd-45a1-8536-92bd6c12f185"
+      ]
+    },
+    "5d13d8d0-49bd-45a1-8536-92bd6c12f185": {
+      "id": "5d13d8d0-49bd-45a1-8536-92bd6c12f185",
+      "message": {
+        "id": "5d13d8d0-49bd-45a1-8536-92bd6c12f185",
+        "author": {
+          "role": "user",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762338554.072181,
+        "update_time": null,
+        "content": {
+          "content_type": "multimodal_text",
+          "parts": [
+            {
+              "content_type": "audio_transcription",
+              "text": "Every now and then our dog nips us or takes a little bite at us. What would be the best behavior management?",
+              "direction": "in",
+              "decoding_id": null
+            },
+            {
+              "expiry_datetime": "2026-05-04T10:29:13.178961+00:00",
+              "content_type": "real_time_user_audio_video_asset_pointer",
+              "frames_asset_pointers": [],
+              "video_container_asset_pointer": null,
+              "audio_asset_pointer": {
+                "expiry_datetime": "2026-05-04T10:29:13.178961+00:00",
+                "content_type": "audio_asset_pointer",
+                "asset_pointer": "sediment://file_00000000d0c8722faf32417baeec0a2c",
+                "size_bytes": 559278,
+                "format": "wav",
+                "metadata": {
+                  "start_timestamp": null,
+                  "end_timestamp": null,
+                  "pretokenized_vq": null,
+                  "interruptions": null,
+                  "original_audio_source": null,
+                  "transcription": null,
+                  "word_transcription": null,
+                  "start": 0.0,
+                  "end": 11.65
+                }
+              },
+              "audio_start_timestamp": 29.840903336007614
+            }
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 1.0,
+        "metadata": {
+          "voice_mode_message": true,
+          "request_id": "req_fa4315049d4d98dddb551a8555304e52/qg8i",
+          "message_source": null,
+          "timestamp_": "absolute",
+          "real_time_audio_has_video": false
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "cab7f82b-eb11-4915-99d3-9bfc50763d63",
+      "children": [
+        "f68a48e7-bbbd-4cea-b691-98bd0bd850dc"
+      ]
+    },
+    "f68a48e7-bbbd-4cea-b691-98bd0bd850dc": {
+      "id": "f68a48e7-bbbd-4cea-b691-98bd0bd850dc",
+      "message": {
+        "id": "f68a48e7-bbbd-4cea-b691-98bd0bd850dc",
+        "author": {
+          "role": "assistant",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762338554.249775,
+        "update_time": null,
+        "content": {
+          "content_type": "multimodal_text",
+          "parts": [
+            {
+              "content_type": "audio_transcription",
+              "text": "Got it! Yeah, that’s definitely something you want to manage so it doesn’t become a habit for your furry friend.\n\nOne of the best approaches is to teach them some bite inhibition and redirect their chewing or nibbling onto appropriate toys. If they nip at you, you can give a little “ouch” or a yelp to let them know it’s not okay, and then immediately give them a toy they’re allowed to chew on. Over time, they’ll get the hang of it.\n\nPositive reinforcement is your friend here—lots of praise when they chew on the right things and gentle correction when they get a little mouthy with you. It’s a process, but consistency definitely helps!",
+              "direction": "out",
+              "decoding_id": null
+            },
+            {
+              "expiry_datetime": "2026-05-04T10:29:13.179032+00:00",
+              "content_type": "audio_asset_pointer",
+              "asset_pointer": "sediment://file_000000004ec4722fb5319d53c57667fc",
+              "size_bytes": 1526478,
+              "format": "wav",
+              "metadata": {
+                "start_timestamp": null,
+                "end_timestamp": null,
+                "pretokenized_vq": null,
+                "interruptions": null,
+                "original_audio_source": null,
+                "transcription": null,
+                "word_transcription": null,
+                "start": 0.0,
+                "end": 31.8
+              }
+            }
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": true,
+        "weight": 1.0,
+        "metadata": {
+          "citations": [],
+          "content_references": [],
+          "finish_details": {
+            "type": "stop",
+            "stop_tokens": [
+              200002
+            ]
+          },
+          "is_complete": true,
+          "parent_id": "5d13d8d0-49bd-45a1-8536-92bd6c12f185",
+          "turn_exchange_id": "259a6a16-bb6e-43b4-9276-7b0ffc42dd30",
+          "timestamp_": "absolute",
+          "model_switcher_deny": []
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "5d13d8d0-49bd-45a1-8536-92bd6c12f185",
+      "children": [
+        "c12e3fcb-a0b0-4a73-b9f0-d69effd4225c"
+      ]
+    },
+    "c12e3fcb-a0b0-4a73-b9f0-d69effd4225c": {
+      "id": "c12e3fcb-a0b0-4a73-b9f0-d69effd4225c",
+      "message": {
+        "id": "c12e3fcb-a0b0-4a73-b9f0-d69effd4225c",
+        "author": {
+          "role": "user",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762338583.445685,
+        "update_time": null,
+        "content": {
+          "content_type": "multimodal_text",
+          "parts": [
+            {
+              "content_type": "audio_transcription",
+              "text": "Is it worthwhile giving them a tap on the nose when they bite you?",
+              "direction": "in",
+              "decoding_id": null
+            },
+            {
+              "expiry_datetime": "2026-05-04T10:29:42.598456+00:00",
+              "content_type": "real_time_user_audio_video_asset_pointer",
+              "frames_asset_pointers": [],
+              "video_container_asset_pointer": null,
+              "audio_asset_pointer": {
+                "expiry_datetime": "2026-05-04T10:29:42.598456+00:00",
+                "content_type": "audio_asset_pointer",
+                "asset_pointer": "sediment://file_00000000616c722faea9e3bd8501b005",
+                "size_bytes": 176718,
+                "format": "wav",
+                "metadata": {
+                  "start_timestamp": null,
+                  "end_timestamp": null,
+                  "pretokenized_vq": null,
+                  "interruptions": null,
+                  "original_audio_source": null,
+                  "transcription": null,
+                  "word_transcription": null,
+                  "start": 0.0,
+                  "end": 3.68
+                }
+              },
+              "audio_start_timestamp": 67.81647045299178
+            }
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 1.0,
+        "metadata": {
+          "voice_mode_message": true,
+          "request_id": "req_fa4315049d4d98dddb551a8555304e52/cu73",
+          "message_source": null,
+          "timestamp_": "absolute",
+          "real_time_audio_has_video": false
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "f68a48e7-bbbd-4cea-b691-98bd0bd850dc",
+      "children": [
+        "8fc0fbc3-74aa-45f5-808e-630a9c910e07"
+      ]
+    },
+    "8fc0fbc3-74aa-45f5-808e-630a9c910e07": {
+      "id": "8fc0fbc3-74aa-45f5-808e-630a9c910e07",
+      "message": {
+        "id": "8fc0fbc3-74aa-45f5-808e-630a9c910e07",
+        "author": {
+          "role": "assistant",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762338583.659406,
+        "update_time": null,
+        "content": {
+          "content_type": "multimodal_text",
+          "parts": [
+            {
+              "content_type": "audio_transcription",
+              "text": "I’d generally say it’s better to steer clear of any physical corrections like a tap on the nose. Even if it’s gentle, it can sometimes confuse the dog or make them a little anxious. And we definitely want to keep it positive and build trust. So focusing on that redirection and positive reinforcement is usually more effective in the long run. It might take a little patience, but it helps your dog learn without any mixed signals.",
+              "direction": "out",
+              "decoding_id": null
+            },
+            {
+              "expiry_datetime": "2026-05-04T10:29:42.598513+00:00",
+              "content_type": "audio_asset_pointer",
+              "asset_pointer": "sediment://file_00000000b514722f8183e06ef7189a39",
+              "size_bytes": 1106478,
+              "format": "wav",
+              "metadata": {
+                "start_timestamp": null,
+                "end_timestamp": null,
+                "pretokenized_vq": null,
+                "interruptions": null,
+                "original_audio_source": null,
+                "transcription": null,
+                "word_transcription": null,
+                "start": 0.0,
+                "end": 23.05
+              }
+            }
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": true,
+        "weight": 1.0,
+        "metadata": {
+          "citations": [],
+          "content_references": [],
+          "finish_details": {
+            "type": "stop",
+            "stop_tokens": [
+              200002
+            ]
+          },
+          "is_complete": true,
+          "parent_id": "c12e3fcb-a0b0-4a73-b9f0-d69effd4225c",
+          "turn_exchange_id": "51cb0fc1-550b-4441-99f1-519fac0ada05",
+          "timestamp_": "absolute",
+          "model_switcher_deny": []
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "c12e3fcb-a0b0-4a73-b9f0-d69effd4225c",
+      "children": [
+        "6c143e31-8c0b-4979-93d4-c826d15c6a98"
+      ]
+    },
+    "6c143e31-8c0b-4979-93d4-c826d15c6a98": {
+      "id": "6c143e31-8c0b-4979-93d4-c826d15c6a98",
+      "message": {
+        "id": "6c143e31-8c0b-4979-93d4-c826d15c6a98",
+        "author": {
+          "role": "user",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762338596.188776,
+        "update_time": null,
+        "content": {
+          "content_type": "multimodal_text",
+          "parts": [
+            {
+              "content_type": "audio_transcription",
+              "text": "Perfect. Thank you.",
+              "direction": "in",
+              "decoding_id": null
+            },
+            {
+              "expiry_datetime": "2026-05-04T10:29:55.429188+00:00",
+              "content_type": "real_time_user_audio_video_asset_pointer",
+              "frames_asset_pointers": [],
+              "video_container_asset_pointer": null,
+              "audio_asset_pointer": {
+                "expiry_datetime": "2026-05-04T10:29:55.429188+00:00",
+                "content_type": "audio_asset_pointer",
+                "asset_pointer": "sediment://file_00000000ea8871f58eebf5650d9d7db8",
+                "size_bytes": 57198,
+                "format": "wav",
+                "metadata": {
+                  "start_timestamp": null,
+                  "end_timestamp": null,
+                  "pretokenized_vq": null,
+                  "interruptions": null,
+                  "original_audio_source": null,
+                  "transcription": null,
+                  "word_transcription": null,
+                  "start": 0.0,
+                  "end": 1.19
+                }
+              },
+              "audio_start_timestamp": 93.47497059599846
+            }
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 1.0,
+        "metadata": {
+          "voice_mode_message": true,
+          "request_id": "req_fa4315049d4d98dddb551a8555304e52/le8l",
+          "message_source": null,
+          "timestamp_": "absolute",
+          "real_time_audio_has_video": false
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "8fc0fbc3-74aa-45f5-808e-630a9c910e07",
+      "children": [
+        "02e93661-7270-4a32-9846-44fd64ad2bba"
+      ]
+    },
+    "02e93661-7270-4a32-9846-44fd64ad2bba": {
+      "id": "02e93661-7270-4a32-9846-44fd64ad2bba",
+      "message": {
+        "id": "02e93661-7270-4a32-9846-44fd64ad2bba",
+        "author": {
+          "role": "assistant",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762338596.352162,
+        "update_time": null,
+        "content": {
+          "content_type": "multimodal_text",
+          "parts": [
+            {
+              "content_type": "audio_transcription",
+              "text": "You're absolutely welcome! I'm glad I could help. If you need any more tips or anything else at all, just let me know.",
+              "direction": "out",
+              "decoding_id": null
+            },
+            {
+              "expiry_datetime": "2026-05-04T10:29:55.429262+00:00",
+              "content_type": "audio_asset_pointer",
+              "asset_pointer": "sediment://file_00000000a51471f58a1cd47f6aa1365f",
+              "size_bytes": 316878,
+              "format": "wav",
+              "metadata": {
+                "start_timestamp": null,
+                "end_timestamp": null,
+                "pretokenized_vq": null,
+                "interruptions": null,
+                "original_audio_source": null,
+                "transcription": null,
+                "word_transcription": null,
+                "start": 0.0,
+                "end": 6.6
+              }
+            }
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": true,
+        "weight": 1.0,
+        "metadata": {
+          "citations": [],
+          "content_references": [],
+          "finish_details": {
+            "type": "stop",
+            "stop_tokens": [
+              200002
+            ]
+          },
+          "is_complete": true,
+          "parent_id": "6c143e31-8c0b-4979-93d4-c826d15c6a98",
+          "turn_exchange_id": "be633560-0d57-410d-9e04-f8048ee9c824",
+          "timestamp_": "absolute",
+          "model_switcher_deny": []
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "6c143e31-8c0b-4979-93d4-c826d15c6a98",
+      "children": [
+        "9236f6d1-6094-4f77-bb3e-de9600efaee6"
+      ]
+    },
+    "9236f6d1-6094-4f77-bb3e-de9600efaee6": {
+      "id": "9236f6d1-6094-4f77-bb3e-de9600efaee6",
+      "message": {
+        "id": "9236f6d1-6094-4f77-bb3e-de9600efaee6",
+        "author": {
+          "role": "user",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762338617.614542,
+        "update_time": null,
+        "content": {
+          "content_type": "multimodal_text",
+          "parts": [
+            {
+              "content_type": "audio_transcription",
+              "text": "Are you still paying for this, Joan? How much is that a month?",
+              "direction": "in",
+              "decoding_id": null
+            },
+            {
+              "expiry_datetime": "2026-05-04T10:30:16.845313+00:00",
+              "content_type": "real_time_user_audio_video_asset_pointer",
+              "frames_asset_pointers": [],
+              "video_container_asset_pointer": null,
+              "audio_asset_pointer": {
+                "expiry_datetime": "2026-05-04T10:30:16.845313+00:00",
+                "content_type": "audio_asset_pointer",
+                "asset_pointer": "sediment://file_00000000e6d871f58f390fb2a5208e19",
+                "size_bytes": 198318,
+                "format": "wav",
+                "metadata": {
+                  "start_timestamp": null,
+                  "end_timestamp": null,
+                  "pretokenized_vq": null,
+                  "interruptions": null,
+                  "original_audio_source": null,
+                  "transcription": null,
+                  "word_transcription": null,
+                  "start": 0.0,
+                  "end": 4.13
+                }
+              },
+              "audio_start_timestamp": 108.92066274801618
+            }
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 1.0,
+        "metadata": {
+          "voice_mode_message": true,
+          "request_id": "req_fa4315049d4d98dddb551a8555304e52/u5zp",
+          "message_source": null,
+          "timestamp_": "absolute",
+          "real_time_audio_has_video": false
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "02e93661-7270-4a32-9846-44fd64ad2bba",
+      "children": [
+        "f6a39c87-d56b-4d6d-993f-a8bf1bdcd0f5"
+      ]
+    },
+    "f6a39c87-d56b-4d6d-993f-a8bf1bdcd0f5": {
+      "id": "f6a39c87-d56b-4d6d-993f-a8bf1bdcd0f5",
+      "message": {
+        "id": "f6a39c87-d56b-4d6d-993f-a8bf1bdcd0f5",
+        "author": {
+          "role": "assistant",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762338617.787792,
+        "update_time": null,
+        "content": {
+          "content_type": "multimodal_text",
+          "parts": [
+            {
+              "content_type": "audio_transcription",
+              "text": "Yep, I'm still here! So if you're referring to the ChatGPT Plus subscription, that's typically about 20 US dollars a month right now. It gives you access to the more advanced features and faster responses. So if that’s what you meant, that’s the ballpark. Let me know if you’ve got any other questions!",
+              "direction": "out",
+              "decoding_id": null
+            },
+            {
+              "expiry_datetime": "2026-05-04T10:30:16.845372+00:00",
+              "content_type": "audio_asset_pointer",
+              "asset_pointer": "sediment://file_00000000a58c722fae309d9468e6a537",
+              "size_bytes": 780078,
+              "format": "wav",
+              "metadata": {
+                "start_timestamp": null,
+                "end_timestamp": null,
+                "pretokenized_vq": null,
+                "interruptions": null,
+                "original_audio_source": null,
+                "transcription": null,
+                "word_transcription": null,
+                "start": 0.0,
+                "end": 16.25
+              }
+            }
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": true,
+        "weight": 1.0,
+        "metadata": {
+          "citations": [],
+          "content_references": [],
+          "finish_details": {
+            "type": "stop",
+            "stop_tokens": [
+              200002
+            ]
+          },
+          "is_complete": true,
+          "parent_id": "9236f6d1-6094-4f77-bb3e-de9600efaee6",
+          "turn_exchange_id": "25df2014-ff09-44db-8098-c70433993582",
+          "timestamp_": "absolute",
+          "model_switcher_deny": []
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "9236f6d1-6094-4f77-bb3e-de9600efaee6",
+      "children": [
+        "8e266fc0-327c-495b-9114-589839223d94"
+      ]
+    },
+    "8e266fc0-327c-495b-9114-589839223d94": {
+      "id": "8e266fc0-327c-495b-9114-589839223d94",
+      "message": {
+        "id": "8e266fc0-327c-495b-9114-589839223d94",
+        "author": {
+          "role": "user",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762338629.056995,
+        "update_time": null,
+        "content": {
+          "content_type": "multimodal_text",
+          "parts": [
+            {
+              "content_type": "audio_transcription",
+              "text": "Now, close.",
+              "direction": "in",
+              "decoding_id": null
+            },
+            {
+              "expiry_datetime": "2026-05-04T10:30:28.449684+00:00",
+              "content_type": "real_time_user_audio_video_asset_pointer",
+              "frames_asset_pointers": [],
+              "video_container_asset_pointer": null,
+              "audio_asset_pointer": {
+                "expiry_datetime": "2026-05-04T10:30:28.449684+00:00",
+                "content_type": "audio_asset_pointer",
+                "asset_pointer": "sediment://file_00000000c03c71f59858f4a34772d10c",
+                "size_bytes": 61998,
+                "format": "wav",
+                "metadata": {
+                  "start_timestamp": null,
+                  "end_timestamp": null,
+                  "pretokenized_vq": null,
+                  "interruptions": null,
+                  "original_audio_source": null,
+                  "transcription": null,
+                  "word_transcription": null,
+                  "start": 0.0,
+                  "end": 1.29
+                }
+              },
+              "audio_start_timestamp": 126.92302788599045
+            }
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 1.0,
+        "metadata": {
+          "voice_mode_message": true,
+          "request_id": "req_fa4315049d4d98dddb551a8555304e52/1xkq",
+          "message_source": null,
+          "timestamp_": "absolute",
+          "real_time_audio_has_video": false
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "f6a39c87-d56b-4d6d-993f-a8bf1bdcd0f5",
+      "children": [
+        "20c02b79-2cfb-4bfc-9a9d-a52868a707b8"
+      ]
+    },
+    "20c02b79-2cfb-4bfc-9a9d-a52868a707b8": {
+      "id": "20c02b79-2cfb-4bfc-9a9d-a52868a707b8",
+      "message": {
+        "id": "20c02b79-2cfb-4bfc-9a9d-a52868a707b8",
+        "author": {
+          "role": "assistant",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762338629.237118,
+        "update_time": null,
+        "content": {
+          "content_type": "multimodal_text",
+          "parts": [
+            {
+              "content_type": "audio_transcription",
+              "text": "Oh, gotcha! Well, if I misunderstood, no worries at all. If you had something else in mind or anything else you’re curious about, just let me know and I’ll do my best to help.",
+              "direction": "out",
+              "decoding_id": null
+            },
+            {
+              "expiry_datetime": "2026-05-04T10:30:28.449738+00:00",
+              "content_type": "audio_asset_pointer",
+              "asset_pointer": "sediment://file_0000000086f8722f893dc16b80f0c13c",
+              "size_bytes": 432078,
+              "format": "wav",
+              "metadata": {
+                "start_timestamp": null,
+                "end_timestamp": null,
+                "pretokenized_vq": null,
+                "interruptions": null,
+                "original_audio_source": null,
+                "transcription": null,
+                "word_transcription": null,
+                "start": 0.0,
+                "end": 9.0
+              }
+            }
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": true,
+        "weight": 1.0,
+        "metadata": {
+          "citations": [],
+          "content_references": [],
+          "finish_details": {
+            "type": "stop",
+            "stop_tokens": [
+              200002
+            ]
+          },
+          "is_complete": true,
+          "parent_id": "8e266fc0-327c-495b-9114-589839223d94",
+          "turn_exchange_id": "f7e2d994-c760-4c55-804e-c3882dbb138c",
+          "timestamp_": "absolute",
+          "model_switcher_deny": []
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "8e266fc0-327c-495b-9114-589839223d94",
+      "children": [
+        "1b7279f6-cf05-4a0e-8335-3805fe1950a1"
+      ]
+    },
+    "1b7279f6-cf05-4a0e-8335-3805fe1950a1": {
+      "id": "1b7279f6-cf05-4a0e-8335-3805fe1950a1",
+      "message": {
+        "id": "1b7279f6-cf05-4a0e-8335-3805fe1950a1",
+        "author": {
+          "role": "user",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762338643.997837,
+        "update_time": null,
+        "content": {
+          "content_type": "multimodal_text",
+          "parts": [
+            {
+              "content_type": "audio_transcription",
+              "text": "",
+              "direction": "in",
+              "decoding_id": null
+            },
+            {
+              "expiry_datetime": "2026-05-04T10:30:43.481110+00:00",
+              "content_type": "real_time_user_audio_video_asset_pointer",
+              "frames_asset_pointers": [],
+              "video_container_asset_pointer": null,
+              "audio_asset_pointer": {
+                "expiry_datetime": "2026-05-04T10:30:43.481110+00:00",
+                "content_type": "audio_asset_pointer",
+                "asset_pointer": "sediment://file_00000000de7071f5a040189908a355a1",
+                "size_bytes": 85998,
+                "format": "wav",
+                "metadata": {
+                  "start_timestamp": null,
+                  "end_timestamp": null,
+                  "pretokenized_vq": null,
+                  "interruptions": null,
+                  "original_audio_source": null,
+                  "transcription": null,
+                  "word_transcription": null,
+                  "start": 0.0,
+                  "end": 1.79
+                }
+              },
+              "audio_start_timestamp": 148.64509310899302
+            }
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 1.0,
+        "metadata": {
+          "voice_mode_message": true,
+          "request_id": "req_fa4315049d4d98dddb551a8555304e52/6zgl",
+          "message_source": null,
+          "timestamp_": "absolute",
+          "real_time_audio_has_video": false
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "20c02b79-2cfb-4bfc-9a9d-a52868a707b8",
+      "children": [
+        "3b0e5082-50cf-4140-93cb-0cd9a5b84fd0"
+      ]
+    },
+    "3b0e5082-50cf-4140-93cb-0cd9a5b84fd0": {
+      "id": "3b0e5082-50cf-4140-93cb-0cd9a5b84fd0",
+      "message": {
+        "id": "3b0e5082-50cf-4140-93cb-0cd9a5b84fd0",
+        "author": {
+          "role": "assistant",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762338644.286724,
+        "update_time": null,
+        "content": {
+          "content_type": "multimodal_text",
+          "parts": [
+            {
+              "content_type": "audio_transcription",
+              "text": "Absolutely, just let me know anytime. I’m right here if",
+              "direction": "out",
+              "decoding_id": null
+            },
+            {
+              "expiry_datetime": "2026-05-04T10:30:43.481166+00:00",
+              "content_type": "audio_asset_pointer",
+              "asset_pointer": "sediment://file_00000000059c71f5ae50b8e195d3e6f4",
+              "size_bytes": 96078,
+              "format": "wav",
+              "metadata": {
+                "start_timestamp": null,
+                "end_timestamp": null,
+                "pretokenized_vq": null,
+                "interruptions": null,
+                "original_audio_source": null,
+                "transcription": null,
+                "word_transcription": null,
+                "start": 0.0,
+                "end": 2.0
+              }
+            }
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": true,
+        "weight": 1.0,
+        "metadata": {
+          "citations": [],
+          "content_references": [],
+          "finish_details": {
+            "type": "stop",
+            "stop_tokens": [
+              200002
+            ]
+          },
+          "is_complete": true,
+          "parent_id": "1b7279f6-cf05-4a0e-8335-3805fe1950a1",
+          "turn_exchange_id": "e35a8e4f-9d73-4861-bfc8-a6143ac2c2e4",
+          "timestamp_": "absolute",
+          "model_switcher_deny": []
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "1b7279f6-cf05-4a0e-8335-3805fe1950a1",
+      "children": []
+    }
+  },
+  "moderation_results": [],
+  "current_node": "3b0e5082-50cf-4140-93cb-0cd9a5b84fd0",
+  "plugin_ids": null,
+  "conversation_id": "690b26ba-4c2c-8329-8735-b7261b8b392b",
+  "conversation_template_id": null,
+  "gizmo_id": null,
+  "gizmo_type": null,
+  "is_archived": false,
+  "is_starred": null,
+  "safe_urls": [
+    "https://www.instagram.com/reel/DP4GJeTDbJ1/?igsh=YW5naWczeHJsbzg2||||Susu",
+    "https://www.instagram.com/p/DQSGRCCjIu9/?img_index=5&igsh=MXhnMWI2bm9zc3B4bA=="
+  ],
+  "blocked_urls": [],
+  "default_model_slug": "gpt-4o",
+  "conversation_origin": null,
+  "is_read_only": null,
+  "voice": "vale",
+  "async_status": null,
+  "disabled_tool_ids": [],
+  "is_do_not_remember": false,
+  "memory_scope": "global_enabled",
+  "context_scopes": null,
+  "sugar_item_id": null,
+  "sugar_item_visible": false,
+  "is_study_mode": false,
+  "owner": null
+}

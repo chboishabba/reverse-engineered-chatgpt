@@ -1,0 +1,434 @@
+{
+  "title": "New chat",
+  "create_time": 1762393096.870852,
+  "update_time": 1762393110.573909,
+  "mapping": {
+    "client-created-root": {
+      "id": "client-created-root",
+      "message": null,
+      "parent": null,
+      "children": [
+        "6c968eef-5d45-43f2-a5be-c8a4aad90c72"
+      ]
+    },
+    "6c968eef-5d45-43f2-a5be-c8a4aad90c72": {
+      "id": "6c968eef-5d45-43f2-a5be-c8a4aad90c72",
+      "message": {
+        "id": "6c968eef-5d45-43f2-a5be-c8a4aad90c72",
+        "author": {
+          "role": "system",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": null,
+        "update_time": null,
+        "content": {
+          "content_type": "text",
+          "parts": [
+            ""
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": true,
+        "weight": 0.0,
+        "metadata": {
+          "is_visually_hidden_from_conversation": true
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "client-created-root",
+      "children": [
+        "18e2d7b0-8162-4814-a5d5-08f30cb05b03"
+      ]
+    },
+    "18e2d7b0-8162-4814-a5d5-08f30cb05b03": {
+      "id": "18e2d7b0-8162-4814-a5d5-08f30cb05b03",
+      "message": {
+        "id": "18e2d7b0-8162-4814-a5d5-08f30cb05b03",
+        "author": {
+          "role": "system",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": null,
+        "update_time": null,
+        "content": {
+          "content_type": "text",
+          "parts": [
+            ""
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 1.0,
+        "metadata": {
+          "contextual_answers_message_type": "identity_prompt",
+          "is_contextual_answers_system_message": true,
+          "is_visually_hidden_from_conversation": true
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "6c968eef-5d45-43f2-a5be-c8a4aad90c72",
+      "children": [
+        "054aff37-8117-44eb-91aa-01a66140ccde"
+      ]
+    },
+    "054aff37-8117-44eb-91aa-01a66140ccde": {
+      "id": "054aff37-8117-44eb-91aa-01a66140ccde",
+      "message": {
+        "id": "054aff37-8117-44eb-91aa-01a66140ccde",
+        "author": {
+          "role": "user",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762393095.916,
+        "update_time": null,
+        "content": {
+          "content_type": "text",
+          "parts": [
+            "could you please graph y=mx+b^2 and show me the output?"
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 1.0,
+        "metadata": {
+          "developer_mode_connector_ids": [],
+          "message_source": null,
+          "request_id": "5303ae71-adcb-40d2-873d-f3ffd01d2566",
+          "selected_github_repos": [],
+          "selected_sources": [],
+          "serialization_metadata": {
+            "custom_symbol_offsets": []
+          },
+          "timestamp_": "absolute",
+          "turn_exchange_id": "c56039ab-ec9b-479c-9cd5-aec4df3ce6f9"
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "18e2d7b0-8162-4814-a5d5-08f30cb05b03",
+      "children": [
+        "342db6bc-97e4-419c-a3ba-ab864e0a20d0"
+      ]
+    },
+    "342db6bc-97e4-419c-a3ba-ab864e0a20d0": {
+      "id": "342db6bc-97e4-419c-a3ba-ab864e0a20d0",
+      "message": {
+        "id": "342db6bc-97e4-419c-a3ba-ab864e0a20d0",
+        "author": {
+          "role": "assistant",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762393096.7550533,
+        "update_time": null,
+        "content": {
+          "content_type": "model_editable_context",
+          "model_set_context": "",
+          "repository": null,
+          "repo_summary": null,
+          "structured_context": null
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 1.0,
+        "metadata": {
+          "default_model_slug": "gpt-5",
+          "message_type": "next",
+          "model_slug": "gpt-5",
+          "parent_id": "054aff37-8117-44eb-91aa-01a66140ccde",
+          "request_id": "5303ae71-adcb-40d2-873d-f3ffd01d2566",
+          "timestamp_": "absolute",
+          "turn_exchange_id": "c56039ab-ec9b-479c-9cd5-aec4df3ce6f9",
+          "model_switcher_deny": []
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "054aff37-8117-44eb-91aa-01a66140ccde",
+      "children": [
+        "d1ff1313-e040-4b31-bd24-e37f99241ace"
+      ]
+    },
+    "d1ff1313-e040-4b31-bd24-e37f99241ace": {
+      "id": "d1ff1313-e040-4b31-bd24-e37f99241ace",
+      "message": {
+        "id": "d1ff1313-e040-4b31-bd24-e37f99241ace",
+        "author": {
+          "role": "system",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762393096.944413,
+        "update_time": null,
+        "content": {
+          "content_type": "text",
+          "parts": [
+            ""
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 1.0,
+        "metadata": {
+          "command": "prompt",
+          "contextual_answers_message_type": "sources_and_filters_prompt",
+          "default_model_slug": "gpt-5",
+          "is_contextual_answers_system_message": true,
+          "is_visually_hidden_from_conversation": true,
+          "message_type": "next",
+          "model_slug": "gpt-5",
+          "parent_id": "342db6bc-97e4-419c-a3ba-ab864e0a20d0",
+          "request_id": "5303ae71-adcb-40d2-873d-f3ffd01d2566",
+          "timestamp_": "absolute",
+          "turn_exchange_id": "c56039ab-ec9b-479c-9cd5-aec4df3ce6f9"
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "342db6bc-97e4-419c-a3ba-ab864e0a20d0",
+      "children": [
+        "e7b6a817-9fdd-4f6f-b407-ed6523f51320"
+      ]
+    },
+    "e7b6a817-9fdd-4f6f-b407-ed6523f51320": {
+      "id": "e7b6a817-9fdd-4f6f-b407-ed6523f51320",
+      "message": {
+        "id": "e7b6a817-9fdd-4f6f-b407-ed6523f51320",
+        "author": {
+          "role": "assistant",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762393096.765163,
+        "update_time": 1762393100.933633,
+        "content": {
+          "content_type": "code",
+          "language": "unknown",
+          "response_format_name": null,
+          "text": "import numpy as np\r\nimport matplotlib.pyplot as plt\r\n\r\n# Define parameters\r\nm = 2\r\nb = 3\r\n\r\n# Generate x values\r\nx = np.linspace(-10, 10, 400)\r\n\r\n# Calculate y = m*x + b^2\r\ny = m * x + b**2\r\n\r\n# Plot\r\nplt.figure()\r\nplt.plot(x, y, label=f\"y = {m}x + {b}² = {m}x + {b**2}\")\r\nplt.title(\"Graph of y = mx + b²\")\r\nplt.xlabel(\"x\")\r\nplt.ylabel(\"y\")\r\nplt.legend()\r\nplt.grid(True)\r\nplt.show()"
+        },
+        "status": "finished_successfully",
+        "end_turn": false,
+        "weight": 1.0,
+        "metadata": {
+          "finish_details": {
+            "type": "stop",
+            "stop_tokens": [
+              200007
+            ]
+          },
+          "is_complete": true,
+          "citations": [],
+          "content_references": [],
+          "request_id": "5303ae71-adcb-40d2-873d-f3ffd01d2566",
+          "message_type": "next",
+          "model_slug": "gpt-5",
+          "default_model_slug": "gpt-5",
+          "parent_id": "d1ff1313-e040-4b31-bd24-e37f99241ace",
+          "turn_exchange_id": "c56039ab-ec9b-479c-9cd5-aec4df3ce6f9",
+          "timestamp_": "absolute",
+          "model_switcher_deny": []
+        },
+        "recipient": "python",
+        "channel": null
+      },
+      "parent": "d1ff1313-e040-4b31-bd24-e37f99241ace",
+      "children": [
+        "8017d9d1-c214-4062-9a48-f53be292993a"
+      ]
+    },
+    "8017d9d1-c214-4062-9a48-f53be292993a": {
+      "id": "8017d9d1-c214-4062-9a48-f53be292993a",
+      "message": {
+        "id": "8017d9d1-c214-4062-9a48-f53be292993a",
+        "author": {
+          "role": "tool",
+          "name": "python",
+          "metadata": {}
+        },
+        "create_time": 1762393101.9996977,
+        "update_time": 1762393109.1054442,
+        "content": {
+          "content_type": "execution_output",
+          "text": "\n<<ImageDisplayed>>"
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 1.0,
+        "metadata": {
+          "is_complete": true,
+          "aggregate_result": {
+            "status": "success",
+            "run_id": "b87f5178-a3c3-4a21-bf7f-9e55cc536df4",
+            "start_time": 1762393101.9996977,
+            "update_time": 1762393109.1054442,
+            "code": "import numpy as np\r\nimport matplotlib.pyplot as plt\r\n\r\n# Define parameters\r\nm = 2\r\nb = 3\r\n\r\n# Generate x values\r\nx = np.linspace(-10, 10, 400)\r\n\r\n# Calculate y = m*x + b^2\r\ny = m * x + b**2\r\n\r\n# Plot\r\nplt.figure()\r\nplt.plot(x, y, label=f\"y = {m}x + {b}² = {m}x + {b**2}\")\r\nplt.title(\"Graph of y = mx + b²\")\r\nplt.xlabel(\"x\")\r\nplt.ylabel(\"y\")\r\nplt.legend()\r\nplt.grid(True)\r\nplt.show()",
+            "end_time": 1762393109.1054442,
+            "final_expression_output": null,
+            "in_kernel_exception": null,
+            "system_exception": null,
+            "messages": [
+              {
+                "message_type": "image",
+                "time": 1762393108.774303,
+                "sender": "server",
+                "image_payload": null,
+                "image_url": "file-service://file-TCFUxRdCEL4Cx2EHNKnNJ3",
+                "width": 1714,
+                "height": 1101
+              }
+            ],
+            "jupyter_messages": [
+              {
+                "msg_type": "status",
+                "parent_header": {
+                  "msg_id": "a95040e3-9bf43c6256c08ad1f646321e_3_2",
+                  "version": "5.3"
+                },
+                "content": {
+                  "execution_state": "busy"
+                }
+              },
+              {
+                "msg_type": "execute_input",
+                "parent_header": {
+                  "msg_id": "a95040e3-9bf43c6256c08ad1f646321e_3_2",
+                  "version": "5.3"
+                }
+              },
+              {
+                "msg_type": "display_data",
+                "parent_header": {
+                  "msg_id": "a95040e3-9bf43c6256c08ad1f646321e_3_2",
+                  "version": "5.3"
+                },
+                "content": {
+                  "data": {
+                    "text/plain": "<Figure size 2000x1200 with 1 Axes>",
+                    "image/vnd.openai.fileservice2.png": "{\"url\": \"file-service://file-TCFUxRdCEL4Cx2EHNKnNJ3\", \"image_width\": 1714, \"image_height\": 1101, \"bytes\": 81201}",
+                    "image/vnd.openai.fileservice.png": "file-service://file-TCFUxRdCEL4Cx2EHNKnNJ3"
+                  }
+                }
+              },
+              {
+                "msg_type": "status",
+                "parent_header": {
+                  "msg_id": "a95040e3-9bf43c6256c08ad1f646321e_3_2",
+                  "version": "5.3"
+                },
+                "content": {
+                  "execution_state": "idle"
+                }
+              }
+            ],
+            "timeout_triggered": null
+          },
+          "ada_visualizations": [
+            {
+              "type": "chart",
+              "file_id": "file-LuMJ5QCq37epWGSzF84ENc",
+              "title": "Graph of y = mx + b²",
+              "chart_type": "line",
+              "fallback_to_image": false
+            }
+          ],
+          "request_id": "5303ae71-adcb-40d2-873d-f3ffd01d2566",
+          "message_type": "next",
+          "model_slug": "gpt-5",
+          "default_model_slug": "gpt-5",
+          "parent_id": "e7b6a817-9fdd-4f6f-b407-ed6523f51320",
+          "turn_exchange_id": "c56039ab-ec9b-479c-9cd5-aec4df3ce6f9",
+          "timestamp_": "absolute"
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "e7b6a817-9fdd-4f6f-b407-ed6523f51320",
+      "children": [
+        "04cbdd30-0ff8-459f-acee-bac779a81da2"
+      ]
+    },
+    "04cbdd30-0ff8-459f-acee-bac779a81da2": {
+      "id": "04cbdd30-0ff8-459f-acee-bac779a81da2",
+      "message": {
+        "id": "04cbdd30-0ff8-459f-acee-bac779a81da2",
+        "author": {
+          "role": "assistant",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1762393109.109013,
+        "update_time": 1762393110.436229,
+        "content": {
+          "content_type": "text",
+          "parts": [
+            "Here’s the plot of \\( y = mx + b^2 \\) using \\( m = 2 \\) and \\( b = 3 \\), giving the equation \\( y = 2x + 9 \\)."
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": true,
+        "weight": 1.0,
+        "metadata": {
+          "finish_details": {
+            "type": "stop",
+            "stop_tokens": [
+              200002
+            ]
+          },
+          "is_complete": true,
+          "content_references": [],
+          "citations": [],
+          "request_id": "5303ae71-adcb-40d2-873d-f3ffd01d2566",
+          "message_type": "next",
+          "model_slug": "gpt-5",
+          "default_model_slug": "gpt-5",
+          "parent_id": "8017d9d1-c214-4062-9a48-f53be292993a",
+          "turn_exchange_id": "c56039ab-ec9b-479c-9cd5-aec4df3ce6f9",
+          "timestamp_": "absolute",
+          "model_switcher_deny": []
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "8017d9d1-c214-4062-9a48-f53be292993a",
+      "children": []
+    }
+  },
+  "moderation_results": [],
+  "current_node": "04cbdd30-0ff8-459f-acee-bac779a81da2",
+  "plugin_ids": null,
+  "conversation_id": "690bfc07-c340-8321-a83c-9fe4f34e33f4",
+  "conversation_template_id": null,
+  "gizmo_id": null,
+  "gizmo_type": null,
+  "is_archived": false,
+  "is_starred": null,
+  "safe_urls": [
+    "https://docs.google.com/presentation/d/11n0Wjuik6jHQFe-gRLV2LOg7CQHGf-CM_JX0Y-Io_RI/edit#slide=id.g2ef8699e0eb_48_36",
+    "https://www.notion.so/9162f50b62b080124ca4db47ba6f2e54",
+    "https://docs.google.com/spreadsheets/d/1HmkfBJulhu50S6L9wuRsaVC9VL1LpbxpmgRzn33SxsQ/edit?gid=676408861#gid=676408861",
+    "https://www.instagram.com/p/DQSGRCCjIu9/?img_index=5&igsh=MXhnMWI2bm9zc3B4bA==",
+    "https://docs.google.com/document/d/1WF0NB9fnxhDPEi_arGSp18Kev9KXdoX-IePIE8KJgCQ/edit?tab=t.0#heading=h.e3mmf6q9l82j",
+    "https://docs.google.com/document/d/1WF0NB9fnxhDPEi_arGSp18Kev9KXdoX-IePIE8KJgCQ",
+    "https://www.instagram.com/reel/DP4GJeTDbJ1/?igsh=YW5naWczeHJsbzg2||||Susu"
+  ],
+  "blocked_urls": [],
+  "default_model_slug": "gpt-5",
+  "conversation_origin": null,
+  "is_read_only": null,
+  "voice": null,
+  "async_status": null,
+  "disabled_tool_ids": [],
+  "is_do_not_remember": false,
+  "memory_scope": "global_enabled",
+  "context_scopes": null,
+  "sugar_item_id": null,
+  "sugar_item_visible": false,
+  "is_study_mode": false,
+  "owner": null
+}

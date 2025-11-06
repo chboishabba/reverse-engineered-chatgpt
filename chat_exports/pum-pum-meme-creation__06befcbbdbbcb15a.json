@@ -1,0 +1,431 @@
+{
+  "title": "Pum Pum Meme Creation",
+  "create_time": 1747313297.22984,
+  "update_time": 1762390400.616508,
+  "mapping": {
+    "client-created-root": {
+      "id": "client-created-root",
+      "message": null,
+      "parent": null,
+      "children": [
+        "2ae3e2d6-db6f-474d-8ef3-22d29d243f61"
+      ]
+    },
+    "2ae3e2d6-db6f-474d-8ef3-22d29d243f61": {
+      "id": "2ae3e2d6-db6f-474d-8ef3-22d29d243f61",
+      "message": {
+        "id": "2ae3e2d6-db6f-474d-8ef3-22d29d243f61",
+        "author": {
+          "role": "system",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": null,
+        "update_time": null,
+        "content": {
+          "content_type": "text",
+          "parts": [
+            ""
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": true,
+        "weight": 0.0,
+        "metadata": {
+          "is_visually_hidden_from_conversation": true
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "client-created-root",
+      "children": [
+        "a97f95ee-d934-4a68-bd48-83335de86b39"
+      ]
+    },
+    "a97f95ee-d934-4a68-bd48-83335de86b39": {
+      "id": "a97f95ee-d934-4a68-bd48-83335de86b39",
+      "message": {
+        "id": "a97f95ee-d934-4a68-bd48-83335de86b39",
+        "author": {
+          "role": "user",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1747313296.742,
+        "update_time": null,
+        "content": {
+          "content_type": "text",
+          "parts": [
+            "Emma Chandra\nI miss him so badly\n\n    1d\n\n    Reply\n\nBirthdays\nContacts\n\nCommunity chats\n\nGroup chats\n\nToday at 10:46 PM\n10:46 PM\nアビー\nAre you not fixing to do so?\nYou sent\nmy early internet days say no click random porn where it's not belong lol\nYou sent\nthat's a virusse\nアビー\nI thought you were an honourable pum pum enjoyer\nYou sent\nvirrussy\nアビー\nIsn't it just yt shorts\nYou replied to アビー\nyes brother inshallah with the keyword being honourable, please allow me to upgrade you to central etc\nYou sent\n\nCHATGPT THIS IS YOUR TASK:\nYou sent\nアビー\nCan you get chatgpt to make the meme of average pum pum enjoyer vs average weener fan"
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 1.0,
+        "metadata": {
+          "selected_github_repos": [],
+          "serialization_metadata": {
+            "custom_symbol_offsets": []
+          },
+          "dictation": false,
+          "request_id": "9402bfa8cfed4877-SJC",
+          "message_source": null,
+          "timestamp_": "absolute",
+          "message_type": null
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "2ae3e2d6-db6f-474d-8ef3-22d29d243f61",
+      "children": [
+        "b6cd9f8f-0d83-439a-94d2-133d9ca1f7a9"
+      ]
+    },
+    "b6cd9f8f-0d83-439a-94d2-133d9ca1f7a9": {
+      "id": "b6cd9f8f-0d83-439a-94d2-133d9ca1f7a9",
+      "message": {
+        "id": "b6cd9f8f-0d83-439a-94d2-133d9ca1f7a9",
+        "author": {
+          "role": "assistant",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1747313309.259097,
+        "update_time": null,
+        "content": {
+          "content_type": "model_editable_context",
+          "model_set_context": "",
+          "repository": null,
+          "repo_summary": null,
+          "structured_context": null
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 1.0,
+        "metadata": {
+          "message_type": null,
+          "model_slug": "gpt-4o",
+          "default_model_slug": "auto",
+          "parent_id": "a97f95ee-d934-4a68-bd48-83335de86b39",
+          "request_id": "9402bfa8cfed4877-SJC",
+          "timestamp_": "absolute",
+          "model_switcher_deny": []
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "a97f95ee-d934-4a68-bd48-83335de86b39",
+      "children": [
+        "811dc51c-a6b0-485d-8568-d70895f44d2e"
+      ]
+    },
+    "811dc51c-a6b0-485d-8568-d70895f44d2e": {
+      "id": "811dc51c-a6b0-485d-8568-d70895f44d2e",
+      "message": {
+        "id": "811dc51c-a6b0-485d-8568-d70895f44d2e",
+        "author": {
+          "role": "assistant",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1747313297.329237,
+        "update_time": null,
+        "content": {
+          "content_type": "text",
+          "parts": [
+            "Absolutely, here's a meme-style text for:\n\n**\"Average Pum Pum Enjoyer vs Average Weener Fan\"** – in the classic meme format.\n\n---\n\n**🗿 Average Weener Fan**  \n- “bro I found this crazy link on a shady forum”  \n- Falls for every .exe file titled \"hotgirlsnow\"  \n- Wears socks in the shower  \n- Thinks incognito mode protects from the FBI  \n- Watches ads till the end  \n- Calls it “virrussy” and clicks anyway\n\n**🧘‍♂️ Average Pum Pum Enjoyer (Honourable)**  \n- “Inshallah brother, I use only ethically sourced content”  \n- VPN on, tabs organized, bookmarks labeled  \n- Has adblock and morals  \n- Spiritual connection to the pum pum  \n- Refuses to click unless it’s central-certified  \n- Says *“we elevate, not desecrate”*\n\n---\n\nIf you want it as an actual meme image, I can generate that too—just let me know the vibe (e.g., Chad vs Virgin format, Wojaks, simple text graphic, etc.)."
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": true,
+        "weight": 1.0,
+        "metadata": {
+          "finish_details": {
+            "type": "stop",
+            "stop_tokens": [
+              200002
+            ]
+          },
+          "is_complete": true,
+          "citations": [],
+          "content_references": [],
+          "message_type": null,
+          "model_slug": "gpt-4o",
+          "default_model_slug": "auto",
+          "parent_id": "b6cd9f8f-0d83-439a-94d2-133d9ca1f7a9",
+          "request_id": "9402bfa8cfed4877-SJC",
+          "timestamp_": "absolute",
+          "model_switcher_deny": []
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "b6cd9f8f-0d83-439a-94d2-133d9ca1f7a9",
+      "children": [
+        "aad0b3f9-a2a5-4401-9ee2-c12dd2f8c130"
+      ]
+    },
+    "aad0b3f9-a2a5-4401-9ee2-c12dd2f8c130": {
+      "id": "aad0b3f9-a2a5-4401-9ee2-c12dd2f8c130",
+      "message": {
+        "id": "aad0b3f9-a2a5-4401-9ee2-c12dd2f8c130",
+        "author": {
+          "role": "user",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1747313329.755,
+        "update_time": null,
+        "content": {
+          "content_type": "text",
+          "parts": [
+            "now please make the image"
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 1.0,
+        "metadata": {
+          "selected_github_repos": [],
+          "serialization_metadata": {
+            "custom_symbol_offsets": []
+          },
+          "dictation": false,
+          "request_id": "9402c0771ee84877-SJC",
+          "message_source": null,
+          "timestamp_": "absolute",
+          "message_type": null
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "811dc51c-a6b0-485d-8568-d70895f44d2e",
+      "children": [
+        "00ea6200-8505-4324-bccf-a49d26518552"
+      ]
+    },
+    "00ea6200-8505-4324-bccf-a49d26518552": {
+      "id": "00ea6200-8505-4324-bccf-a49d26518552",
+      "message": {
+        "id": "00ea6200-8505-4324-bccf-a49d26518552",
+        "author": {
+          "role": "assistant",
+          "name": null,
+          "metadata": {}
+        },
+        "create_time": 1747313330.4584,
+        "update_time": null,
+        "content": {
+          "content_type": "text",
+          "parts": [
+            "{\n  \"prompt\": \"A meme comparing two characters in split screen: on the left side, 'Average Weener Fan' – a disheveled, clueless looking man sitting in a dark messy room, clicking on sketchy pop-ups, with a worried expression and open tabs filled with viruses and spam. Labels include: 'Falls for shady links', 'Calls it virrussy', 'Wears socks in shower'. On the right side, 'Average Pum Pum Enjoyer' – a calm, confident man in a bright, clean room, with a halo or glowing aura, using a VPN, organized browser tabs, and ethical content. Labels include: 'Honourable', 'Uses VPN', 'Central-certified only', 'We elevate, not desecrate'. The aesthetic is humorous and meme-like.\",\n  \"size\": \"1024x1024\"\n}"
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": false,
+        "weight": 1.0,
+        "metadata": {
+          "finish_details": {
+            "type": "stop",
+            "stop_tokens": [
+              200007
+            ]
+          },
+          "is_complete": true,
+          "citations": [],
+          "content_references": [],
+          "message_type": null,
+          "model_slug": "gpt-4o",
+          "default_model_slug": "auto",
+          "parent_id": "aad0b3f9-a2a5-4401-9ee2-c12dd2f8c130",
+          "request_id": "9402c0771ee84877-SJC",
+          "timestamp_": "absolute",
+          "model_switcher_deny": []
+        },
+        "recipient": "t2uay3k.sj1i4kz",
+        "channel": null
+      },
+      "parent": "aad0b3f9-a2a5-4401-9ee2-c12dd2f8c130",
+      "children": [
+        "b6b7d3ac-22a7-4e0f-96d3-046adf238b95"
+      ]
+    },
+    "b6b7d3ac-22a7-4e0f-96d3-046adf238b95": {
+      "id": "b6b7d3ac-22a7-4e0f-96d3-046adf238b95",
+      "message": {
+        "id": "b6b7d3ac-22a7-4e0f-96d3-046adf238b95",
+        "author": {
+          "role": "tool",
+          "name": "t2uay3k.sj1i4kz",
+          "metadata": {}
+        },
+        "create_time": 1747313349.522592,
+        "update_time": null,
+        "content": {
+          "content_type": "text",
+          "parts": [
+            "Processing image\n\nLots of people are creating images right now, so this might take a bit. We'll notify you when your image is ready."
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": true,
+        "weight": 1.0,
+        "metadata": {
+          "ui_card": true,
+          "ui_card_title": "Processing image",
+          "ui_card_description": "Lots of people are creating images right now, so this might take a bit. We'll notify you when your image is ready.",
+          "ui_card_shimmer": true,
+          "image_gen_async": true,
+          "trigger_async_ux": true,
+          "image_gen_task_id": "chatimagegen-us-prod.fck9d:user-voFwYjWyBJOLCXiBMG7mJqVX-b56459ed-05b1-43fc-962e-0a8f40ba16ab:US",
+          "permissions": [
+            {
+              "type": "notification",
+              "status": "requested",
+              "notification_channel_id": "image_gen",
+              "notification_channel_name": "ImageGen",
+              "notification_priority": 4
+            }
+          ],
+          "message_type": null,
+          "model_slug": "gpt-4o",
+          "default_model_slug": "auto",
+          "parent_id": "00ea6200-8505-4324-bccf-a49d26518552",
+          "request_id": "9402c0771ee84877-SJC",
+          "timestamp_": "absolute",
+          "is_visually_hidden_from_conversation": true
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "00ea6200-8505-4324-bccf-a49d26518552",
+      "children": [
+        "0960bad3-4bb1-4746-84b6-79da472e8641"
+      ]
+    },
+    "0960bad3-4bb1-4746-84b6-79da472e8641": {
+      "id": "0960bad3-4bb1-4746-84b6-79da472e8641",
+      "message": {
+        "id": "0960bad3-4bb1-4746-84b6-79da472e8641",
+        "author": {
+          "role": "tool",
+          "name": "t2uay3k.sj1i4kz",
+          "metadata": {}
+        },
+        "create_time": 1747313436.578826,
+        "update_time": null,
+        "content": {
+          "content_type": "multimodal_text",
+          "parts": [
+            {
+              "content_type": "image_asset_pointer",
+              "asset_pointer": "sediment://file_0000000093646230b08c23976a76b0a2",
+              "size_bytes": 1479573,
+              "width": 1024,
+              "height": 1024,
+              "fovea": null,
+              "metadata": {
+                "dalle": {
+                  "gen_id": "08232744-e628-45f8-989e-3c178864927f",
+                  "prompt": "",
+                  "seed": null,
+                  "parent_gen_id": null,
+                  "edit_op": null,
+                  "serialization_title": "DALL-E generation metadata"
+                },
+                "gizmo": null,
+                "generation": {
+                  "gen_id": "08232744-e628-45f8-989e-3c178864927f",
+                  "gen_size": "xlimage",
+                  "seed": null,
+                  "parent_gen_id": null,
+                  "height": 1024,
+                  "width": 1024,
+                  "transparent_background": false,
+                  "serialization_title": "Image Generation metadata",
+                  "orientation": null
+                },
+                "container_pixel_height": 1024,
+                "container_pixel_width": 1024,
+                "emu_omit_glimpse_image": null,
+                "emu_patches_override": null,
+                "lpe_keep_patch_ijhw": null,
+                "sanitized": false,
+                "asset_pointer_link": null,
+                "watermarked_asset_pointer": null
+              }
+            }
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 0.0,
+        "metadata": {
+          "image_gen_title": "Meme: Weener Fan vs. Pum Pum Enjoyer",
+          "timestamp_": "absolute",
+          "message_type": null
+        },
+        "recipient": "all",
+        "channel": null
+      },
+      "parent": "b6b7d3ac-22a7-4e0f-96d3-046adf238b95",
+      "children": [
+        "df4f0d97-e261-44e0-9d60-f43f302cb4e3"
+      ]
+    },
+    "df4f0d97-e261-44e0-9d60-f43f302cb4e3": {
+      "id": "df4f0d97-e261-44e0-9d60-f43f302cb4e3",
+      "message": {
+        "id": "df4f0d97-e261-44e0-9d60-f43f302cb4e3",
+        "author": {
+          "role": "tool",
+          "name": "t2uay3k.sj1i4kz",
+          "metadata": {}
+        },
+        "create_time": 1747313436.579018,
+        "update_time": null,
+        "content": {
+          "content_type": "text",
+          "parts": [
+            "GPT-4o returned 1 images. From now on, do not say or show ANYTHING. Please end this turn now. I repeat: From now on, do not say or show ANYTHING. Please end this turn now. Do not summarize the image. Do not ask followup question. Just end the turn and do not do anything else."
+          ]
+        },
+        "status": "finished_successfully",
+        "end_turn": null,
+        "weight": 0.0,
+        "metadata": {
+          "timestamp_": "absolute",
+          "message_type": null
+        },
+        "recipient": "assistant",
+        "channel": null
+      },
+      "parent": "0960bad3-4bb1-4746-84b6-79da472e8641",
+      "children": []
+    }
+  },
+  "moderation_results": [],
+  "current_node": "df4f0d97-e261-44e0-9d60-f43f302cb4e3",
+  "plugin_ids": null,
+  "conversation_id": "6825e290-f1bc-8002-9e5a-73b675157c0c",
+  "conversation_template_id": null,
+  "gizmo_id": null,
+  "gizmo_type": null,
+  "is_archived": false,
+  "is_starred": null,
+  "safe_urls": [],
+  "blocked_urls": [],
+  "default_model_slug": "auto",
+  "conversation_origin": null,
+  "is_read_only": null,
+  "voice": null,
+  "async_status": null,
+  "disabled_tool_ids": [],
+  "is_do_not_remember": null,
+  "memory_scope": "global_enabled",
+  "context_scopes": null,
+  "sugar_item_id": null,
+  "sugar_item_visible": false,
+  "is_study_mode": false,
+  "owner": null
+}
