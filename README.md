@@ -108,6 +108,17 @@ the interactive CLI module.
 > `pip install --upgrade pip` and `pip install -e .`) before starting the CLI
 > with `python -m re_gpt.cli`.
 
+### Running Tests
+
+To run the test suite, use the `run_tests.sh` script:
+
+```sh
+./scripts/run_tests.sh
+```
+
+This script will ensure the test dependencies are installed in the virtual
+environment and then execute the tests.
+
 ### Configuration
 
 Copy `config.example.ini` to `config.ini` and update the placeholder values or

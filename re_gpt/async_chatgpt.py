@@ -34,11 +34,12 @@ MODELS = {
 
 
 class AsyncConversation:
-    def __init__(self, chatgpt, conversation_id=None, model=None):
+    def __init__(self, chatgpt, conversation_id=None, model=None, title=None):
         self.chatgpt = chatgpt
         self.conversation_id = conversation_id
         self.parent_id = None
         self.model = model
+        self.title = title
 
     async def fetch_chat(self) -> dict:
         """
@@ -62,6 +63,7 @@ class AsyncConversation:
         try:
             chat = response.json()
             self.parent_id = list(chat.get("mapping", {}))[-1]
+            self.title = chat.get("title")
             model_slug = get_model_slug(chat)
             self.model = next(
                 (
@@ -140,6 +142,10 @@ class AsyncConversation:
 
                             yield processed_response
                             full_message = decoded_json
+                if not full_message:
+                    raise UnexpectedResponseError(
+                        "No message received", server_response
+                    )
                 self.conversation_id = full_message["conversation_id"]
                 self.parent_id = full_message["message"]["id"]
                 if (
@@ -503,25 +509,26 @@ class AsyncChatGPT:
 
         return headers
 
-    def get_conversation(self, conversation_id: str) -> AsyncConversation:
+    def get_conversation(self, conversation_id: str, title: Optional[str] = None) -> AsyncConversation:
         """
         Makes an instance of class Conversation and return it.
 
         Args:
             conversation_id (str): The ID of the conversation to fetch.
+            title (Optional[str]): The title of the conversation.
 
         Returns:
             Conversation: Conversation object.
         """
 
-        return AsyncConversation(self, conversation_id)
+        return AsyncConversation(self, conversation_id, title=title)
 
     def create_new_conversation(
-        self, model: Optional[str] = "gpt-3.5"
+        self, model: Optional[str] = "gpt-3.5", title: Optional[str] = None
     ) -> AsyncConversation:
         if model not in MODELS:
             raise InvalidModelName(model, MODELS)
-        return AsyncConversation(self, model=model)
+        return AsyncConversation(self, model=model, title=title)
 
     async def delete_conversation(self, conversation_id: str) -> dict:
         """
@@ -682,17 +689,22 @@ class AsyncChatGPT:
 
         headers = self.build_request_headers()
         
-        raw_response = (await self.session.get(
-            url=url, headers=headers
-        ))
+        try:
+            raw_response = await self.session.get(url=url, headers=headers)
+            raw_response.raise_for_status()
+        except Exception:
+            return False
+
         try:
             response = raw_response.json()
-            if 'account_ordering' in response and 'accounts' in response:
-                account_id = response['account_ordering'][0]
-                if account_id in response['accounts']:
-                    return 'shared_websocket' in response['accounts'][account_id]['features']
-        except:
-            raise UnexpectedResponseError('Could not enable ws_mode', raw_response.text)
+        except Exception:
+            return False
+
+        if "account_ordering" in response and "accounts" in response:
+            account_id = response["account_ordering"][0]
+            account_data = response["accounts"].get(account_id, {})
+            features = account_data.get("features", [])
+            return "shared_websocket" in features
 
         return False
 
