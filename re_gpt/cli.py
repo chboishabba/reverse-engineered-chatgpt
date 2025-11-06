@@ -9,6 +9,7 @@ import subprocess
 import shutil
 from typing import Dict, Iterable, List, Optional
 import argparse
+import functools
 
 from .errors import InvalidSessionToken, TokenNotProvided
 from .storage import ConversationStorage, extract_ordered_messages
@@ -488,11 +489,18 @@ def handle_download_command(
             continue
 
         messages = extract_ordered_messages(chat)
+        asset_fetcher = None
+        if hasattr(chatgpt, "download_asset"):
+            asset_fetcher = functools.partial(
+                chatgpt.download_asset,
+                conversation_id=conversation_id,
+            )
+
         result = storage.persist_chat(
             conversation_id,
             chat,
             messages,
-            asset_fetcher=getattr(chatgpt, "download_asset", None),
+            asset_fetcher=asset_fetcher,
         )
         if result.new_messages:
             status = f"+{result.new_messages} new message(s)"

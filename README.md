@@ -82,6 +82,17 @@ ChatGPT has an official API which can be used to interface your Python code to i
 
 - Python >= 3.9
 
+> [!TIP]
+> Some endpoints (e.g., the shared chat pages at `https://chatgpt.com/c/...`) are
+> occasionally guarded by Cloudflare challenges. When that happens the CLI can
+> launch a temporary Playwright browser so you can clear the check and reuse the
+> resulting cookies. Install the optional browser helper with:
+>
+> ```sh
+> pip install re-gpt[browser]
+> playwright install firefox
+> ```
+
 ### Installation
 
 ```sh

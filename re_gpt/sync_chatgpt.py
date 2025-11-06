@@ -7,9 +7,11 @@ from websockets.exceptions import ConnectionClosed
 import json
 import base64
 import asyncio
+import html
+import re
 from queue import Queue
 from threading import Thread
-from typing import Callable, Generator, Optional
+from typing import Any, Callable, Generator, Optional
 
 from curl_cffi.requests import Session
 
@@ -153,6 +155,25 @@ class SyncConversation(AsyncConversation):
         # raising the error outside the 'except' block to prevent the 'During handling of the above exception, another exception occurred' error
         if error is not None:
             raise UnexpectedResponseError(error, server_response)
+
+    def fetch_share_html(self, allow_browser_fallback: bool = True) -> str:
+        """
+        Retrieve the rendered conversation page from chatgpt.com.
+
+        Args:
+            allow_browser_fallback (bool): Launch a Playwright browser if
+                Cloudflare challenges the request. Defaults to True.
+
+        Returns:
+            str: HTML content of the conversation page.
+        """
+        if not self.conversation_id:
+            raise ValueError("conversation_id must be provided")
+
+        return self.chatgpt.fetch_conversation_page(
+            self.conversation_id,
+            allow_browser_fallback=allow_browser_fallback,
+        )
 
     def send_message(self, payload: dict) -> Generator[bytes, None, None]:
         """
@@ -363,6 +384,7 @@ class SyncChatGPT(AsyncChatGPT):
         exit_callback_function: Optional[Callable] = None,
         auth_token: Optional[str] = None,
         websocket_mode: Optional[bool] = False,
+        browser_challenge_solver: Optional[str] = "firefox",
     ):
         """
         Initializes an instance of the class.
@@ -373,6 +395,9 @@ class SyncChatGPT(AsyncChatGPT):
             exit_callback_function (Optional[callable]): A function to be called on exit. Defaults to None.
             auth_token (Optional[str]): An authentication token. Defaults to None.
             websocket_mode (Optional[bool]): Toggle whether to use WebSocket for chat. Defaults to False.
+            browser_challenge_solver (Optional[str]): Browser engine to use when solving
+                interactive Cloudflare challenges (``\"firefox\"`` by default). Set to
+                ``None`` to disable the Playwright fallback.
         """
         super().__init__(
             proxies=proxies,
@@ -382,6 +407,10 @@ class SyncChatGPT(AsyncChatGPT):
             websocket_mode=websocket_mode,
         )
 
+        self.browser_challenge_solver = browser_challenge_solver
+        self._frontend_cookies: dict[str, str] = {}
+        self._conversation_page_cache: dict[str, str] = {}
+
         self.stop_websocket_flag = False
         self.stop_websocket = None
 
@@ -389,6 +418,22 @@ class SyncChatGPT(AsyncChatGPT):
         self.session = Session(
             impersonate="chrome110", timeout=99999, proxies=self.proxies
         )
+        self._frontend_cookies = {}
+        if self.session_token:
+            self._frontend_cookies["__Secure-next-auth.session-token"] = (
+                self.session_token
+            )
+            try:
+                self.session.cookies.set(
+                    "__Secure-next-auth.session-token",
+                    self.session_token,
+                    domain="chatgpt.com",
+                    path="/",
+                )
+            except Exception:
+                self.session.cookies.set(
+                    "__Secure-next-auth.session-token", self.session_token
+                )
 
         if self.generate_arkose_token:
             self.binary_path = sync_get_binary_path(self.session)
@@ -469,7 +514,7 @@ class SyncChatGPT(AsyncChatGPT):
 
         return response.json()
 
-    def resolve_asset_pointer(self, asset_pointer: str) -> str:
+    def resolve_asset_pointer(self, asset_pointer: str, conversation_id: Optional[str] = None) -> str:
         """
         Resolve an asset pointer into a downloadable URL.
 
@@ -482,37 +527,188 @@ class SyncChatGPT(AsyncChatGPT):
         if not asset_pointer:
             raise ValueError("asset_pointer must be provided")
 
+        pointer = asset_pointer.strip()
+        if not pointer:
+            raise ValueError("asset_pointer must be provided")
+
+        if pointer.startswith(("http://", "https://")):
+            return pointer
+
         url = CHATGPT_API.format("asset/get")
         headers = dict(self.build_request_headers())
         headers["Accept"] = "application/json"
 
-        response = self.session.post(
-            url=url,
-            headers=headers,
-            json={"asset_pointer": asset_pointer},
-        )
-        if response.status_code != 200:
-            raise UnexpectedResponseError(
-                f"Failed to resolve asset pointer {asset_pointer}",
-                response.text,
+        def _register_candidate(value: str, store: list[str]) -> None:
+            candidate = value.strip()
+            if candidate and candidate not in store:
+                store.append(candidate)
+
+        candidates: list[str] = []
+        _register_candidate(pointer, candidates)
+
+        scheme = ""
+        remainder = pointer
+        if "://" in pointer:
+            scheme, remainder = pointer.split("://", 1)
+            scheme = scheme.strip().lower()
+            remainder = remainder.strip()
+        else:
+            remainder = remainder.strip()
+
+        if not scheme and remainder:
+            _register_candidate(f"file-service://{remainder}", candidates)
+        elif scheme in {"file", "fileservice"} and remainder:
+            _register_candidate(f"file-service://{remainder}", candidates)
+        elif scheme == "file-service" and remainder:
+            _register_candidate(f"file-service://{remainder}", candidates)
+        elif scheme == "sediment" and remainder:
+            _register_candidate(f"file-service://{remainder}", candidates)
+            if remainder.startswith("file_"):
+                _register_candidate(f"file-service://{remainder.replace('file_', 'file-', 1)}", candidates)
+
+        attempt_errors: list[str] = []
+        for candidate in candidates:
+            response = self.session.post(
+                url=url,
+                headers=headers,
+                json={"asset_pointer": candidate},
             )
+            if response.status_code != 200:
+                attempt_errors.append(
+                    f"{candidate} -> {response.status_code}: {getattr(response, 'text', '')}"
+                )
+                continue
 
-        try:
-            payload = response.json()
-        except Exception as exc:  # noqa: BLE001 - bubble unexpected payload issues.
-            raise UnexpectedResponseError(exc, response.text) from exc
+            try:
+                payload = response.json()
+            except Exception as exc:  # noqa: BLE001 - bubble unexpected payload issues.
+                attempt_errors.append(f"{candidate} -> invalid JSON: {exc}")
+                continue
 
-        for key in ("download_url", "url", "signed_url", "downloadUrl", "content_url"):
-            download_url = payload.get(key)
+            for key in ("download_url", "url", "signed_url", "downloadUrl", "content_url"):
+                download_url = payload.get(key)
+                if download_url:
+                    return download_url
+
+            attempt_errors.append(f"{candidate} -> missing download URL")
+
+        def _iter_file_ids(pointer_value: str) -> list[str]:
+            if "://" in pointer_value:
+                _, raw = pointer_value.split("://", 1)
+            else:
+                raw = pointer_value
+            raw = raw.strip().strip("/")
+            if not raw:
+                return []
+            options: list[str] = []
+
+            def _register(value: str) -> None:
+                cleaned = value.strip()
+                if cleaned and cleaned not in options:
+                    options.append(cleaned)
+
+            _register(raw)
+            if raw.startswith("file_"):
+                _register(raw.replace("file_", "file-", 1))
+            if raw.startswith("file-"):
+                _register(raw.replace("file-", "file_", 1))
+            return options
+
+        def _resolve_via_files_api(pointer_value: str) -> Optional[str]:
+            file_ids = _iter_file_ids(pointer_value)
+            if not file_ids:
+                return None
+
+            for file_id in file_ids:
+                files_url = f"https://chatgpt.com/backend-api/files/{file_id}/download"
+                files_headers = dict(self.build_request_headers())
+                files_headers.pop("Content-Type", None)
+
+                response = self.session.get(files_url, headers=files_headers)
+                if response.status_code != 200:
+                    attempt_errors.append(
+                        f"{files_url} -> {response.status_code}: {getattr(response, 'text', '')}"
+                    )
+                    continue
+
+                try:
+                    payload = response.json()
+                except Exception as exc:
+                    attempt_errors.append(f"{files_url} -> invalid JSON: {exc}")
+                    continue
+
+                for key in ("download_url", "url", "signed_url", "downloadUrl", "content_url"):
+                    download_url = payload.get(key)
+                    if download_url:
+                        return download_url
+
+                attempt_errors.append(f"{files_url} -> missing download URL")
+
+            return None
+
+        for candidate in candidates:
+            download_url = _resolve_via_files_api(candidate)
+            if download_url:
+                return download_url
+
+        def _resolve_via_conversation_page(conv_id: str, pointer_values: list[str]) -> Optional[str]:
+            try:
+                cached = self._conversation_page_cache.get(conv_id)
+                if cached is None:
+                    cached = self.fetch_conversation_page(conv_id)
+                    self._conversation_page_cache[conv_id] = cached
+            except Exception as exc:
+                attempt_errors.append(f"conversation page {conv_id} -> {exc}")
+                return None
+
+            identifiers: list[str] = []
+            for pointer_value in pointer_values:
+                for candidate_id in _iter_file_ids(pointer_value):
+                    if candidate_id not in identifiers:
+                        identifiers.append(candidate_id)
+
+            if not identifiers:
+                return None
+
+            def _search(source_html: str) -> Optional[str]:
+                if not source_html:
+                    return None
+                decoded = html.unescape(source_html)
+                pattern = re.compile(r"https://chatgpt\.com/backend-api/[^\s\"'>]+")
+                for match in pattern.finditer(decoded):
+                    url_match = match.group(0)
+                    if any(identifier in url_match for identifier in identifiers):
+                        return url_match
+                return None
+
+            url_match = _search(cached)
+            if url_match:
+                return url_match
+
+            if self.browser_challenge_solver:
+                try:
+                    rendered = self._render_frontend_page(f"https://chatgpt.com/c/{conv_id}")
+                except Exception as exc:
+                    attempt_errors.append(f"rendered conversation page {conv_id} -> {exc}")
+                else:
+                    self._conversation_page_cache[conv_id] = rendered
+                    url_match = _search(rendered)
+                    if url_match:
+                        return url_match
+
+            return None
+
+        if conversation_id:
+            download_url = _resolve_via_conversation_page(conversation_id, candidates)
             if download_url:
                 return download_url
 
         raise UnexpectedResponseError(
             f"Asset pointer {asset_pointer} did not include a download URL",
-            response.text,
+            "; ".join(error for error in attempt_errors if error) or "",
         )
 
-    def download_asset(self, asset_pointer: str) -> AssetDownload:
+    def download_asset(self, asset_pointer: str, conversation_id: Optional[str] = None) -> AssetDownload:
         """
         Download the binary payload for an asset pointer.
 
@@ -522,7 +718,7 @@ class SyncChatGPT(AsyncChatGPT):
         Returns:
             AssetDownload: Binary payload and optional content type.
         """
-        download_url = self.resolve_asset_pointer(asset_pointer)
+        download_url = self.resolve_asset_pointer(asset_pointer, conversation_id=conversation_id)
 
         response = self.session.get(
             download_url,
@@ -777,8 +973,249 @@ class SyncChatGPT(AsyncChatGPT):
             "Sec-GPC": "1",
         }
 
-        response = self.session.get(url=home_url, headers=headers)
+        response = self._perform_frontend_get(
+            home_url,
+            headers=headers,
+            purpose="ChatGPT home page",
+            allow_browser_fallback=True,
+        )
         response_cookies = response.cookies
         self.devive_id = response_cookies.get("oai-did")
 
         return response_cookies
+
+    def _build_frontend_page_headers(self) -> dict[str, str]:
+        headers = {
+            "User-Agent": USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+        }
+        return headers
+
+    def _merge_cookie_container(self, cookies: Any) -> None:
+        if not cookies:
+            return
+
+        jar = None
+        if hasattr(cookies, "jar"):
+            jar = cookies.jar
+        elif isinstance(cookies, dict):
+            jar = [
+                type("CookieTuple", (), {"name": key, "value": value, "domain": "chatgpt.com", "path": "/"})
+                for key, value in cookies.items()
+            ]
+        elif isinstance(cookies, list):
+            jar = cookies
+
+        if jar is None:
+            return
+
+        for cookie in jar:
+            if isinstance(cookie, dict):
+                name = cookie.get("name")
+                value = cookie.get("value")
+                domain = cookie.get("domain", "") or ""
+                path = cookie.get("path", "/") or "/"
+            else:
+                name = getattr(cookie, "name", None)
+                value = getattr(cookie, "value", None)
+                domain = getattr(cookie, "domain", "") or ""
+                path = getattr(cookie, "path", "/") or "/"
+            if not name or value is None:
+                continue
+            normalized_domain = domain.lstrip(".") or "chatgpt.com"
+            if not normalized_domain.endswith("chatgpt.com"):
+                continue
+            self._frontend_cookies[name] = value
+            try:
+                self.session.cookies.set(name, value, domain=normalized_domain, path=path)
+            except Exception:
+                self.session.cookies.set(name, value)
+
+    @staticmethod
+    def _looks_like_cloudflare_challenge(response) -> bool:
+        if response is None:
+            return False
+        if response.status_code in {403, 503} or "cf-mitigated" in response.headers:
+            try:
+                snippet = response.text
+            except Exception:
+                snippet = ""
+            snippet = (snippet or "").lower()
+            if "just a moment" in snippet or "__cf_chl_" in snippet or "cloudflare" in snippet:
+                return True
+        return False
+
+    def _launch_browser_challenge_solver(self, url: str) -> None:
+        if not self.browser_challenge_solver:
+            raise UnexpectedResponseError(
+                "Cloudflare challenge encountered, but browser fallback is disabled.",
+                "Set 'browser_challenge_solver' to a Playwright engine (e.g. 'firefox') to enable it.",
+            )
+
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError as exc:
+            raise UnexpectedResponseError(
+                "Cloudflare challenge encountered, but Playwright is not installed.",
+                "Install with `pip install playwright` and run `playwright install firefox`.",
+            ) from exc
+
+        print(
+            f"Cloudflare challenged the request for {url}.\n"
+            "Launching Playwright so you can solve it (a browser window should appear). "
+            "Complete the verification, confirm the target page loads, then return here "
+            "and press Enter to continue."
+        )
+
+        with sync_playwright() as playwright:
+            solver = (self.browser_challenge_solver or "firefox").lower()
+            if solver == "chromium":
+                browser = playwright.chromium.launch(headless=False)
+            elif solver == "webkit":
+                browser = playwright.webkit.launch(headless=False)
+            else:
+                browser = playwright.firefox.launch(headless=False)
+
+            context = browser.new_context(user_agent=USER_AGENT)
+
+            if self._frontend_cookies:
+                cookie_payload = []
+                for name, value in self._frontend_cookies.items():
+                    cookie_payload.append(
+                        {
+                            "name": name,
+                            "value": value,
+                            "domain": "chatgpt.com",
+                            "path": "/",
+                            "secure": True,
+                        }
+                    )
+                try:
+                    context.add_cookies(cookie_payload)
+                except Exception:
+                    # If a cookie add fails, fall back to launching without them.
+                    pass
+
+            page = context.new_page()
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            except Exception:
+                # Allow manual navigation if automatic load times out.
+                pass
+
+            input("Press Enter after the page finishes loading and the challenge is cleared...")
+
+            cookies = context.cookies()
+            browser.close()
+
+        self._merge_cookie_container(cookies)
+
+    def _render_frontend_page(self, url: str) -> str:
+        if not self.browser_challenge_solver:
+            raise UnexpectedResponseError(
+                "Playwright rendering requested, but browser fallback is disabled.",
+                "Set 'browser_challenge_solver' to an engine (e.g. 'firefox') to enable it.",
+            )
+
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError as exc:
+            raise UnexpectedResponseError(
+                "Playwright rendering requested, but Playwright is not installed.",
+                "Install with `pip install playwright` and run `playwright install firefox`.",
+            ) from exc
+
+        solver = (self.browser_challenge_solver or "firefox").lower()
+        with sync_playwright() as playwright:
+            if solver == "chromium":
+                browser = playwright.chromium.launch(headless=True)
+            elif solver == "webkit":
+                browser = playwright.webkit.launch(headless=True)
+            else:
+                browser = playwright.firefox.launch(headless=True)
+
+            context = browser.new_context(user_agent=USER_AGENT)
+
+            if self._frontend_cookies:
+                cookie_payload = []
+                for name, value in self._frontend_cookies.items():
+                    cookie_payload.append(
+                        {
+                            "name": name,
+                            "value": value,
+                            "domain": "chatgpt.com",
+                            "path": "/",
+                            "secure": True,
+                        }
+                    )
+                try:
+                    context.add_cookies(cookie_payload)
+                except Exception:
+                    pass
+
+            page = context.new_page()
+            page.goto(url, wait_until="networkidle", timeout=60000)
+            html_content = page.content()
+            cookies = context.cookies()
+            browser.close()
+
+        self._merge_cookie_container(cookies)
+        return html_content
+
+    def _perform_frontend_get(
+        self,
+        url: str,
+        headers: dict[str, str],
+        purpose: str,
+        allow_browser_fallback: bool = True,
+    ):
+        response = self.session.get(
+            url=url,
+            headers=headers,
+            cookies=dict(self._frontend_cookies) or None,
+        )
+        self._merge_cookie_container(response.cookies)
+
+        if self._looks_like_cloudflare_challenge(response) and allow_browser_fallback:
+            self._launch_browser_challenge_solver(url)
+            response = self.session.get(
+                url=url,
+                headers=headers,
+                cookies=dict(self._frontend_cookies) or None,
+            )
+            self._merge_cookie_container(response.cookies)
+
+        if self._looks_like_cloudflare_challenge(response):
+            raise UnexpectedResponseError(
+                f"Unable to retrieve {purpose} due to Cloudflare blocking the request.",
+                response.text if hasattr(response, "text") else "",
+            )
+
+        return response
+
+    def fetch_conversation_page(
+        self,
+        conversation_id: str,
+        allow_browser_fallback: bool = True,
+    ) -> str:
+        if not conversation_id:
+            raise ValueError("conversation_id must be provided")
+
+        url = f"https://chatgpt.com/c/{conversation_id}"
+        headers = self._build_frontend_page_headers()
+        response = self._perform_frontend_get(
+            url,
+            headers=headers,
+            purpose=f"conversation page {conversation_id}",
+            allow_browser_fallback=allow_browser_fallback,
+        )
+        return response.text

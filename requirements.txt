@@ -5,3 +5,4 @@ cffi
 curl_cffi
 pycparser==2.22
 websockets==12.0
+playwright
