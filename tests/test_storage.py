@@ -58,6 +58,24 @@ class TestConversationStorage(unittest.TestCase):
         key = self.storage.get_conversation_key("conv-1")
         self.assertIsNotNone(key)
 
+    def test_search_conversations_finds_matches(self) -> None:
+        catalog = [
+            {"id": "conv-1", "title": "SENSIBLAW briefing", "update_time": 50.0},
+            {"id": "conv-2", "title": "General notes", "update_time": 100.0},
+        ]
+
+        self.storage.record_conversations(catalog)
+
+        results = self.storage.search_conversations("sensiblaw")
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], "conv-1")
+        self.assertEqual(results[0]["title"], "SENSIBLAW briefing")
+        self.assertIn("update_time", results[0])
+
+        empty = self.storage.search_conversations("non-existent")
+        self.assertEqual(empty, [])
+
     def test_persist_chat_detects_new_messages(self) -> None:
         conversation_id = "conv-123"
         chat = _make_chat("Sample Chat", "Hello", "Hi there")
