@@ -11,7 +11,7 @@ from typing import Dict, Iterable, List, Optional
 import argparse
 import functools
 
-from .errors import InvalidSessionToken, TokenNotProvided
+from .errors import InvalidSessionToken, TokenNotProvided, UnexpectedResponseError
 from .storage import ConversationStorage, extract_ordered_messages
 from .sync_chatgpt import SyncChatGPT, SyncConversation
 from .utils import get_session_token
@@ -54,6 +54,27 @@ def verify_session_token(token: str) -> None:
     except Exception as exc:
         # Normalise unexpected failures during verification to InvalidSessionToken so the caller can prompt again.
         raise InvalidSessionToken from exc
+
+
+def is_token_expired_error(exc: UnexpectedResponseError) -> bool:
+    """Return ``True`` if *exc* represents an expired authentication token."""
+
+    def _contains_expired_marker(payload: str) -> bool:
+        if not payload:
+            return False
+        lowered = payload.lower()
+        return "token_expired" in lowered or "authentication token is expired" in lowered
+
+    current = exc
+    while isinstance(current, UnexpectedResponseError):
+        if _contains_expired_marker(getattr(current, "server_response", "")):
+            return True
+        original = getattr(current, "original_exception", None)
+        if not isinstance(original, UnexpectedResponseError):
+            break
+        current = original
+
+    return _contains_expired_marker(str(exc))
 
 
 def obtain_session_token(key: Optional[str] = None) -> str:
@@ -571,8 +592,8 @@ def main() -> None:
             if not stripped_prompt:
                 continue
 
-            try:
-                response = stream_response(conversation.chat(prompt))
+            def send_prompt_and_record() -> Optional[str]:
+                response_text = stream_response(conversation.chat(prompt))
                 conversation_id = conversation.conversation_id
                 if conversation_id:
                     storage.append_message(
@@ -581,13 +602,51 @@ def main() -> None:
                         content=stripped_prompt,
                         create_time=time.time(),
                     )
-                    if response:
+                    if response_text:
                         storage.append_message(
                             conversation_id,
                             author="assistant",
-                            content=response.strip(),
+                            content=response_text.strip(),
                             create_time=time.time(),
                         )
+                return response_text
+
+            try:
+                send_prompt_and_record()
+            except UnexpectedResponseError as exc:
+                if is_token_expired_error(exc):
+                    print(
+                        "Authentication token expired. Refreshing session token...",
+                        flush=True,
+                    )
+                    try:
+                        chatgpt.refresh_auth_token()
+                    except InvalidSessionToken:
+                        print(
+                            "The session token used for authentication is no longer valid. "
+                            "Please restart the CLI with a fresh __Secure-next-auth.session-token."
+                        )
+                        break
+                    except Exception as refresh_exc:  # noqa: BLE001
+                        print(
+                            "Failed to refresh the authentication token automatically: "
+                            f"{refresh_exc}"
+                        )
+                        print(f"Encountered an error while chatting: {exc}")
+                        continue
+                    else:
+                        print("Session refreshed. Retrying your message now...", flush=True)
+                        try:
+                            send_prompt_and_record()
+                        except UnexpectedResponseError as retry_exc:
+                            print(f"Encountered an error while chatting: {retry_exc}")
+                        except Exception as retry_exc:  # noqa: BLE001
+                            print(f"Encountered an error while chatting: {retry_exc}")
+                        else:
+                            continue
+                        continue
+
+                print(f"Encountered an error while chatting: {exc}")
             except Exception as exc:  # noqa: BLE001
                 print(f"Encountered an error while chatting: {exc}")
 
