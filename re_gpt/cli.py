@@ -11,7 +11,7 @@ from typing import Dict, Iterable, List, Optional
 import argparse
 import functools
 
-from .errors import InvalidSessionToken, TokenNotProvided
+from .errors import InvalidSessionToken, TokenNotProvided, UnexpectedResponseError
 from .storage import ConversationStorage, extract_ordered_messages
 from .sync_chatgpt import SyncChatGPT, SyncConversation
 from .utils import get_session_token
@@ -54,6 +54,27 @@ def verify_session_token(token: str) -> None:
     except Exception as exc:
         # Normalise unexpected failures during verification to InvalidSessionToken so the caller can prompt again.
         raise InvalidSessionToken from exc
+
+
+def is_token_expired_error(exc: UnexpectedResponseError) -> bool:
+    """Return ``True`` if *exc* represents an expired authentication token."""
+
+    def _contains_expired_marker(payload: str) -> bool:
+        if not payload:
+            return False
+        lowered = payload.lower()
+        return "token_expired" in lowered or "authentication token is expired" in lowered
+
+    current = exc
+    while isinstance(current, UnexpectedResponseError):
+        if _contains_expired_marker(getattr(current, "server_response", "")):
+            return True
+        original = getattr(current, "original_exception", None)
+        if not isinstance(original, UnexpectedResponseError):
+            break
+        current = original
+
+    return _contains_expired_marker(str(exc))
 
 
 def obtain_session_token(key: Optional[str] = None) -> str:
@@ -114,6 +135,65 @@ def obtain_session_token(key: Optional[str] = None) -> str:
                 "ChatGPT rejected the token. Ensure you copied the entire "
                 "`__Secure-next-auth.session-token` value and try again.\n"
             )
+
+
+def prompt_for_session_token_refresh(chatgpt: SyncChatGPT) -> Optional[str]:
+    """Prompt the user to provide a replacement session token."""
+
+    print(
+        "\nThe current session token has expired. The CLI needs a fresh "
+        "`__Secure-next-auth.session-token` to continue."
+    )
+    print_token_instructions()
+
+    while True:
+        try:
+            user_input = input(
+                "Paste new session token (or type 'cancel' to exit): "
+            ).strip()
+        except EOFError:
+            print("\nInput stream closed. Unable to continue without a token.")
+            return None
+
+        if not user_input:
+            try:
+                user_input = get_session_token()
+                print("Using token found in config.ini or ~/.chatgpt_session.")
+            except TokenNotProvided:
+                print("No stored token available. Please paste the value manually.\n")
+                continue
+
+        if user_input.lower() == "cancel":
+            print("Token refresh cancelled by user.")
+            return None
+
+        try:
+            verify_session_token(user_input)
+        except TokenNotProvided:
+            print("An empty token was provided. Please try again.\n")
+            continue
+        except InvalidSessionToken:
+            print(
+                "ChatGPT rejected the token. Ensure you copied the entire "
+                "`__Secure-next-auth.session-token` value and try again.\n"
+            )
+            continue
+
+        try:
+            chatgpt.update_session_token(user_input)
+        except InvalidSessionToken:
+            print(
+                "The active session rejected the token. Please verify it and try again.\n"
+            )
+            continue
+        except Exception as exc:  # noqa: BLE001
+            print(
+                "Failed to update the session with the provided token: "
+                f"{exc}"
+            )
+            return None
+
+        return user_input
 
 
 def _print_conversation_page(items: List[Dict], offset: int) -> None:
@@ -571,8 +651,8 @@ def main() -> None:
             if not stripped_prompt:
                 continue
 
-            try:
-                response = stream_response(conversation.chat(prompt))
+            def send_prompt_and_record() -> Optional[str]:
+                response_text = stream_response(conversation.chat(prompt))
                 conversation_id = conversation.conversation_id
                 if conversation_id:
                     storage.append_message(
@@ -581,13 +661,37 @@ def main() -> None:
                         content=stripped_prompt,
                         create_time=time.time(),
                     )
-                    if response:
+                    if response_text:
                         storage.append_message(
                             conversation_id,
                             author="assistant",
-                            content=response.strip(),
+                            content=response_text.strip(),
                             create_time=time.time(),
                         )
+                return response_text
+
+            try:
+                send_prompt_and_record()
+            except UnexpectedResponseError as exc:
+                if is_token_expired_error(exc):
+                    refreshed_token = prompt_for_session_token_refresh(chatgpt)
+                    if not refreshed_token:
+                        print("Unable to continue without a valid session token. Exiting chat.")
+                        break
+
+                    token = refreshed_token
+                    print("Session token updated. Retrying your message now...", flush=True)
+                    try:
+                        send_prompt_and_record()
+                    except UnexpectedResponseError as retry_exc:
+                        print(f"Encountered an error while chatting: {retry_exc}")
+                    except Exception as retry_exc:  # noqa: BLE001
+                        print(f"Encountered an error while chatting: {retry_exc}")
+                    else:
+                        continue
+                    continue
+
+                print(f"Encountered an error while chatting: {exc}")
             except Exception as exc:  # noqa: BLE001
                 print(f"Encountered an error while chatting: {exc}")
 

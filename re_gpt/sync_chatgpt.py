@@ -464,6 +464,37 @@ class SyncChatGPT(AsyncChatGPT):
 
         return self
 
+    def refresh_auth_token(self) -> None:
+        """Refresh the authentication credentials for the active session."""
+
+        if self.free_mode:
+            self.auth_cookie = self.fetch_free_mode_cookies()
+            return
+
+        self.auth_token = self.fetch_auth_token()
+
+    def update_session_token(self, new_token: str) -> None:
+        """Replace the session token used by the active client instance."""
+
+        self.session_token = new_token
+
+        # Update the stored cookie so subsequent requests use the new token.
+        self._frontend_cookies["__Secure-next-auth.session-token"] = new_token
+
+        if getattr(self, "session", None) is not None:
+            try:
+                self.session.cookies.set(
+                    "__Secure-next-auth.session-token",
+                    new_token,
+                    domain="chatgpt.com",
+                    path="/",
+                )
+            except Exception:
+                self.session.cookies.set("__Secure-next-auth.session-token", new_token)
+
+        # Force-refresh the downstream authentication credentials as well.
+        self.refresh_auth_token()
+
     def __exit__(self, *args):
         try:
             if self.exit_callback_function and callable(self.exit_callback_function):
