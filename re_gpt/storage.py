@@ -9,6 +9,7 @@ import re
 import sqlite3
 import time
 import unicodedata
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence, Tuple
@@ -114,6 +115,42 @@ def extract_ordered_messages(chat: Mapping[str, Any]) -> list[dict[str, Any]]:
     for index, message in enumerate(messages):
         message["message_index"] = index
     return messages
+
+
+def _coerce_timestamp(value: Any) -> Optional[float]:
+    """Best-effort conversion of timestamp-like values to ``float`` seconds."""
+
+    if value is None:
+        return None
+
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if not trimmed:
+            return None
+
+        try:
+            return float(trimmed)
+        except ValueError:
+            pass
+
+        normalized = trimmed
+        if normalized.endswith("Z"):
+            normalized = f"{normalized[:-1]}+00:00"
+
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+
+        return parsed.timestamp()
+
+    return None
 
 
 class ConversationStorage:
@@ -272,10 +309,13 @@ class ConversationStorage:
                 "id": str(conversation_id),
                 "title": title,
             }
-            if remote_update_time is not None:
-                entry["update_time"] = float(remote_update_time)
-            if last_seen_at is not None:
-                entry["last_seen_at"] = float(last_seen_at)
+            coerced_update = _coerce_timestamp(remote_update_time)
+            if coerced_update is not None:
+                entry["update_time"] = coerced_update
+
+            coerced_seen = _coerce_timestamp(last_seen_at)
+            if coerced_seen is not None:
+                entry["last_seen_at"] = coerced_seen
             results.append(entry)
 
         return results
@@ -341,6 +381,8 @@ class ConversationStorage:
         now = time.time()
         computed_key = self.compute_conversation_key(conversation_id, title)
 
+        normalized_remote_update = _coerce_timestamp(remote_update_time)
+
         with self._connection:
             self._connection.execute(
                 """
@@ -382,7 +424,7 @@ class ConversationStorage:
                     title,
                     now,
                     now,
-                    remote_update_time,
+                    normalized_remote_update,
                 ),
             )
 
@@ -408,13 +450,14 @@ class ConversationStorage:
                 continue
 
             title = entry.get("title")
-            remote_update = (
-                entry.get("last_updated")
-                or entry.get("update_time")
+            remote_update = _coerce_timestamp(
+                entry.get("last_updated") or entry.get("update_time")
             )
 
             is_new = conv_id not in existing_ids
-            self.ensure_conversation_record(conv_id, title, remote_update_time=remote_update)
+            self.ensure_conversation_record(
+                conv_id, title, remote_update_time=remote_update
+            )
             if is_new:
                 stats.added += 1
                 existing_ids.add(conv_id)
@@ -442,7 +485,9 @@ class ConversationStorage:
         remote_update: Optional[float] = None
         if isinstance(chat, Mapping):
             title = chat.get("title")
-            remote_update = chat.get("update_time") or chat.get("last_updated")
+            remote_update = _coerce_timestamp(
+                chat.get("update_time") or chat.get("last_updated")
+            )
 
         conversation_key = self.ensure_conversation_record(
             conversation_id,
