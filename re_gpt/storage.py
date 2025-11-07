@@ -243,6 +243,43 @@ class ConversationStorage:
         cursor = self._connection.execute("SELECT conversation_id FROM conversations")
         return {str(row[0]) for row in cursor.fetchall() if row[0]}
 
+    def search_conversations(self, keyword: str, limit: int = 50) -> list[dict[str, Any]]:
+        """Return conversation headers whose title contains ``keyword``."""
+
+        if not keyword:
+            return []
+
+        pattern = f"%{keyword.lower()}%"
+        cursor = self._connection.execute(
+            """
+            SELECT conversation_id, title, remote_update_time, last_seen_at
+            FROM conversations
+            WHERE title IS NOT NULL
+              AND LOWER(title) LIKE ?
+            ORDER BY COALESCE(remote_update_time, last_seen_at, 0) DESC,
+                     conversation_id ASC
+            LIMIT ?
+            """,
+            (pattern, limit),
+        )
+
+        results: list[dict[str, Any]] = []
+        for conversation_id, title, remote_update_time, last_seen_at in cursor.fetchall():
+            if not conversation_id:
+                continue
+
+            entry: dict[str, Any] = {
+                "id": str(conversation_id),
+                "title": title,
+            }
+            if remote_update_time is not None:
+                entry["update_time"] = float(remote_update_time)
+            if last_seen_at is not None:
+                entry["last_seen_at"] = float(last_seen_at)
+            results.append(entry)
+
+        return results
+
     def _backfill_conversation_metadata(self) -> None:
         if "conversation_id" not in self._conversation_table_columns:
             return
