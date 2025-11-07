@@ -158,6 +158,7 @@ class TestCli(unittest.TestCase):
         # Mock the storage object
         mock_storage = MagicMock()
         mock_storage.record_conversations.return_value = CatalogUpdateStats()
+        mock_storage.search_conversations.return_value = []
 
         # Run the conversation selection loop
         with patch('re_gpt.cli.SyncChatGPT', return_value=mock_chatgpt):
@@ -166,6 +167,29 @@ class TestCli(unittest.TestCase):
         # Assert that the search results are printed
         mock_print.assert_any_call("Found 1 conversation(s):")
         mock_storage.record_conversations.assert_called()
+
+    @patch('builtins.input', side_effect=['search Missing', 'q'])
+    @patch('builtins.print')
+    def test_search_conversation_uses_storage_catalog(self, mock_print, mock_input):
+        mock_chatgpt = MagicMock()
+        mock_chatgpt.list_conversations_page.return_value = {
+            'items': [
+                {'id': '456', 'title': 'Another Chat'}
+            ]
+        }
+
+        mock_storage = MagicMock()
+        mock_storage.record_conversations.return_value = CatalogUpdateStats()
+        mock_storage.search_conversations.return_value = [
+            {'id': 'abc-123', 'title': 'Missing Pieces'}
+        ]
+
+        with patch('re_gpt.cli.SyncChatGPT', return_value=mock_chatgpt):
+            cli._pick_conversation_id(mock_chatgpt, mock_storage)
+
+        mock_storage.search_conversations.assert_called_once_with('Missing')
+        mock_print.assert_any_call("Found 1 conversation(s):")
+        mock_print.assert_any_call("- Missing Pieces [abc-123]")
 
     @patch('builtins.input', side_effect=['next', 'prev', 'q'])
     @patch('builtins.print')

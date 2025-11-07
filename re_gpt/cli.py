@@ -309,6 +309,17 @@ def _pick_conversation_id(chatgpt: SyncChatGPT, storage: ConversationStorage) ->
                 if keyword in (conv.get("title") or "").lower()
             ]
             if not matches:
+                storage_matches = storage.search_conversations(argument)
+                if storage_matches:
+                    existing_ids = {conv.get("id") for conv in cached_conversations}
+                    for conv in storage_matches:
+                        cid = conv.get("id")
+                        if cid and cid not in existing_ids:
+                            cached_conversations.append(conv)
+                            existing_ids.add(cid)
+                    matches = storage_matches
+
+            if not matches:
                 print(f"No conversations matching '{argument}'.")
             else:
                 print(f"Found {len(matches)} conversation(s):")
