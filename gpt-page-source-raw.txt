@@ -1,0 +1,6 @@
+<html>
+  <body>
+    <img src="https://chatgpt.com/backend-api/estuary/content?id=file_abc123&sig=demo">
+    <img src="https://chatgpt.com/backend-api/estuary/content?id=file-xyz789&sig=demo">
+  </body>
+</html>

@@ -168,6 +168,8 @@ funcaptcha_bin
 test/
 config.ini
 .chatgpt_session
+.chatgpt_history.sqlite3
 test.py
 *.sublime-project
 *.sublime-workspace
+ChatGPT.html
