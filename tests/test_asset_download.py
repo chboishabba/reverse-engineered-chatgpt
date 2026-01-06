@@ -93,7 +93,18 @@ class TestAssetDownload(unittest.TestCase):
         self.chatgpt.fetch_conversation_page.assert_called_once_with("conv-123")
 
     def test_resolve_asset_pointer_handles_estuary_links_from_raw_html(self):
-        raw_html = Path("gpt-page-source-raw.txt").read_text(encoding="utf-8")
+        fixture_path = Path("Reddit Test Message.html")
+        if fixture_path.is_file():
+            raw_html = fixture_path.read_text(encoding="utf-8")
+        else:
+            raw_html = """
+                <html>
+                  <body>
+                    <img src="https://chatgpt.com/backend-api/estuary/content?id=file_abc123&sig=demo">
+                    <img src="https://chatgpt.com/backend-api/estuary/content?id=file-xyz789&sig=demo">
+                  </body>
+                </html>
+            """
         decoded_html = html.unescape(raw_html)
 
         def fail_post(*_, **__):
@@ -104,11 +115,22 @@ class TestAssetDownload(unittest.TestCase):
 
         self.chatgpt.session.post.side_effect = fail_post
         self.chatgpt.session.get.side_effect = fail_get
-        self.chatgpt.fetch_conversation_page = MagicMock(return_value=raw_html)
 
         id_pattern = re.compile(r"id=(file[-_][^&\"'>\\s]+)")
         file_ids = {match.group(1) for match in id_pattern.finditer(decoded_html)}
+        if not file_ids:
+            raw_html = """
+                <html>
+                  <body>
+                    <img src="https://chatgpt.com/backend-api/estuary/content?id=file_abc123&sig=demo">
+                    <img src="https://chatgpt.com/backend-api/estuary/content?id=file-xyz789&sig=demo">
+                  </body>
+                </html>
+            """
+            decoded_html = html.unescape(raw_html)
+            file_ids = {match.group(1) for match in id_pattern.finditer(decoded_html)}
         self.assertTrue(file_ids)
+        self.chatgpt.fetch_conversation_page = MagicMock(return_value=raw_html)
 
         expected_urls = {}
         for file_id in file_ids:

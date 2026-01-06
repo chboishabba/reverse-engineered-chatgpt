@@ -128,10 +128,10 @@ To run the test suite, use the `run_tests.sh` script:
 ```
 
 This script will ensure the test dependencies are installed in the virtual
-environment and then execute the tests. The test suite reads a local HTML
-fixture at `gpt-page-source-raw.txt` to validate asset parsing; keep this file
-in the repository root so the tests can load it. The script also installs the
-Playwright browser dependency, which requires network access during setup.
+environment and then execute the tests. The asset download tests use an inline
+HTML fixture, so no extra files are required in the repository root. The script
+also installs the Playwright browser dependency, which requires network access
+during setup.
 
 ### Configuration
 

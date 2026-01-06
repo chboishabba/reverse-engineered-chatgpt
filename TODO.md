@@ -1,5 +1,5 @@
 # TODO
 
-- [x] Add a minimal `gpt-page-source-raw.txt` fixture in the repo root so asset download tests can run.
-- [x] Document the fixture and Playwright download requirement in `README.md`.
-- [x] Keep the fixture as a minimal synthetic sample unless future HTML changes require an update.
+- [x] Update asset download tests to use an inline HTML fixture instead of `gpt-page-source-raw.txt`.
+- [x] Document test requirements in `README.md`.
+- [x] Keep fixture content minimal and synthetic when used in tests.
