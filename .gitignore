@@ -173,3 +173,4 @@ test.py
 *.sublime-project
 *.sublime-workspace
 ChatGPT.html
+gpt-page-source-raw.txt
