@@ -379,37 +379,6 @@ def run_noninteractive_view(
         print(notice_message)
     for line in lines:
         print(line)
-    """Print stored metadata for the requested conversation."""
-
-    if isinstance(storage, NullConversationStorage):
-        print("Storage disabled; inspection requires persisted conversation metadata.")
-        return
-
-    catalog = _collect_conversation_catalog(chatgpt, storage)
-    matching_entry = _match_conversation_selector(argument, catalog)
-    if not matching_entry:
-        print(f"Conversation '{argument}' not found.")
-        return
-
-    conversation_id = matching_entry.get("id")
-    if not conversation_id:
-        print(f"Conversation '{argument}' does not have an ID.")
-        return
-
-    summary = storage.get_conversation_summary(conversation_id)
-    if not summary:
-        print(
-            f"No metadata recorded locally for conversation {conversation_id}. "
-            "Run the download helper before inspecting it."
-        )
-        return
-
-    title = summary.get("title") or matching_entry.get("title") or "(no title)"
-    print(f"Conversation ID: {conversation_id}")
-    print(f"Title: {title}")
-    print(f"Remote update: {_format_timestamp(summary.get('remote_update_time'))}")
-    print(f"Last seen locally: {_format_timestamp(summary.get('last_seen_at'))}")
-    print(f"Messages cached locally: {summary.get('cached_message_count', 0)}")
 def handle_view_command(
     argument: str,
     chatgpt: SyncChatGPT,
@@ -944,138 +913,134 @@ def main() -> None:
                     cid = conv.get("id") or ""
                     title = conv.get("title") or "(no title)"
                     print(f"{cid}\t{title}")
-            return
-        
-        if args.view:
+        elif args.view:
             run_noninteractive_view(args.view, chatgpt, storage)
-            return
-        if args.inspect:
+        elif args.inspect:
             run_inspect_command(args.inspect, chatgpt, storage)
-            return
-        if args.download:
+        elif args.download:
             handle_download_command(f"download {args.download}", chatgpt, storage)
-            return
-        detected_model = None
-        try:
-            page = chatgpt.list_conversations_page(offset=0, limit=1)
-            items = page.get("items", [])
-            if items:
-                conversation_id = items[0].get("id")
-                if conversation_id:
-                    conversation = chatgpt.get_conversation(conversation_id)
-                    chat = conversation.fetch_chat()
-                    detected_model = get_model_slug(chat)
-        except Exception:
+        else:
             detected_model = None
-
-        if detected_model:
-            if default_model and detected_model != default_model:
-                choice = input(
-                    f"Detected model slug '{detected_model}' from your latest chat. "
-                    f"You configured '{default_model}'. Use detected slug instead? [y/N]: "
-                ).strip().lower()
-                if choice in {"y", "yes"}:
-                    default_model = detected_model
-            elif not default_model:
-                default_model = detected_model
-                print(f"Using detected model slug '{default_model}' for new chats.")
-
-        if not default_model:
-            prompt = (
-                "No default model slug detected. Enter one now, or press Enter to skip: "
-            )
-            entered_model = input(prompt).strip()
-            if entered_model:
-                default_model = entered_model
-            else:
-                print(
-                    "No model slug set. New chats may fail. "
-                    "Provide --model, RE_GPT_MODEL, or config.ini session.model."
-                )
-
-        chatgpt.default_model = default_model
-        print("\nSession established. Type 'exit', 'quit', or 'q' to leave the chat.")
-        print("Use 'download <conversation_id|title>', 'download all', or 'download list' to export chats.")
-        conversation = select_conversation(chatgpt, storage)
-
-        while True:
             try:
-                prompt = input("You> ")
-            except EOFError:
-                print("\nEOF received. Exiting chat.")
-                break
+                page = chatgpt.list_conversations_page(offset=0, limit=1)
+                items = page.get("items", [])
+                if items:
+                    conversation_id = items[0].get("id")
+                    if conversation_id:
+                        conversation = chatgpt.get_conversation(conversation_id)
+                        chat = conversation.fetch_chat()
+                        detected_model = get_model_slug(chat)
+            except Exception:
+                detected_model = None
 
-            stripped_prompt = prompt.strip()
-            lowered_prompt = stripped_prompt.lower()
+            if detected_model:
+                if default_model and detected_model != default_model:
+                    choice = input(
+                        f"Detected model slug '{detected_model}' from your latest chat. "
+                        f"You configured '{default_model}'. Use detected slug instead? [y/N]: "
+                    ).strip().lower()
+                    if choice in {"y", "yes"}:
+                        default_model = detected_model
+                elif not default_model:
+                    default_model = detected_model
+                    print(f"Using detected model slug '{default_model}' for new chats.")
 
-            if lowered_prompt in EXIT_COMMANDS:
-                print("Goodbye!")
-                break
-
-            if lowered_prompt.startswith("download"):
-                handle_download_command(stripped_prompt, chatgpt, storage)
-                continue
-
-            if not stripped_prompt:
-                continue
-
-            def send_prompt_and_record() -> Optional[str]:
-                response_text = stream_response(conversation.chat(prompt))
-                conversation_id = conversation.conversation_id
-                if conversation_id:
-                    storage.append_message(
-                        conversation_id,
-                        author="user",
-                        content=stripped_prompt,
-                        create_time=time.time(),
+            if not default_model:
+                prompt = (
+                    "No default model slug detected. Enter one now, or press Enter to skip: "
+                )
+                entered_model = input(prompt).strip()
+                if entered_model:
+                    default_model = entered_model
+                else:
+                    print(
+                        "No model slug set. New chats may fail. "
+                        "Provide --model, RE_GPT_MODEL, or config.ini session.model."
                     )
-                    if response_text:
+
+            chatgpt.default_model = default_model
+            print("\nSession established. Type 'exit', 'quit', or 'q' to leave the chat.")
+            print("Use 'download <conversation_id|title>', 'download all', or 'download list' to export chats.")
+            conversation = select_conversation(chatgpt, storage)
+
+            while True:
+                try:
+                    prompt = input("You> ")
+                except EOFError:
+                    print("\nEOF received. Exiting chat.")
+                    break
+
+                stripped_prompt = prompt.strip()
+                lowered_prompt = stripped_prompt.lower()
+
+                if lowered_prompt in EXIT_COMMANDS:
+                    print("Goodbye!")
+                    break
+
+                if lowered_prompt.startswith("download"):
+                    handle_download_command(stripped_prompt, chatgpt, storage)
+                    continue
+
+                if not stripped_prompt:
+                    continue
+
+                def send_prompt_and_record() -> Optional[str]:
+                    response_text = stream_response(conversation.chat(prompt))
+                    conversation_id = conversation.conversation_id
+                    if conversation_id:
                         storage.append_message(
                             conversation_id,
-                            author="assistant",
-                            content=response_text.strip(),
+                            author="user",
+                            content=stripped_prompt,
                             create_time=time.time(),
                         )
-                return response_text
+                        if response_text:
+                            storage.append_message(
+                                conversation_id,
+                                author="assistant",
+                                content=response_text.strip(),
+                                create_time=time.time(),
+                            )
+                    return response_text
 
-            try:
-                send_prompt_and_record()
-            except UnexpectedResponseError as exc:
-                if is_token_expired_error(exc):
-                    print(
-                        "Authentication token expired. Refreshing session token...",
-                        flush=True,
-                    )
-                    try:
-                        chatgpt.refresh_auth_token()
-                    except InvalidSessionToken:
+                try:
+                    send_prompt_and_record()
+                except UnexpectedResponseError as exc:
+                    if is_token_expired_error(exc):
                         print(
-                            "The session token used for authentication is no longer valid. "
-                            "Please restart the CLI with a fresh __Secure-next-auth.session-token."
+                            "Authentication token expired. Refreshing session token...",
+                            flush=True,
                         )
-                        break
-                    except Exception as refresh_exc: # noqa: BLE001
-                        print(
-                            "Failed to refresh the authentication token automatically: "
-                            f"{refresh_exc}"
-                        )
-                        print(f"Encountered an error while chatting: {exc}")
-                        continue
-                    else:
-                        print("Session refreshed. Retrying your message now...", flush=True)
                         try:
-                            send_prompt_and_record()
-                        except UnexpectedResponseError as retry_exc:
-                            print(f"Encountered an error while chatting: {retry_exc}")
-                        except Exception as retry_exc: # noqa: BLE001
-                            print(f"Encountered an error while chatting: {retry_exc}")
-                        else:
+                            chatgpt.refresh_auth_token()
+                        except InvalidSessionToken:
+                            print(
+                                "The session token used for authentication is no longer valid. "
+                                "Please restart the CLI with a fresh __Secure-next-auth.session-token."
+                            )
+                            break
+                        except Exception as refresh_exc: # noqa: BLE001
+                            print(
+                                "Failed to refresh the authentication token automatically: "
+                                f"{refresh_exc}"
+                            )
+                            print(f"Encountered an error while chatting: {exc}")
                             continue
-                        continue
+                        else:
+                            print("Session refreshed. Retrying your message now...", flush=True)
+                            try:
+                                send_prompt_and_record()
+                            except UnexpectedResponseError as retry_exc:
+                                print(f"Encountered an error while chatting: {retry_exc}")
+                            except Exception as retry_exc: # noqa: BLE001
+                                print(f"Encountered an error while chatting: {retry_exc}")
+                            else:
+                                continue
+                            continue
 
-                print(f"Encountered an error while chatting: {exc}")
-            except Exception as exc: # noqa: BLE001
-                print(f"Encountered an error while chatting: {exc}")
+                    print(f"Encountered an error while chatting: {exc}")
+                except Exception as exc: # noqa: BLE001
+                    print(f"Encountered an error while chatting: {exc}")
 
 
 if __name__ == "__main__":
