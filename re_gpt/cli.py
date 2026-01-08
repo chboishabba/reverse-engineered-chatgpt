@@ -6,6 +6,7 @@ import argparse
 import functools
 import subprocess
 import shutil
+import re
 import sys
 import tempfile
 import time
@@ -318,21 +319,38 @@ def run_noninteractive_view(
         )
         return
 
-    catalog = _collect_conversation_catalog(chatgpt, storage)
-    matching_entry = _match_conversation_selector(target, catalog)
-    conversation_id = (
-        matching_entry.get("id") if matching_entry else target
-    )
-    conversation_title = matching_entry.get("title") if matching_entry else None
+    conversation = None
+    conversation_id = None
+    conversation_title = None
 
-    try:
-        conversation = chatgpt.get_conversation(
-            conversation_id, title=conversation_title
-        )
-        chat = conversation.fetch_chat()
-    except Exception as exc:  # noqa: BLE001
-        print(f"Failed to fetch conversation {conversation_id}: {exc}")
-        return
+    # Try to fetch by ID first if it looks like a UUID
+    if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", target, re.IGNORECASE):
+        try:
+            conversation_id = target
+            conversation = chatgpt.get_conversation(conversation_id)
+            chat = conversation.fetch_chat()
+            conversation_title = conversation.title
+        except Exception:
+            conversation = None # Failed, will try to match by title
+
+    if conversation is None:
+        print("Could not fetch by ID, trying to match by title...", flush=True)
+        catalog = _collect_conversation_catalog(chatgpt, storage)
+        matching_entry = _match_conversation_selector(target, catalog)
+        if not matching_entry:
+            print(f"Failed to find conversation matching '{target}'.")
+            return
+
+        conversation_id = matching_entry.get("id")
+        conversation_title = matching_entry.get("title")
+        try:
+            conversation = chatgpt.get_conversation(
+                conversation_id, title=conversation_title
+            )
+            chat = conversation.fetch_chat()
+        except Exception as exc:
+            print(f"Failed to fetch conversation {conversation_id}: {exc}")
+            return
 
     messages = extract_ordered_messages(chat)
     since_index: Optional[int] = None
@@ -361,13 +379,6 @@ def run_noninteractive_view(
         print(notice_message)
     for line in lines:
         print(line)
-
-
-def run_inspect_command(
-    argument: str,
-    chatgpt: SyncChatGPT,
-    storage: ConversationStorage,
-) -> None:
     """Print stored metadata for the requested conversation."""
 
     if isinstance(storage, NullConversationStorage):
