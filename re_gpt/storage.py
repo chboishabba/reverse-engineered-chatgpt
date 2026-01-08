@@ -982,6 +982,33 @@ class ConversationStorage:
         row = cursor.fetchone()
         return int(row[0]) if row else 0
 
+    def get_conversation_summary(self, conversation_id: str) -> Optional[dict[str, Any]]:
+        """Return stored metadata for ``conversation_id`` if it exists."""
+
+        if not conversation_id:
+            raise ValueError("conversation_id must be provided")
+
+        cursor = self._connection.execute(
+            """
+            SELECT title, discovered_at, last_seen_at, remote_update_time, cached_message_count
+            FROM conversations
+            WHERE conversation_id = ?
+            """,
+            (conversation_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        title, discovered_at, last_seen_at, remote_update_time, cached_message_count = row
+        return {
+            "title": title,
+            "discovered_at": _coerce_timestamp(discovered_at),
+            "last_seen_at": _coerce_timestamp(last_seen_at),
+            "remote_update_time": _coerce_timestamp(remote_update_time),
+            "cached_message_count": int(cached_message_count or 0),
+        }
+
     def append_message(
         self,
         conversation_id: str,
@@ -1091,3 +1118,6 @@ class NullConversationStorage:
 
     def count_messages(self, conversation_id: str) -> int:
         return 0
+
+    def get_conversation_summary(self, conversation_id: str) -> Optional[dict[str, Any]]:
+        return None

@@ -1,4 +1,4 @@
-"""Interactive command line interface for ChatGPT sessions."""
+"Interactive command line interface for ChatGPT sessions."
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import shutil
 import sys
 import tempfile
 import time
+from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from .view_helpers import parse_view_argument
@@ -39,7 +40,7 @@ def print_token_instructions() -> None:
 
     instructions = [
         "Open https://chatgpt.com/ in your browser and sign in.",
-        "Open the developer tools (F12 or Cmd+Opt+I on macOS).",
+        "Open the developer tools (F12 or Cmd+Opt=I on macOS).",
         "Switch to the Application/Storage tab and expand Cookies.",
         "Select https://chatgpt.com and copy the value of ``__Secure-next-auth.session-token``.",
     ]
@@ -56,6 +57,7 @@ def verify_session_token(token: str) -> None:
     """Ensure *token* is accepted by ChatGPT."""
 
     try:
+        print("Instantiating SyncChatGPT for verification...", flush=True)
         with SyncChatGPT(session_token=token) as chatgpt:
             # If the context manager succeeds but no auth token is present, treat as invalid.
             if not getattr(chatgpt, "auth_token", None):
@@ -105,6 +107,7 @@ def obtain_session_token(key: Optional[str] = None) -> str:
         cached_token = None
 
     if cached_token:
+        print("Finished checking for cached token. Proceeding to attempt verification.", flush=True)
         print("Attempting cached session token ...", flush=True)
         try:
             verify_session_token(cached_token)
@@ -163,6 +166,239 @@ def _print_conversation_page(items: List[Dict], offset: int) -> None:
         print(f"  {index}. {title}")
 
 
+def _line_range_indices(
+    lines_range: Optional[Tuple[int, Optional[int]]]
+) -> Tuple[Optional[int], Optional[int]]:
+    """Convert a 1-based ``lines`` range to zero-based start/end indices."""
+
+    if not lines_range:
+        return None, None
+
+    start = lines_range[0] - 1
+    end = None if lines_range[1] is None else lines_range[1] - 1
+    return start, end
+
+
+def _filter_messages(
+    messages: List[Dict],
+    start_idx: Optional[int],
+    end_idx: Optional[int],
+    since_index: Optional[int],
+) -> List[Dict]:
+    """Return the subset of *messages* matching the slicing parameters."""
+
+    result: List[Dict] = []
+    for message in messages:
+        raw_index = message.get("message_index")
+        try:
+            index = int(raw_index)
+        except (TypeError, ValueError):
+            index = 0
+
+        if since_index is not None and index < since_index:
+            continue
+        if start_idx is not None and index < start_idx:
+            continue
+        if end_idx is not None and index > end_idx:
+            continue
+
+        result.append(message)
+    return result
+
+
+def _build_conversation_lines(
+    conversation_title: Optional[str],
+    conversation_id: str,
+    messages: List[Dict],
+) -> List[str]:
+    """Turn *messages* into the string lines that a viewer should see."""
+
+    header_title = conversation_title or "(no title)"
+    lines = [f"--- Conversation: {header_title} ({conversation_id}) ---"]
+    for message in messages:
+        author = message.get("author", "unknown")
+        content = message.get("content", "")
+        try:
+            index = int(message.get("message_index"))
+        except (TypeError, ValueError):
+            index = 0
+        lines.append(f"{author.capitalize()} [{index + 1}]: {content}")
+    lines.append("--- End of conversation ---")
+    return lines
+
+
+def _build_notice_message(
+    filtered_messages: List[Dict],
+    since_last_update: bool,
+    lines_range: Optional[Tuple[int, Optional[int]]],
+) -> str:
+    """Return the message shown when no entries match the configured filters."""
+
+    if filtered_messages:
+        return ""
+    if since_last_update:
+        return "No new messages since the last update."
+    if lines_range:
+        return "No messages match the requested range."
+    return ""
+
+
+def _collect_conversation_catalog(chatgpt: SyncChatGPT, storage: ConversationStorage) -> List[Dict]:
+    """Fetch conversation headers in pages and persist the catalog locally."""
+    print("Fetching conversation catalog in pages...", flush=True)
+    all_conversations = []
+    offset = 0
+    # Fetch a reasonable number of pages to build a catalog for matching.
+    num_pages_to_fetch = 5 
+    
+    for page_num in range(num_pages_to_fetch):
+        try:
+            page_data = chatgpt.list_conversations_page(offset, CONVERSATION_PAGE_SIZE)
+            items = page_data.get("items", [])
+            if not items:
+                print("No more conversation pages to fetch.")
+                break 
+            all_conversations.extend(items)
+            offset += len(items)
+            print(f"Fetched catalog page {page_num + 1}/{num_pages_to_fetch}...", flush=True)
+        except Exception as e:
+            print(f"Error fetching catalog page {page_num + 1}: {e}. Stopping.", flush=True)
+            break
+            
+    storage.record_conversations(all_conversations)
+    return all_conversations
+
+
+def _match_conversation_selector(argument: str, catalog: List[Dict]) -> Optional[Dict]:
+    """Find the catalog entry whose ID or title matches *argument*."""
+
+    selector = argument.strip()
+    if not selector:
+        return None
+
+    guess = selector.lower()
+    for entry in catalog:
+        if entry.get("id") == selector:
+            return entry
+
+    for entry in catalog:
+        title = (entry.get("title") or "").lower()
+        if title == guess:
+            return entry
+
+    return None
+
+
+def _format_timestamp(value: Optional[float]) -> str:
+    """Render *value* as ISO8601 with an epoch fallback."""
+
+    if value is None:
+        return "n/a"
+
+    try:
+        timestamp = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+
+    dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+    return f"{dt.isoformat()} (epoch {timestamp:.3f})"
+
+
+def run_noninteractive_view(
+    argument: str,
+    chatgpt: SyncChatGPT,
+    storage: ConversationStorage,
+) -> None:
+    """Handle the `--view` automation mode without entering the interactive loop."""
+
+    target, lines_range, since_last_update = parse_view_argument(argument)
+    if not target:
+        print(
+            "Usage: --view \"<conversation_id|title> [lines START[-END]] [since last update]\""
+        )
+        return
+
+    catalog = _collect_conversation_catalog(chatgpt, storage)
+    matching_entry = _match_conversation_selector(target, catalog)
+    conversation_id = (
+        matching_entry.get("id") if matching_entry else target
+    )
+    conversation_title = matching_entry.get("title") if matching_entry else None
+
+    try:
+        conversation = chatgpt.get_conversation(
+            conversation_id, title=conversation_title
+        )
+        chat = conversation.fetch_chat()
+    except Exception as exc:  # noqa: BLE001
+        print(f"Failed to fetch conversation {conversation_id}: {exc}")
+        return
+
+    messages = extract_ordered_messages(chat)
+    since_index: Optional[int] = None
+    if since_last_update:
+        if isinstance(storage, NullConversationStorage):
+            print(
+                "Storage disabled; '--view ... since last update' requires conversation persistence."
+            )
+            return
+        try:
+            since_index = storage.count_messages(conversation_id)
+        except Exception as exc:  # noqa: BLE001
+            print(f"Unable to compute 'since last update': {exc}")
+            return
+
+    start_idx, end_idx = _line_range_indices(lines_range)
+    filtered_messages = _filter_messages(messages, start_idx, end_idx, since_index)
+    notice_message = _build_notice_message(filtered_messages, since_last_update, lines_range)
+    lines = _build_conversation_lines(
+        conversation.title or conversation_title,
+        conversation_id,
+        filtered_messages,
+    )
+
+    if notice_message:
+        print(notice_message)
+    for line in lines:
+        print(line)
+
+
+def run_inspect_command(
+    argument: str,
+    chatgpt: SyncChatGPT,
+    storage: ConversationStorage,
+) -> None:
+    """Print stored metadata for the requested conversation."""
+
+    if isinstance(storage, NullConversationStorage):
+        print("Storage disabled; inspection requires persisted conversation metadata.")
+        return
+
+    catalog = _collect_conversation_catalog(chatgpt, storage)
+    matching_entry = _match_conversation_selector(argument, catalog)
+    if not matching_entry:
+        print(f"Conversation '{argument}' not found.")
+        return
+
+    conversation_id = matching_entry.get("id")
+    if not conversation_id:
+        print(f"Conversation '{argument}' does not have an ID.")
+        return
+
+    summary = storage.get_conversation_summary(conversation_id)
+    if not summary:
+        print(
+            f"No metadata recorded locally for conversation {conversation_id}. "
+            "Run the download helper before inspecting it."
+        )
+        return
+
+    title = summary.get("title") or matching_entry.get("title") or "(no title)"
+    print(f"Conversation ID: {conversation_id}")
+    print(f"Title: {title}")
+    print(f"Remote update: {_format_timestamp(summary.get('remote_update_time'))}")
+    print(f"Last seen locally: {_format_timestamp(summary.get('last_seen_at'))}")
+    print(f"Messages cached locally: {summary.get('cached_message_count', 0)}")
 def handle_view_command(
     argument: str,
     chatgpt: SyncChatGPT,
@@ -249,48 +485,20 @@ def handle_view_command(
                 print(f"Unable to compute 'since last update': {exc}")
                 return
 
-        start_idx: Optional[int] = None
-        end_idx: Optional[int] = None
-        if lines_range:
-            start_idx = lines_range[0] - 1
-            end_idx = None if lines_range[1] is None else lines_range[1] - 1
-
-        filtered_messages: List[Dict] = []
-        for message in messages:
-            raw_index = message.get("message_index")
-            try:
-                index = int(raw_index)
-            except (TypeError, ValueError):
-                index = 0
-
-            if since_index is not None and index < since_index:
-                continue
-            if start_idx is not None and index < start_idx:
-                continue
-            if end_idx is not None and index > end_idx:
-                continue
-            filtered_messages.append(message)
-
-        notice_message = ""
-        if not filtered_messages:
-            if since_last_update:
-                notice_message = "No new messages since the last update."
-            elif lines_range:
-                notice_message = "No messages match the requested range."
+        start_idx, end_idx = _line_range_indices(lines_range)
+        filtered_messages = _filter_messages(messages, start_idx, end_idx, since_index)
+        notice_message = _build_notice_message(filtered_messages, since_last_update, lines_range)
         if notice_message:
             print(notice_message)
 
+        lines = _build_conversation_lines(
+            conversation.title or conversation_title,
+            conversation_id,
+            filtered_messages,
+        )
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as tmp_file:
-            tmp_file.write(f"--- Conversation: {conversation.title} ({conversation_id}) ---\n")
-            for message in filtered_messages:
-                author = message.get("author", "unknown")
-                content = message.get("content", "")
-                try:
-                    index = int(message.get("message_index"))
-                except (TypeError, ValueError):
-                    index = 0
-                tmp_file.write(f"{author.capitalize()} [{index + 1}]: {content}\n")
-            tmp_file.write("--- End of conversation ---\n")
+            tmp_file.write("\n".join(lines))
+            tmp_file.write("\n")
             tmp_file_path = tmp_file.name
 
         pager = "less"
@@ -653,11 +861,37 @@ def main() -> None:
         help="Print conversation IDs and titles to stdout (use redirection for `rg`).",
     )
     parser.add_argument(
+        "--view",
+        type=str,
+        help=(
+            "Print messages for a conversation without entering the interactive loop. "
+            "Supports optional `lines START[-END]` and `since last update` selectors."
+        ),
+    )
+    parser.add_argument(
+        "--inspect",
+        type=str,
+        help="Show cached metadata for a conversation (id or title).",
+    )
+    parser.add_argument(
+        "--download",
+        type=str,
+        help="Persist a conversation (`all`, `list`, or a conversation id) and exit.",
+    )
+    parser.add_argument(
         "--nostore",
         action="store_true",
         help="Do not persist conversations or append messages to SQLite.",
     )
     args = parser.parse_args()
+    automation_flags = sum(
+        bool(flag)
+        for flag in (args.list, args.view, args.inspect, args.download)
+    )
+    if automation_flags > 1:
+        parser.error(
+            "Choose only one of --list, --view, --inspect, or --download at a time."
+        )
     token = obtain_session_token(args.key)
     default_model = args.model or get_default_model()
     user_agent = get_default_user_agent()
@@ -669,13 +903,46 @@ def main() -> None:
     ) as chatgpt:
         if args.nostore:
             print("Storage disabled; conversations will not be saved locally.")
+        
         if args.list:
-            catalog = chatgpt.list_all_conversations()
-            storage.record_conversations(catalog)
-            for conv in catalog:
-                cid = conv.get("id") or ""
-                title = conv.get("title") or "(no title)"
-                print(f"{cid}\t{title}")
+            print("Fetching conversations in pages to debug potential hang...", flush=True)
+            all_conversations = []
+            offset = 0
+            page_limit = CONVERSATION_PAGE_SIZE # This is 10
+            num_pages_to_fetch = 3
+
+            for _ in range(num_pages_to_fetch):
+                try:
+                    page_data = chatgpt.list_conversations_page(offset, page_limit)
+                    items = page_data.get("items", [])
+                    if not items:
+                        break # No more conversations
+                    all_conversations.extend(items)
+                    offset += page_limit
+                    print(f"Fetched page {(_ + 1)}/{num_pages_to_fetch} ({len(items)} conversations)...", flush=True)
+                except Exception as e:
+                    print(f"Error fetching page {(_ + 1)}: {e}. Stopping fetch.", flush=True)
+                    break
+
+            if not all_conversations:
+                print("No conversations found or fetched.")
+            else:
+                print(f"Fetched a total of {len(all_conversations)} conversations.")
+                storage.record_conversations(all_conversations) # Still record what was fetched
+                for conv in all_conversations:
+                    cid = conv.get("id") or ""
+                    title = conv.get("title") or "(no title)"
+                    print(f"{cid}\t{title}")
+            return
+        
+        if args.view:
+            run_noninteractive_view(args.view, chatgpt, storage)
+            return
+        if args.inspect:
+            run_inspect_command(args.inspect, chatgpt, storage)
+            return
+        if args.download:
+            handle_download_command(f"download {args.download}", chatgpt, storage)
             return
         detected_model = None
         try:
@@ -776,7 +1043,7 @@ def main() -> None:
                             "Please restart the CLI with a fresh __Secure-next-auth.session-token."
                         )
                         break
-                    except Exception as refresh_exc:  # noqa: BLE001
+                    except Exception as refresh_exc: # noqa: BLE001
                         print(
                             "Failed to refresh the authentication token automatically: "
                             f"{refresh_exc}"
@@ -789,14 +1056,14 @@ def main() -> None:
                             send_prompt_and_record()
                         except UnexpectedResponseError as retry_exc:
                             print(f"Encountered an error while chatting: {retry_exc}")
-                        except Exception as retry_exc:  # noqa: BLE001
+                        except Exception as retry_exc: # noqa: BLE001
                             print(f"Encountered an error while chatting: {retry_exc}")
                         else:
                             continue
                         continue
 
                 print(f"Encountered an error while chatting: {exc}")
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc: # noqa: BLE001
                 print(f"Encountered an error while chatting: {exc}")
 
 

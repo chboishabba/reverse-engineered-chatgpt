@@ -210,6 +210,22 @@ The CLI also exposes non-interactive helpers that are tailored for scripted or A
 
 These helpers rely on the same `config.ini`/`~/.chatgpt_session` setup as the interactive CLI; they establish their own session and exit once the requested data has been emitted.
 
+A typical automation flow looks like:
+
+1. Run `python -m re_gpt.cli --list` and feed the ID or title into `rg` while searching the `chat_exports/` directory that `--download` keeps in sync.
+2. Use `python -m re_gpt.cli --inspect <ID>` to confirm when the remote conversation last changed and how many messages are already cached.
+3. Finally, emit the latest messages with `--view "<ID> since last update"` (or limit the output to a line range) so the next human-in-the-loop prompt can be composed.
+
+For a repeatable baseline you can tweak, run `./scripts/context_sync.sh <conversation-id-or-title>`; it executes `--list`, `--inspect`, `--download`, and `--view` in order while letting you adjust the target, line range, or `rg` pattern from the top of the script. Each helper call is wrapped in `timeout 5s` to abort the newer CLI runs that tend to hang so you get a fresh failure instead of an indefinite wait.
+
+The script relies on the CLI helpers implemented in `re_gpt/cli.py`:
+
+- `run_noninteractive_view` builds the message filters and prints the requested slice of a conversation (used by `--view`).
+- `run_inspect_command` pulls cached metadata from `ConversationStorage` and formats it for `--inspect`.
+- `handle_download_command` already powers `download` in the interactive loop, so the script can persist JSON assets without additional glue.
+
+If you extend the script, these internal helpers are the extension points to reuse; they share the same storage/timeout handling used by the interactive CLI.
+
 ### Resume a previous conversation interactively
 
 ```python
