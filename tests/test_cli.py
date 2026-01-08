@@ -7,6 +7,7 @@ import tests.mock_helper
 from re_gpt import cli
 from re_gpt.errors import InvalidSessionToken
 from re_gpt.storage import CatalogUpdateStats, PersistResult
+from re_gpt.view_helpers import parse_view_argument
 
 
 class TestCli(unittest.TestCase):
@@ -238,6 +239,97 @@ class TestCli(unittest.TestCase):
 
         # Assert that an error message is printed
         mock_print.assert_any_call("Conversation 'invalid_command' not found.")
+
+    @patch('builtins.print')
+    def test_list_conversations_flag(self, mock_print):
+        mock_chatgpt = MagicMock()
+        mock_chatgpt.list_all_conversations.return_value = [
+            {'id': 'a', 'title': 'Alpha'},
+            {'id': 'b', 'title': 'Beta'},
+        ]
+
+        mock_storage_ctx = MagicMock()
+        mock_storage_instance = MagicMock()
+        mock_storage_ctx.__enter__.return_value = mock_storage_instance
+        mock_storage_ctx.__exit__.return_value = False
+
+        args = MagicMock(list=True, nostore=False, key=None, model=None)
+        with patch('argparse.ArgumentParser.parse_args', return_value=args):
+            with patch('re_gpt.cli.obtain_session_token', return_value='token'):
+                mock_sync_ctx = MagicMock()
+                mock_sync_ctx.__enter__.return_value = mock_chatgpt
+                with patch('re_gpt.cli.SyncChatGPT', return_value=mock_sync_ctx):
+                    with patch('re_gpt.cli.ConversationStorage', return_value=mock_storage_ctx):
+                        cli.main()
+
+        mock_chatgpt.list_all_conversations.assert_called_once()
+        mock_storage_instance.record_conversations.assert_called_once_with(
+            mock_chatgpt.list_all_conversations.return_value
+        )
+        mock_print.assert_any_call("a\tAlpha")
+
+    def test_parse_view_argument_lines_range(self):
+        selector, lines_range, since = parse_view_argument(
+            "Demo chat lines 3-5"
+        )
+        self.assertEqual(selector, "Demo chat")
+        self.assertEqual(lines_range, (3, 5))
+        self.assertFalse(since)
+
+    def test_parse_view_argument_since_last_update(self):
+        selector, lines_range, since = parse_view_argument(
+            "Demo chat since last update"
+        )
+        self.assertEqual(selector, "Demo chat")
+        self.assertIsNone(lines_range)
+        self.assertTrue(since)
+
+    @patch('os.remove')
+    @patch('re_gpt.cli.tempfile.NamedTemporaryFile')
+    @patch('re_gpt.cli.extract_ordered_messages')
+    @patch('re_gpt.cli.subprocess.run')
+    def test_handle_view_command_since_last_update_filters_old_messages(
+        self,
+        mock_run,
+        mock_extract,
+        mock_tmpfile,
+        mock_remove,
+    ):
+        mock_extract.return_value = [
+            {"author": "user", "content": "welcome", "message_index": 0},
+            {"author": "assistant", "content": "cached", "message_index": 1},
+            {"author": "assistant", "content": "fresh", "message_index": 2},
+        ]
+        mock_tmp = MagicMock()
+        mock_tmp.__enter__.return_value = mock_tmp
+        mock_tmp.__exit__.return_value = False
+        mock_tmp.name = "/tmp/fake"
+        mock_tmp.write = MagicMock()
+        mock_tmpfile.return_value = mock_tmp
+
+        mock_chatgpt = MagicMock()
+        mock_conversation = MagicMock()
+        mock_conversation.title = "Filtered"
+        mock_conversation.fetch_chat.return_value = {}
+        mock_chatgpt.get_conversation.return_value = mock_conversation
+
+        mock_storage = MagicMock()
+        mock_storage.count_messages.return_value = 2
+
+        current_page = [{'id': '123', 'title': 'Filtered'}]
+
+        cli.handle_view_command(
+            '1 since last update',
+            mock_chatgpt,
+            current_page,
+            current_page,
+            storage=mock_storage,
+        )
+
+        mock_storage.count_messages.assert_called_once_with('123')
+        written = "".join(call.args[0] for call in mock_tmp.write.call_args_list)
+        self.assertIn("fresh", written)
+        self.assertNotIn("cached", written)
 
 
 if __name__ == '__main__':

@@ -33,7 +33,13 @@ from .errors import (
     UnexpectedResponseError,
     InvalidModelName,
 )
-from .utils import sync_get_binary_path, get_model_slug
+from .utils import (
+    sync_get_binary_path,
+    get_model_slug,
+    get_default_timezone,
+    get_default_timezone_offset_min,
+    get_default_user_agent,
+)
 from .storage import AssetDownload
 
 
@@ -272,37 +278,50 @@ class SyncConversation(AsyncConversation):
         if self.conversation_id and (self.parent_id is None or self.model is None):
             self.fetch_chat()  # it will automatically fetch the chat and set the parent id
 
-        if self.model not in MODELS:
+        if not self.model:
+            self.model = self.chatgpt.default_model
+        if not self.model:
             raise InvalidModelName(self.model, MODELS)
 
+        model_slug = self.model
+        needs_arkose = False
+        if self.model in MODELS:
+            model_slug = MODELS[self.model]["slug"]
+            needs_arkose = MODELS[self.model]["needs_arkose_token"]
+
         payload = {
-            "conversation_mode": {"conversation_mode": {"kind": "primary_assistant"}},
-            "conversation_id": self.conversation_id,
             "action": "next",
+            "client_contextual_info": self.chatgpt.client_contextual_info,
+            "conversation_mode": self.chatgpt.conversation_mode,
+            "conversation_id": self.conversation_id,
+            "enable_message_followups": True,
+            "force_parallel_switch": "auto",
+            "paragen_cot_summary_display_override": "allow",
+            "supported_encodings": ["v1"],
+            "supports_buffering": True,
+            "system_hints": [],
+            "timezone": self.chatgpt.timezone,
+            "timezone_offset_min": self.chatgpt.timezone_offset_min,
             "arkose_token": self.arkose_token_generator()
-            if self.chatgpt.generate_arkose_token
-            or MODELS[self.model]["needs_arkose_token"]
+            if self.chatgpt.generate_arkose_token or needs_arkose
             else None,
-            "force_paragen": False,
-            "history_and_training_disabled": False,
             "messages": [
                 {
                     "author": {"role": "user"},
                     "content": {"content_type": "text", "parts": [user_input]},
                     "id": str(uuid.uuid4()),
+                    "create_time": time.time(),
                     "metadata": {},
                 }
             ],
-            "model": MODELS[self.model]["slug"],
-            "parent_message_id": str(uuid.uuid4())
-            if not self.parent_id
-            else self.parent_id,
+            "model": model_slug,
+            "parent_message_id": self.parent_id or "client-created-root",
             "websocket_request_id": str(uuid.uuid4())
             if self.chatgpt.websocket_mode
             else None,
         }
 
-        return payload
+        return {key: value for key, value in payload.items() if value is not None}
 
     def build_message_continuation_payload(self) -> dict:
         """
@@ -311,25 +330,37 @@ class SyncConversation(AsyncConversation):
         Returns:
             dict: Payload containing message information for continuation.
         """
-        if self.model not in MODELS:
+        if not self.model:
+            self.model = self.chatgpt.default_model
+        if not self.model:
             raise InvalidModelName(self.model, MODELS)
 
+        model_slug = self.model
+        needs_arkose = False
+        if self.model in MODELS:
+            model_slug = MODELS[self.model]["slug"]
+            needs_arkose = MODELS[self.model]["needs_arkose_token"]
+
         payload = {
-            "conversation_mode": {"conversation_mode": {"kind": "primary_assistant"}},
             "action": "continue",
-            "arkose_token": self.arkose_token_generator()
-            if self.chatgpt.generate_arkose_token
-            or MODELS[self.model]["needs_arkose_token"]
-            else None,
             "conversation_id": self.conversation_id,
-            "force_paragen": False,
-            "history_and_training_disabled": False,
-            "model": MODELS[self.model]["slug"],
+            "conversation_mode": self.chatgpt.conversation_mode,
+            "enable_message_followups": True,
+            "force_parallel_switch": "auto",
+            "paragen_cot_summary_display_override": "allow",
+            "supported_encodings": ["v1"],
+            "supports_buffering": True,
+            "system_hints": [],
+            "timezone": self.chatgpt.timezone,
+            "timezone_offset_min": self.chatgpt.timezone_offset_min,
+            "arkose_token": self.arkose_token_generator()
+            if self.chatgpt.generate_arkose_token or needs_arkose
+            else None,
+            "model": model_slug,
             "parent_message_id": self.parent_id,
-            "timezone_offset_min": -300,
         }
 
-        return payload
+        return {key: value for key, value in payload.items() if value is not None}
 
     def arkose_token_generator(self) -> str:
         """
@@ -385,6 +416,12 @@ class SyncChatGPT(AsyncChatGPT):
         auth_token: Optional[str] = None,
         websocket_mode: Optional[bool] = False,
         browser_challenge_solver: Optional[str] = "firefox",
+        default_model: Optional[str] = None,
+        conversation_mode: Optional[dict] = None,
+        timezone: Optional[str] = None,
+        timezone_offset_min: Optional[int] = None,
+        client_contextual_info: Optional[dict] = None,
+        user_agent: Optional[str] = None,
     ):
         """
         Initializes an instance of the class.
@@ -398,6 +435,12 @@ class SyncChatGPT(AsyncChatGPT):
             browser_challenge_solver (Optional[str]): Browser engine to use when solving
                 interactive Cloudflare challenges (``\"firefox\"`` by default). Set to
                 ``None`` to disable the Playwright fallback.
+            default_model (Optional[str]): Default model slug or alias for new conversations.
+            conversation_mode (Optional[dict]): Conversation mode payload to include (optional).
+            timezone (Optional[str]): Timezone label for chat payloads.
+            timezone_offset_min (Optional[int]): Timezone offset in minutes.
+            client_contextual_info (Optional[dict]): Client context payload for chats.
+            user_agent (Optional[str]): User agent string override.
         """
         super().__init__(
             proxies=proxies,
@@ -405,6 +448,12 @@ class SyncChatGPT(AsyncChatGPT):
             exit_callback_function=exit_callback_function,
             auth_token=auth_token,
             websocket_mode=websocket_mode,
+            default_model=default_model,
+            conversation_mode=conversation_mode,
+            timezone=timezone,
+            timezone_offset_min=timezone_offset_min,
+            client_contextual_info=client_contextual_info,
+            user_agent=user_agent,
         )
 
         self.browser_challenge_solver = browser_challenge_solver
@@ -499,12 +548,60 @@ class SyncChatGPT(AsyncChatGPT):
 
         return SyncConversation(self, conversation_id, title=title)
 
+    def fetch_conversation(
+        self,
+        conversation_id: str,
+        *,
+        since_message_id: Optional[str] = None,
+        since_time: Optional[float] = None,
+    ) -> dict[str, Any]:
+        """
+        Retrieve a conversation mapping directly from the backend API.
+
+        Args:
+            conversation_id: The ChatGPT conversation ID.
+            since_message_id: Optional message ID used for delta detection (propagated as query param if provided).
+            since_time: Optional timestamp used for delta detection (propagated as query param if provided).
+
+        Returns:
+            The raw conversation JSON response.
+        """
+
+        if not conversation_id:
+            raise ValueError("conversation_id must be provided")
+
+        url = CHATGPT_API.format(f"conversation/{conversation_id}")
+        headers = dict(self.build_request_headers())
+        headers["Accept"] = "application/json"
+
+        params: dict[str, str] = {}
+        if since_message_id:
+            params["since_message_id"] = since_message_id
+        if since_time is not None:
+            params["since_time"] = str(since_time)
+
+        response = self.session.get(url=url, headers=headers, params=params or None)
+        if response.status_code != 200:
+            raise UnexpectedResponseError(
+                f"HTTP {response.status_code} when fetching {conversation_id}",
+                getattr(response, "text", ""),
+            )
+
+        try:
+            return response.json()
+        except Exception as exc:
+            raise UnexpectedResponseError(exc, getattr(response, "text", ""))
+
     def create_new_conversation(
-        self, model: Optional[str] = "gpt-3.5", title: Optional[str] = None
+        self, model: Optional[str] = None, title: Optional[str] = None
     ) -> SyncConversation:
-        if model not in MODELS:
-            raise InvalidModelName(model, MODELS)
-        return SyncConversation(self, model=model, title=title)
+        if model is None:
+            model = self.default_model
+        if model in MODELS:
+            return SyncConversation(self, model=model, title=title)
+        if model:
+            return SyncConversation(self, model=model, title=title)
+        raise InvalidModelName(model, MODELS)
 
     def delete_conversation(self, conversation_id: str) -> dict:
         """
@@ -762,7 +859,7 @@ class SyncChatGPT(AsyncChatGPT):
         cookies = {"__Secure-next-auth.session-token": self.session_token}
 
         headers = {
-            "User-Agent": USER_AGENT,
+            "User-Agent": self.user_agent,
             "Accept": "*/*",
             "Accept-Language": "en-US,en;q=0.5",
             "Alt-Used": "chatgpt.com",
@@ -840,11 +937,27 @@ class SyncChatGPT(AsyncChatGPT):
             "order": "updated",
         }
         url = CHATGPT_API.format("conversations")
-        response = self.session.get(
-            url=url, params=params, headers=self.build_request_headers()
-        )
-
-        return response.json()
+        headers = dict(self.build_request_headers())
+        headers["Accept"] = "application/json"
+        headers.pop("Content-Type", None)
+        response = self.session.get(url=url, params=params, headers=headers)
+        try:
+            return response.json()
+        except Exception:
+            if self._looks_like_cloudflare_challenge(response):
+                self._launch_browser_challenge_solver(url)
+                retry = self.session.get(url=url, params=params, headers=headers)
+                try:
+                    return retry.json()
+                except Exception as exc:
+                    raise UnexpectedResponseError(
+                        "Failed to decode conversation list response after challenge.",
+                        getattr(retry, "text", ""),
+                    ) from exc
+            raise UnexpectedResponseError(
+                "Failed to decode conversation list response.",
+                getattr(response, "text", ""),
+            )
 
     def list_all_conversations(self, limit: int = 28) -> list[dict]:
         """Retrieve metadata for all conversations.
@@ -995,7 +1108,7 @@ class SyncChatGPT(AsyncChatGPT):
 
     def _build_frontend_page_headers(self) -> dict[str, str]:
         headers = {
-            "User-Agent": USER_AGENT,
+            "User-Agent": self.user_agent,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
             "Cache-Control": "no-cache",
@@ -1094,7 +1207,7 @@ class SyncChatGPT(AsyncChatGPT):
             else:
                 browser = playwright.firefox.launch(headless=False)
 
-            context = browser.new_context(user_agent=USER_AGENT)
+            context = browser.new_context(user_agent=self.user_agent)
 
             if self._frontend_cookies:
                 cookie_payload = []
@@ -1152,7 +1265,7 @@ class SyncChatGPT(AsyncChatGPT):
             else:
                 browser = playwright.firefox.launch(headless=True)
 
-            context = browser.new_context(user_agent=USER_AGENT)
+            context = browser.new_context(user_agent=self.user_agent)
 
             if self._frontend_cookies:
                 cookie_payload = []

@@ -1054,3 +1054,40 @@ class ConversationStorage:
 
         self.update_cached_message_count(conversation_id, next_index + 1)
         return next_index
+
+
+class NullConversationStorage:
+    """Minimal storage implementation that never writes to disk."""
+
+    def __enter__(self) -> "NullConversationStorage":
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        return None
+
+    def record_conversations(self, conversations: Sequence[Mapping[str, Any]]) -> CatalogUpdateStats:
+        return CatalogUpdateStats()
+
+    def search_conversations(self, keyword: str, limit: int = 50) -> list[dict[str, Any]]:
+        return []
+
+    def persist_chat(
+        self,
+        conversation_id: str,
+        chat: Mapping[str, Any],
+        messages: Iterable[Mapping[str, Any]] | None = None,
+        asset_fetcher: Optional[Callable[[str], AssetDownload]] = None,
+    ) -> PersistResult:
+        return PersistResult(json_path=Path("."), new_messages=0, total_messages=0)
+
+    def append_message(
+        self,
+        conversation_id: str,
+        author: str,
+        content: str,
+        create_time: float | None = None,
+    ) -> int:
+        return 0
+
+    def count_messages(self, conversation_id: str) -> int:
+        return 0

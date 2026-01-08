@@ -2,19 +2,30 @@
 
 from __future__ import annotations
 
-import sys
-import time
-import tempfile
-import subprocess
-import shutil
-from typing import Dict, Iterable, List, Optional
 import argparse
 import functools
+import subprocess
+import shutil
+import sys
+import tempfile
+import time
+from typing import Dict, Iterable, List, Optional, Tuple
+
+from .view_helpers import parse_view_argument
 
 from .errors import InvalidSessionToken, TokenNotProvided, UnexpectedResponseError
-from .storage import ConversationStorage, extract_ordered_messages
+from .storage import (
+    ConversationStorage,
+    NullConversationStorage,
+    extract_ordered_messages,
+)
 from .sync_chatgpt import SyncChatGPT, SyncConversation
-from .utils import get_session_token
+from .utils import (
+    get_default_model,
+    get_default_user_agent,
+    get_model_slug,
+    get_session_token,
+)
 
 # Exit commands recognised by the CLI.
 EXIT_COMMANDS = {"exit", "quit", "q"}
@@ -157,12 +168,25 @@ def handle_view_command(
     chatgpt: SyncChatGPT,
     current_page: List[Dict],
     cached_conversations: List[Dict],
+    storage: Optional[ConversationStorage] = None,
 ) -> None:
     """Handle the 'view' command to print a conversation's content."""
     if not argument:
-        print("Usage: view <conversation_number|conversation_id|title>")
+        print(
+            "Usage: view <conversation_number|conversation_id|title> "
+            "[lines START[-END]|since last update]"
+        )
         return
 
+    target_argument, lines_range, since_last_update = parse_view_argument(argument)
+    if not target_argument:
+        print(
+            "Usage: view <conversation_number|conversation_id|title> "
+            "[lines START[-END]|since last update]"
+        )
+        return
+
+    argument = target_argument
     conversation_id = ""
     if argument.isdigit():
         selection = int(argument)
@@ -211,13 +235,61 @@ def handle_view_command(
         conversation = chatgpt.get_conversation(conversation_id, title=conversation_title)
         chat = conversation.fetch_chat()
         messages = extract_ordered_messages(chat)
+        since_index: Optional[int] = None
+        if since_last_update:
+            if storage is None:
+                print(
+                    "Storage is required to determine which messages were "
+                    "already persisted. Download the conversation first."
+                )
+                return
+            try:
+                since_index = storage.count_messages(conversation_id)
+            except Exception as exc:  # noqa: BLE001
+                print(f"Unable to compute 'since last update': {exc}")
+                return
+
+        start_idx: Optional[int] = None
+        end_idx: Optional[int] = None
+        if lines_range:
+            start_idx = lines_range[0] - 1
+            end_idx = None if lines_range[1] is None else lines_range[1] - 1
+
+        filtered_messages: List[Dict] = []
+        for message in messages:
+            raw_index = message.get("message_index")
+            try:
+                index = int(raw_index)
+            except (TypeError, ValueError):
+                index = 0
+
+            if since_index is not None and index < since_index:
+                continue
+            if start_idx is not None and index < start_idx:
+                continue
+            if end_idx is not None and index > end_idx:
+                continue
+            filtered_messages.append(message)
+
+        notice_message = ""
+        if not filtered_messages:
+            if since_last_update:
+                notice_message = "No new messages since the last update."
+            elif lines_range:
+                notice_message = "No messages match the requested range."
+        if notice_message:
+            print(notice_message)
 
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as tmp_file:
             tmp_file.write(f"--- Conversation: {conversation.title} ({conversation_id}) ---\n")
-            for message in messages:
+            for message in filtered_messages:
                 author = message.get("author", "unknown")
                 content = message.get("content", "")
-                tmp_file.write(f"{author.capitalize()}: {content}\n")
+                try:
+                    index = int(message.get("message_index"))
+                except (TypeError, ValueError):
+                    index = 0
+                tmp_file.write(f"{author.capitalize()} [{index + 1}]: {content}\n")
             tmp_file.write("--- End of conversation ---\n")
             tmp_file_path = tmp_file.name
 
@@ -302,7 +374,13 @@ def _pick_conversation_id(chatgpt: SyncChatGPT, storage: ConversationStorage) ->
             continue
 
         if action == "view":
-            handle_view_command(argument, chatgpt, current_page, cached_conversations)
+            handle_view_command(
+                argument,
+                chatgpt,
+                current_page,
+                cached_conversations,
+                storage,
+            )
             continue
         elif action == "next":
             if len(current_page) < CONVERSATION_PAGE_SIZE:
@@ -563,10 +641,81 @@ def main() -> None:
     """Entry point for the interactive CLI."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--key", "-k", type=str, help="Session token")
+    parser.add_argument(
+        "--model",
+        "-m",
+        type=str,
+        help="Default model slug for new conversations (overrides config/env).",
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="Print conversation IDs and titles to stdout (use redirection for `rg`).",
+    )
+    parser.add_argument(
+        "--nostore",
+        action="store_true",
+        help="Do not persist conversations or append messages to SQLite.",
+    )
     args = parser.parse_args()
     token = obtain_session_token(args.key)
+    default_model = args.model or get_default_model()
+    user_agent = get_default_user_agent()
 
-    with ConversationStorage() as storage, SyncChatGPT(session_token=token) as chatgpt:
+    storage_context = NullConversationStorage() if args.nostore else ConversationStorage()
+
+    with storage_context as storage, SyncChatGPT(
+        session_token=token, default_model=default_model, user_agent=user_agent
+    ) as chatgpt:
+        if args.nostore:
+            print("Storage disabled; conversations will not be saved locally.")
+        if args.list:
+            catalog = chatgpt.list_all_conversations()
+            storage.record_conversations(catalog)
+            for conv in catalog:
+                cid = conv.get("id") or ""
+                title = conv.get("title") or "(no title)"
+                print(f"{cid}\t{title}")
+            return
+        detected_model = None
+        try:
+            page = chatgpt.list_conversations_page(offset=0, limit=1)
+            items = page.get("items", [])
+            if items:
+                conversation_id = items[0].get("id")
+                if conversation_id:
+                    conversation = chatgpt.get_conversation(conversation_id)
+                    chat = conversation.fetch_chat()
+                    detected_model = get_model_slug(chat)
+        except Exception:
+            detected_model = None
+
+        if detected_model:
+            if default_model and detected_model != default_model:
+                choice = input(
+                    f"Detected model slug '{detected_model}' from your latest chat. "
+                    f"You configured '{default_model}'. Use detected slug instead? [y/N]: "
+                ).strip().lower()
+                if choice in {"y", "yes"}:
+                    default_model = detected_model
+            elif not default_model:
+                default_model = detected_model
+                print(f"Using detected model slug '{default_model}' for new chats.")
+
+        if not default_model:
+            prompt = (
+                "No default model slug detected. Enter one now, or press Enter to skip: "
+            )
+            entered_model = input(prompt).strip()
+            if entered_model:
+                default_model = entered_model
+            else:
+                print(
+                    "No model slug set. New chats may fail. "
+                    "Provide --model, RE_GPT_MODEL, or config.ini session.model."
+                )
+
+        chatgpt.default_model = default_model
         print("\nSession established. Type 'exit', 'quit', or 'q' to leave the chat.")
         print("Use 'download <conversation_id|title>', 'download all', or 'download list' to export chats.")
         conversation = select_conversation(chatgpt, storage)

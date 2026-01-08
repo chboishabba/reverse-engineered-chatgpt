@@ -4,6 +4,7 @@ import ctypes
 import inspect
 import json
 import re
+import time
 import uuid
 from typing import AsyncGenerator, Callable, Optional
 
@@ -18,7 +19,13 @@ from .errors import (
     TokenNotProvided,
     UnexpectedResponseError,
 )
-from .utils import async_get_binary_path, get_model_slug
+from .utils import (
+    async_get_binary_path,
+    get_model_slug,
+    get_default_timezone,
+    get_default_timezone_offset_min,
+    get_default_user_agent,
+)
 
 # Constants
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
@@ -269,37 +276,50 @@ class AsyncConversation:
         if self.conversation_id and (self.parent_id is None or self.model is None):
             await self.fetch_chat()  # it will automatically fetch the chat and set the parent id
 
-        if self.model not in MODELS:
+        if not self.model:
+            self.model = self.chatgpt.default_model
+        if not self.model:
             raise InvalidModelName(self.model, MODELS)
 
+        model_slug = self.model
+        needs_arkose = False
+        if self.model in MODELS:
+            model_slug = MODELS[self.model]["slug"]
+            needs_arkose = MODELS[self.model]["needs_arkose_token"]
+
         payload = {
-            "conversation_mode": {"conversation_mode": {"kind": "primary_assistant"}},
-            "conversation_id": self.conversation_id,
             "action": "next",
+            "client_contextual_info": self.chatgpt.client_contextual_info,
+            "conversation_mode": self.chatgpt.conversation_mode,
+            "conversation_id": self.conversation_id,
+            "enable_message_followups": True,
+            "force_parallel_switch": "auto",
+            "paragen_cot_summary_display_override": "allow",
+            "supported_encodings": ["v1"],
+            "supports_buffering": True,
+            "system_hints": [],
+            "timezone": self.chatgpt.timezone,
+            "timezone_offset_min": self.chatgpt.timezone_offset_min,
             "arkose_token": await self.arkose_token_generator()
-            if self.chatgpt.generate_arkose_token
-            or MODELS[self.model]["needs_arkose_token"]
+            if self.chatgpt.generate_arkose_token or needs_arkose
             else None,
-            "force_paragen": False,
-            "history_and_training_disabled": False,
             "messages": [
                 {
                     "author": {"role": "user"},
                     "content": {"content_type": "text", "parts": [user_input]},
                     "id": str(uuid.uuid4()),
+                    "create_time": time.time(),
                     "metadata": {},
                 }
             ],
-            "model": MODELS[self.model]["slug"],
-            "parent_message_id": str(uuid.uuid4())
-            if not self.parent_id
-            else self.parent_id,
+            "model": model_slug,
+            "parent_message_id": self.parent_id or "client-created-root",
             "websocket_request_id": str(uuid.uuid4())
             if self.chatgpt.websocket_mode
             else None,
         }
 
-        return payload
+        return {key: value for key, value in payload.items() if value is not None}
 
     async def build_message_continuation_payload(self) -> dict:
         """
@@ -308,25 +328,37 @@ class AsyncConversation:
         Returns:
             dict: Payload containing message information for continuation.
         """
-        if self.model not in MODELS:
+        if not self.model:
+            self.model = self.chatgpt.default_model
+        if not self.model:
             raise InvalidModelName(self.model, MODELS)
 
+        model_slug = self.model
+        needs_arkose = False
+        if self.model in MODELS:
+            model_slug = MODELS[self.model]["slug"]
+            needs_arkose = MODELS[self.model]["needs_arkose_token"]
+
         payload = {
-            "conversation_mode": {"conversation_mode": {"kind": "primary_assistant"}},
             "action": "continue",
-            "arkose_token": await self.arkose_token_generator()
-            if self.chatgpt.generate_arkose_token
-            or MODELS[self.model]["needs_arkose_token"]
-            else None,
             "conversation_id": self.conversation_id,
-            "force_paragen": False,
-            "history_and_training_disabled": False,
-            "model": MODELS[self.model]["slug"],
+            "conversation_mode": self.chatgpt.conversation_mode,
+            "enable_message_followups": True,
+            "force_parallel_switch": "auto",
+            "paragen_cot_summary_display_override": "allow",
+            "supported_encodings": ["v1"],
+            "supports_buffering": True,
+            "system_hints": [],
+            "timezone": self.chatgpt.timezone,
+            "timezone_offset_min": self.chatgpt.timezone_offset_min,
+            "arkose_token": await self.arkose_token_generator()
+            if self.chatgpt.generate_arkose_token or needs_arkose
+            else None,
+            "model": model_slug,
             "parent_message_id": self.parent_id,
-            "timezone_offset_min": -300,
         }
 
-        return payload
+        return {key: value for key, value in payload.items() if value is not None}
 
     async def arkose_token_generator(self) -> str:
         """
@@ -410,6 +442,12 @@ class AsyncChatGPT:
         auth_token: Optional[str] = None,
         generate_arkose_token: Optional[bool] = False,
         websocket_mode: Optional[bool] = False,
+        default_model: Optional[str] = None,
+        conversation_mode: Optional[dict] = None,
+        timezone: Optional[str] = None,
+        timezone_offset_min: Optional[int] = None,
+        client_contextual_info: Optional[dict] = None,
+        user_agent: Optional[str] = None,
     ):
         """
         Initializes an instance of the class.
@@ -421,6 +459,12 @@ class AsyncChatGPT:
             auth_token (Optional[str]): An authentication token. Defaults to None.
             generate_arkose_token (Optional[bool]): Toggle whether to generate and send arkose-token in the payload. Defaults to False.
             websocket_mode (Optional[bool]): Toggle whether to use WebSocket for chat. Defaults to False.
+            default_model (Optional[str]): Default model slug or alias for new conversations.
+            conversation_mode (Optional[dict]): Conversation mode payload to include (optional).
+            timezone (Optional[str]): Timezone label for chat payloads.
+            timezone_offset_min (Optional[int]): Timezone offset in minutes.
+            client_contextual_info (Optional[dict]): Client context payload for chats.
+            user_agent (Optional[str]): User agent string override.
         """
         self.proxies = proxies
         self.exit_callback_function = exit_callback_function
@@ -437,6 +481,22 @@ class AsyncChatGPT:
         self.websocket_mode = websocket_mode
         self.ws_loop = None
         self.ws_conversation_map = {}
+        self.default_model = default_model
+        self.conversation_mode = conversation_mode or {"kind": "primary_assistant"}
+        self.timezone = timezone or get_default_timezone()
+        self.timezone_offset_min = (
+            timezone_offset_min
+            if timezone_offset_min is not None
+            else get_default_timezone_offset_min()
+        )
+        self.client_contextual_info = client_contextual_info or {
+            "is_dark_mode": False,
+            "time_since_loaded": 0,
+            "page_height": 900,
+            "page_width": 1440,
+            "pixel_ratio": 1,
+        }
+        self.user_agent = user_agent or get_default_user_agent() or USER_AGENT
         
         # do not need session mode
         self.free_mode = True if self.session_token is None else False
@@ -491,7 +551,7 @@ class AsyncChatGPT:
             dict: Request headers.
         """
         headers = {
-            "User-Agent": USER_AGENT,
+            "User-Agent": self.user_agent,
             "Accept": "text/event-stream",
             "Accept-Language": "en-US",
             "Accept-Encoding": "gzip, deflate, br",
@@ -524,11 +584,15 @@ class AsyncChatGPT:
         return AsyncConversation(self, conversation_id, title=title)
 
     def create_new_conversation(
-        self, model: Optional[str] = "gpt-3.5", title: Optional[str] = None
+        self, model: Optional[str] = None, title: Optional[str] = None
     ) -> AsyncConversation:
-        if model not in MODELS:
-            raise InvalidModelName(model, MODELS)
-        return AsyncConversation(self, model=model, title=title)
+        if model is None:
+            model = self.default_model
+        if model in MODELS:
+            return AsyncConversation(self, model=model, title=title)
+        if model:
+            return AsyncConversation(self, model=model, title=title)
+        raise InvalidModelName(model, MODELS)
 
     async def delete_conversation(self, conversation_id: str) -> dict:
         """
@@ -560,7 +624,7 @@ class AsyncChatGPT:
         cookies = {"__Secure-next-auth.session-token": self.session_token}
 
         headers = {
-            "User-Agent": USER_AGENT,
+            "User-Agent": self.user_agent,
             "Accept": "*/*",
             "Accept-Language": "en-US,en;q=0.5",
             "Alt-Used": "chatgpt.com",

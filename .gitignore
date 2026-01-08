@@ -1,5 +1,9 @@
 # output files
 chat_exports/
+page_raw.txt
+expected_payload.json
+expected_payload2.json
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -176,3 +180,6 @@ ChatGPT.html
 gpt-page-source-raw.txt
 Reddit Test Message.html
 Reddit Test Message_files/
+scripts/prodder.vars.json
+scripts/expected_payload.json
+scripts/generated_payload.json

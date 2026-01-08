@@ -3,6 +3,8 @@ import hashlib
 import os
 import platform
 from pathlib import Path
+from typing import Optional
+import time
 
 from .errors import TokenNotProvided
 
@@ -189,3 +191,88 @@ def get_session_token(config_path: str = "config.ini") -> str:
             return token
 
     raise TokenNotProvided()
+
+
+def get_default_model(config_path: str = "config.ini") -> Optional[str]:
+    """Return the default model slug for new conversations, if configured."""
+
+    env_model = os.environ.get("RE_GPT_MODEL")
+    if env_model:
+        return env_model.strip() or None
+
+    config_file = Path(config_path)
+    parser = configparser.ConfigParser()
+
+    if config_file.is_file():
+        parser.read(config_file)
+        model = parser.get("session", "model", fallback="").strip()
+        if model and model != "YOUR_MODEL_SLUG":
+            return model
+
+    return None
+
+
+def get_default_timezone(config_path: str = "config.ini") -> Optional[str]:
+    """Return the default timezone label for payloads, if configured."""
+
+    env_tz = os.environ.get("RE_GPT_TIMEZONE")
+    if env_tz:
+        return env_tz.strip() or None
+
+    config_file = Path(config_path)
+    parser = configparser.ConfigParser()
+
+    if config_file.is_file():
+        parser.read(config_file)
+        tz_name = parser.get("session", "timezone", fallback="").strip()
+        if tz_name and tz_name != "YOUR_TIMEZONE":
+            return tz_name
+
+    tzname = time.tzname[0] if time.tzname else ""
+    return tzname or "UTC"
+
+
+def get_default_timezone_offset_min(config_path: str = "config.ini") -> Optional[int]:
+    """Return the default timezone offset in minutes for payloads."""
+
+    env_offset = os.environ.get("RE_GPT_TIMEZONE_OFFSET_MIN")
+    if env_offset:
+        try:
+            return int(env_offset.strip())
+        except ValueError:
+            pass
+
+    config_file = Path(config_path)
+    parser = configparser.ConfigParser()
+
+    if config_file.is_file():
+        parser.read(config_file)
+        offset_value = parser.get("session", "timezone_offset_min", fallback="").strip()
+        if offset_value and offset_value != "YOUR_TIMEZONE_OFFSET_MIN":
+            try:
+                return int(offset_value)
+            except ValueError:
+                pass
+
+    if time.daylight and time.localtime().tm_isdst:
+        return -time.altzone // 60
+    return -time.timezone // 60
+
+
+def get_default_user_agent(config_path: str = "config.ini") -> Optional[str]:
+    """Return the default user agent string, if configured."""
+
+    env_ua = os.environ.get("RE_GPT_USER_AGENT")
+    if env_ua:
+        return env_ua.strip() or None
+
+    config_file = Path(config_path)
+    parser = configparser.ConfigParser()
+
+    if config_file.is_file():
+        parser.read(config_file)
+        ua = parser.get("session", "user_agent", fallback="").strip()
+        if ua and ua != "YOUR_USER_AGENT":
+            return ua
+
+    return None
