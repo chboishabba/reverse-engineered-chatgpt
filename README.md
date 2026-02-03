@@ -203,7 +203,7 @@ After pasting your token, the launcher starts an interactive ChatGPT session whe
 The CLI also exposes non-interactive helpers that are tailored for scripted or AI-assisted flows such as the `$chat-context-sync` example: request a conversation catalog, `rg` through exported history, inspect the metadata, and then surface the most recent lines (optionally persisting the chat). All commands emit plain text so you can pipe them through `rg`, `awk`, or other tools.
 
 - `python -m re_gpt.cli --list`: Prints `CONVERSATION_ID<TAB>TITLE` for every saved chat so you can feed the IDs into downstream tooling.
-- `python -m re_gpt.cli --inspect <CONVERSATION_ID|TITLE>`: Shows the stored metadata for a conversation including remote update time, when it was last seen, and how many messages are cached locally.
+- `python -m re_gpt.cli --inspect <CONVERSATION_ID|TITLE>`: Shows stored metadata for a conversation including remote update time, when it was last seen, and how many messages are cached locally. If storage is empty, it will still query the remote catalog to surface timestamps.
 - `python -m re_gpt.cli --view "<CONVERSATION_ID|TITLE> [lines START[-END]] [since last update]"`: Streams the requested messages to stdout (no pager). Use the optional `lines` range or `since last update` tokens to limit the slice of messages you need to debug or sync with the UI.
 - `python -m re_gpt.cli --download <CONVERSATION_ID|TITLE|all|list>`: Mirrors the interactive `download` command so automation can persist exports (`chat_exports/`) without manual input.
 

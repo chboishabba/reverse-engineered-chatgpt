@@ -430,6 +430,81 @@ def run_noninteractive_view(
         print(notice_message)
     for line in lines:
         print(line)
+
+
+def run_inspect_command(
+    argument: str,
+    chatgpt: SyncChatGPT,
+    storage: ConversationStorage,
+) -> None:
+    """Handle the `--inspect` automation mode without entering the interactive loop."""
+
+    selector = argument.strip()
+    if not selector:
+        print("Usage: --inspect <conversation_id|title>")
+        return
+
+    conversation_id: Optional[str] = None
+    conversation_title: Optional[str] = None
+    remote_update_time: Optional[float] = None
+    summary: Optional[Dict] = None
+
+    catalog: Optional[List[Dict]] = None
+    try:
+        catalog = _collect_conversation_catalog(chatgpt, storage)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: failed to fetch conversation catalog: {exc}")
+
+    if catalog:
+        matched_entry = _match_conversation_selector(selector, catalog)
+        if matched_entry:
+            conversation_id = matched_entry.get("id")
+            conversation_title = matched_entry.get("title")
+            remote_update_time = matched_entry.get("update_time")
+
+    if conversation_id:
+        summary = storage.get_conversation_summary(conversation_id)
+    else:
+        summary = storage.get_conversation_summary(selector)
+        if summary:
+            conversation_id = selector
+            conversation_title = conversation_title or summary.get("title")
+
+    if not conversation_id:
+        matches = storage.search_conversations(selector)
+        if len(matches) == 1:
+            conversation_id = matches[0].get("id")
+            conversation_title = matches[0].get("title")
+            summary = storage.get_conversation_summary(conversation_id)
+        elif len(matches) > 1:
+            print(f"Found {len(matches)} cached conversations matching '{selector}':")
+            for match in matches:
+                title = match.get("title") or "(no title)"
+                cid = match.get("id") or ""
+                print(f"- {title} [{cid}]")
+            return
+
+    if not conversation_id:
+        print(f"Failed to find conversation matching '{selector}'.")
+        return
+
+    print(f"Conversation ID: {conversation_id}")
+    if conversation_title or (summary and summary.get("title")):
+        print(f"Title: {conversation_title or summary.get('title')}")
+
+    if summary:
+        print(f"Discovered at: {_format_timestamp(summary.get('discovered_at'))}")
+        print(f"Last seen at: {_format_timestamp(summary.get('last_seen_at'))}")
+        print(
+            "Remote update time (cached): "
+            f"{_format_timestamp(summary.get('remote_update_time'))}"
+        )
+        print(f"Cached message count: {summary.get('cached_message_count', 0)}")
+    else:
+        print("Cached metadata: n/a (storage disabled or no local record)")
+
+    if remote_update_time is not None:
+        print(f"Remote update time (catalog): {_format_timestamp(remote_update_time)}")
 def handle_view_command(
     argument: str,
     chatgpt: SyncChatGPT,
