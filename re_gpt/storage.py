@@ -982,6 +982,49 @@ class ConversationStorage:
         row = cursor.fetchone()
         return int(row[0]) if row else 0
 
+    def get_latest_message(self, author: Optional[str] = None) -> Optional[dict[str, Any]]:
+        """Return the most recent cached message, optionally filtered by author."""
+
+        where_clause = ""
+        params: tuple[Any, ...] = ()
+        if author:
+            where_clause = "WHERE m.author = ?"
+            params = (author,)
+
+        cursor = self._connection.execute(
+            f"""
+            SELECT
+                m.conversation_id,
+                m.message_index,
+                m.author,
+                m.content,
+                m.create_time,
+                c.title
+            FROM messages m
+            LEFT JOIN conversations c
+                ON c.conversation_id = m.conversation_id
+            {where_clause}
+            ORDER BY (m.create_time IS NULL) ASC,
+                     m.create_time DESC,
+                     m.message_index DESC
+            LIMIT 1
+            """,
+            params,
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        conversation_id, message_index, author_value, content, create_time, title = row
+        return {
+            "conversation_id": conversation_id,
+            "message_index": int(message_index),
+            "author": author_value,
+            "content": content,
+            "create_time": _coerce_timestamp(create_time),
+            "title": title,
+        }
+
     def get_conversation_summary(self, conversation_id: str) -> Optional[dict[str, Any]]:
         """Return stored metadata for ``conversation_id`` if it exists."""
 

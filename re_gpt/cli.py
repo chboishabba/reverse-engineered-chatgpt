@@ -91,7 +91,7 @@ def is_token_expired_error(exc: UnexpectedResponseError) -> bool:
     return _contains_expired_marker(str(exc))
 
 
-def obtain_session_token(key: Optional[str] = None) -> str:
+def obtain_session_token(key: Optional[str] = None, allow_invalid_for_browser_login: bool = False) -> str:
     """Loop until a valid session token is provided.
 
     The function first tries any cached token discoverable via
@@ -114,12 +114,22 @@ def obtain_session_token(key: Optional[str] = None) -> str:
             verify_session_token(cached_token)
             return cached_token
         except InvalidSessionToken:
+            if allow_invalid_for_browser_login:
+                print("Warning: Cached token rejected, but proceeding for browser login.")
+                return cached_token # Return the token even if invalid to allow browser to launch
             print(
                 "The cached token was rejected. Please grab a fresh "
                 "`__Secure-next-auth.session-token`."
             )
         except TokenNotProvided:
+            if allow_invalid_for_browser_login:
+                print("Warning: Cached token empty, but proceeding for browser login.")
+                return "" # Return empty string
             print("The cached token was empty. You'll need to paste a new one.")
+
+    if allow_invalid_for_browser_login:
+        print("Bypassing token input for browser login. Providing a placeholder token.")
+        return "BROWSER_LOGIN_PLACEHOLDER_TOKEN"
 
     print_token_instructions()
 
@@ -244,6 +254,24 @@ def _build_notice_message(
     return ""
 
 
+def _should_download_since_last(
+    conversation_id: str,
+    storage: ConversationStorage,
+) -> bool:
+    """Return True if the stored metadata suggests new messages are available."""
+
+    summary = storage.get_conversation_summary(conversation_id)
+    if not summary:
+        return True
+
+    remote_update = summary.get("remote_update_time")
+    last_seen = summary.get("last_seen_at")
+    if remote_update is None or last_seen is None:
+        return True
+
+    return remote_update > last_seen
+
+
 def _collect_conversation_catalog(chatgpt: SyncChatGPT, storage: ConversationStorage) -> List[Dict]:
     """Fetch conversation headers in pages and persist the catalog locally."""
     print("Fetching conversation catalog in pages...", flush=True)
@@ -279,7 +307,8 @@ def _match_conversation_selector(argument: str, catalog: List[Dict]) -> Optional
 
     guess = selector.lower()
     for entry in catalog:
-        if entry.get("id") == selector:
+        entry_id = entry.get("id")
+        if entry_id and str(entry_id).lower() == guess:
             return entry
 
     for entry in catalog:
@@ -305,14 +334,37 @@ def _format_timestamp(value: Optional[float]) -> str:
     return f"{dt.isoformat()} (epoch {timestamp:.3f})"
 
 
+def run_latest_command(storage: ConversationStorage) -> None:
+    """Print the most recent assistant message stored locally."""
+
+    if isinstance(storage, NullConversationStorage):
+        print("Storage disabled; '--latest' requires conversation persistence.")
+        return
+
+    latest = storage.get_latest_message(author="assistant")
+    if not latest:
+        print("No cached assistant messages found.")
+        return
+
+    title = latest.get("title") or "(no title)"
+    conversation_id = latest.get("conversation_id") or "unknown"
+    timestamp = _format_timestamp(latest.get("create_time"))
+    content = latest.get("content") or ""
+
+    print(f"{title} ({conversation_id})")
+    print(f"{timestamp} assistant: {content}")
+
+
 def run_noninteractive_view(
     argument: str,
     chatgpt: SyncChatGPT,
     storage: ConversationStorage,
+    since_last_override: bool = False,
 ) -> None:
     """Handle the `--view` automation mode without entering the interactive loop."""
 
     target, lines_range, since_last_update = parse_view_argument(argument)
+    since_last_update = since_last_update or since_last_override
     if not target:
         print(
             "Usage: --view \"<conversation_id|title> [lines START[-END]] [since last update]\""
@@ -323,15 +375,14 @@ def run_noninteractive_view(
     conversation_id = None
     conversation_title = None
 
-    # Try to fetch by ID first if it looks like a UUID
-    if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", target, re.IGNORECASE):
-        try:
-            conversation_id = target
-            conversation = chatgpt.get_conversation(conversation_id)
-            chat = conversation.fetch_chat()
-            conversation_title = conversation.title
-        except Exception:
-            conversation = None # Failed, will try to match by title
+    # Try to fetch by ID first (even if it doesn't look like a UUID).
+    try:
+        conversation_id = target
+        conversation = chatgpt.get_conversation(conversation_id)
+        chat = conversation.fetch_chat()
+        conversation_title = conversation.title
+    except Exception:
+        conversation = None  # Failed, will try to match by title
 
     if conversation is None:
         print("Could not fetch by ID, trying to match by title...", flush=True)
@@ -690,8 +741,13 @@ def handle_download_command(
     storage: ConversationStorage,
     current_page: Optional[List[Dict]] = None,
     cached_conversations: Optional[List[Dict]] = None,
+    since_last_update: bool = False,
 ) -> None:
     """Download and persist conversations based on ``user_input``."""
+
+    if since_last_update and isinstance(storage, NullConversationStorage):
+        print("Storage disabled; '--since-last' requires conversation persistence.")
+        return
 
     parts = user_input.strip().split(maxsplit=1)
     if len(parts) < 2:
@@ -721,6 +777,10 @@ def handle_download_command(
         conversation_catalog = chatgpt.list_all_conversations()
         stats = storage.record_conversations(conversation_catalog)
         targets = [conv.get("id") for conv in conversation_catalog if conv.get("id")]
+        if since_last_update:
+            targets = [
+                cid for cid in targets if cid and _should_download_since_last(cid, storage)
+            ]
         if not targets:
             print("No conversations available to download.")
             return
@@ -777,6 +837,15 @@ def handle_download_command(
         if not found:
             print(f"Conversation '{arg}' not found.")
             return
+
+    if since_last_update and targets:
+        filtered_targets = [
+            cid for cid in targets if cid and _should_download_since_last(cid, storage)
+        ]
+        if not filtered_targets:
+            print("No conversations have updates since the last download.")
+            return
+        targets = filtered_targets
 
     for conversation_id in targets:
         conversation = chatgpt.get_conversation(conversation_id)
@@ -859,24 +928,58 @@ def main() -> None:
         help="Persist a conversation (`all`, `list`, or a conversation id) and exit.",
     )
     parser.add_argument(
+        "--latest",
+        action="store_true",
+        help="Print the latest cached assistant message and exit.",
+    )
+    parser.add_argument(
+        "--since-last",
+        action="store_true",
+        help="Limit --view/--download to messages since the last cached update.",
+    )
+    parser.add_argument(
         "--nostore",
         action="store_true",
         help="Do not persist conversations or append messages to SQLite.",
     )
+    parser.add_argument(
+        "--browser-login",
+        action="store_true",
+        help="Launch a browser to log in to ChatGPT.",
+    )
     args = parser.parse_args()
     automation_flags = sum(
         bool(flag)
-        for flag in (args.list, args.view, args.inspect, args.download)
+        for flag in (
+            args.list,
+            args.view,
+            args.inspect,
+            args.download,
+            args.latest,
+            args.browser_login,
+        )
     )
     if automation_flags > 1:
         parser.error(
-            "Choose only one of --list, --view, --inspect, or --download at a time."
+            "Choose only one of --list, --view, --inspect, --download, --latest "
+            "or --browser-login at a time."
         )
-    token = obtain_session_token(args.key)
+    if args.since_last and not (args.view or args.download):
+        parser.error("--since-last requires --view or --download.")
+    
+    storage_context = NullConversationStorage() if args.nostore else ConversationStorage()
+    if args.latest:
+        with storage_context as storage:
+            run_latest_command(storage)
+        return
+
+    if args.browser_login:
+        token = obtain_session_token(args.key, allow_invalid_for_browser_login=True)
+    else:
+        token = obtain_session_token(args.key)
+
     default_model = args.model or get_default_model()
     user_agent = get_default_user_agent()
-
-    storage_context = NullConversationStorage() if args.nostore else ConversationStorage()
 
     with storage_context as storage, SyncChatGPT(
         session_token=token, default_model=default_model, user_agent=user_agent
@@ -914,11 +1017,19 @@ def main() -> None:
                     title = conv.get("title") or "(no title)"
                     print(f"{cid}\t{title}")
         elif args.view:
-            run_noninteractive_view(args.view, chatgpt, storage)
+            run_noninteractive_view(args.view, chatgpt, storage, since_last_override=args.since_last)
         elif args.inspect:
             run_inspect_command(args.inspect, chatgpt, storage)
         elif args.download:
-            handle_download_command(f"download {args.download}", chatgpt, storage)
+            handle_download_command(
+                f"download {args.download}",
+                chatgpt,
+                storage,
+                since_last_update=args.since_last,
+            )
+        elif args.browser_login:
+            chatgpt.start_browser_session()
+            sys.exit(0)
         else:
             detected_model = None
             try:

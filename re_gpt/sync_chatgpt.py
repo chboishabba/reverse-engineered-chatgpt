@@ -534,6 +534,15 @@ class SyncChatGPT(AsyncChatGPT):
             self.stop_websocket_flag = True
             self.ws_loop.join()
 
+    def start_browser_session(self, url: str = "https://chatgpt.com/") -> None:
+        """
+        Launch a Playwright browser to allow the user to log in or solve challenges.
+        
+        Args:
+            url (str): The URL to open in the browser. Defaults to "https://chatgpt.com/".
+        """
+        self._launch_browser_challenge_solver(url)
+
     def get_conversation(self, conversation_id: str, title: Optional[str] = None) -> SyncConversation:
         """
         Makes an instance of class Conversation and return it.
@@ -1229,10 +1238,15 @@ class SyncChatGPT(AsyncChatGPT):
 
             page = context.new_page()
             try:
-                page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                page.goto(url, wait_until="networkidle", timeout=60000)
             except Exception:
                 # Allow manual navigation if automatic load times out.
                 pass
+
+            # Temporarily save a screenshot for debugging purposes
+            screenshot_path = "/home/c/.gemini/tmp/effe4da374b32799015e63f5ff4001f7ab7869260b283c4e8b5c885937b20f12/playwright_screenshot.png"
+            page.screenshot(path=screenshot_path)
+            print(f"Screenshot saved to {screenshot_path}")
 
             input("Press Enter after the page finishes loading and the challenge is cleared...")
 

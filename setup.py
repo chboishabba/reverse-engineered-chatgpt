@@ -16,4 +16,9 @@ setup(
     extras_require={
         "browser": ["playwright>=1.47"],
     },
+    entry_points={
+        "console_scripts": [
+            "re-gpt = re_gpt.cli:main",
+        ],
+    },
 )
