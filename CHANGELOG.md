@@ -7,4 +7,4 @@
 - Added `scripts/context_sync.sh`, a customizable wrapper that runs the automation helpers in sequence and keeps an `rg` pass handy for exported chats.
 - Documented how `scripts/context_sync.sh` maps to `run_noninteractive_view`, `run_inspect_command`, and `handle_download_command`, guiding future hook-ups.
 - Captured the current authenticated tab status and localStorage keys, added timestamped progress notes to the docs, and recorded the MCP/CDP session reattachment work as a TODO for the next iteration.
-- Added `docs/codex-docker-reinstall.md` with the commands-only ROCm-safe Codex reinstall path (tarball Node, no apt node, host-bind ~/.codex, auth & status checks).
+- Removed the temporary ROCm Codex reinstall doc and replaced it with a context-sync troubleshooting log for “Reinstalling Codex in Docker” (`docs/chat-context-sync-log.md`).

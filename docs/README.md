@@ -6,4 +6,6 @@
 
 ## Next steps
 - Implement an MCP-backed session in `re_gpt/sync_chatgpt.py` that locates the live tab, reads cookies/localStorage, and issues CDP commands while keeping the current Playwright/Firefox path as fallback.
-- Reinstall Codex inside ROCm containers using the commands-only recipe in `docs/codex-docker-reinstall.md` when apt-installed Node is blocked by pinned libs.
+
+## Logs
+- Context-sync notes for “Reinstalling Codex in Docker”: see `docs/chat-context-sync-log.md`.
