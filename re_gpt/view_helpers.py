@@ -6,6 +6,35 @@ import re
 import shlex
 from typing import Optional, Tuple
 
+_CONVERSATION_ID_RE = re.compile(
+    r"(?i)(?:^|/)(?:c/)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:/|$)"
+)
+_UUID_RE = re.compile(r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def extract_conversation_id(value: str) -> Optional[str]:
+    """Extract a conversation UUID from a ChatGPT URL or raw ID."""
+
+    if not value:
+        return None
+
+    trimmed = value.strip().rstrip(",;:.!?")
+    if _UUID_RE.fullmatch(trimmed):
+        return trimmed
+
+    match = _CONVERSATION_ID_RE.search(trimmed)
+    if match:
+        return match.group(1)
+
+    return None
+
+
+def normalize_conversation_selector(value: str) -> str:
+    """Return a conversation ID if one can be extracted from *value*."""
+
+    extracted = extract_conversation_id(value)
+    return extracted or value
+
 
 def parse_lines_range(value: str) -> Optional[Tuple[int, Optional[int]]]:
     """Turn a ``lines`` expression into (start, end) numbers."""
@@ -93,4 +122,5 @@ def parse_view_argument(argument: str) -> tuple[str, Optional[Tuple[int, Optiona
         selector_tokens.append(token)
         i += 1
 
-    return " ".join(selector_tokens).strip(), lines_range, since_last_update
+    selector = " ".join(selector_tokens).strip()
+    return normalize_conversation_selector(selector), lines_range, since_last_update

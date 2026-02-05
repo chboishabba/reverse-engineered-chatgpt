@@ -13,7 +13,7 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from .view_helpers import parse_view_argument
+from .view_helpers import normalize_conversation_selector, parse_view_argument
 
 from .errors import InvalidSessionToken, TokenNotProvided, UnexpectedResponseError
 from .storage import (
@@ -301,7 +301,7 @@ def _collect_conversation_catalog(chatgpt: SyncChatGPT, storage: ConversationSto
 def _match_conversation_selector(argument: str, catalog: List[Dict]) -> Optional[Dict]:
     """Find the catalog entry whose ID or title matches *argument*."""
 
-    selector = argument.strip()
+    selector = normalize_conversation_selector(argument.strip())
     if not selector:
         return None
 
@@ -439,7 +439,7 @@ def run_inspect_command(
 ) -> None:
     """Handle the `--inspect` automation mode without entering the interactive loop."""
 
-    selector = argument.strip()
+    selector = normalize_conversation_selector(argument.strip())
     if not selector:
         print("Usage: --inspect <conversation_id|title>")
         return
@@ -742,6 +742,10 @@ def _pick_conversation_id(chatgpt: SyncChatGPT, storage: ConversationStorage) ->
                     print(f"- {title} [{cid}]")
             continue
 
+        normalized_command = normalize_conversation_selector(command)
+        if normalized_command != command:
+            command = normalized_command
+
         if command.isdigit():
             selection = int(command)
             if 1 <= selection <= len(current_page):
@@ -829,7 +833,7 @@ def handle_download_command(
         print("Usage: download <conversation_id|title|all|list>")
         return
 
-    arg = parts[1]
+    arg = normalize_conversation_selector(parts[1])
     lowered_arg = arg.lower()
     targets: list[str] = []
     conversation_catalog: Optional[List[Dict]] = None
@@ -1024,7 +1028,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     automation_flags = sum(
-        bool(flag)
+        1
         for flag in (
             args.list,
             args.view,
@@ -1033,6 +1037,7 @@ def main() -> None:
             args.latest,
             args.browser_login,
         )
+        if bool(flag)
     )
     if automation_flags > 1:
         parser.error(
@@ -1063,24 +1068,35 @@ def main() -> None:
             print("Storage disabled; conversations will not be saved locally.")
         
         if args.list:
-            print("Fetching conversations in pages to debug potential hang...", flush=True)
-            all_conversations = []
-            offset = 0
-            page_limit = CONVERSATION_PAGE_SIZE # This is 10
-            num_pages_to_fetch = 3
+            all_conversations: list[dict] = []
+            try:
+                all_conversations = chatgpt.list_all_conversations()
+            except Exception as exc:  # noqa: BLE001 - fallback to paging.
+                print(f"List-all failed ({exc}); falling back to paging.", flush=True)
+                print("Fetching conversations in pages to debug potential hang...", flush=True)
+                offset = 0
+                page_limit = CONVERSATION_PAGE_SIZE # This is 10
+                num_pages_to_fetch = 3
 
-            for _ in range(num_pages_to_fetch):
-                try:
-                    page_data = chatgpt.list_conversations_page(offset, page_limit)
-                    items = page_data.get("items", [])
-                    if not items:
-                        break # No more conversations
-                    all_conversations.extend(items)
-                    offset += page_limit
-                    print(f"Fetched page {(_ + 1)}/{num_pages_to_fetch} ({len(items)} conversations)...", flush=True)
-                except Exception as e:
-                    print(f"Error fetching page {(_ + 1)}: {e}. Stopping fetch.", flush=True)
-                    break
+                for _ in range(num_pages_to_fetch):
+                    try:
+                        page_data = chatgpt.list_conversations_page(offset, page_limit)
+                        items = page_data.get("items", [])
+                        if not items:
+                            break # No more conversations
+                        all_conversations.extend(items)
+                        offset += page_limit
+                        print(
+                            f"Fetched page {(_ + 1)}/{num_pages_to_fetch} "
+                            f"({len(items)} conversations)...",
+                            flush=True,
+                        )
+                    except Exception as page_exc:
+                        print(
+                            f"Error fetching page {(_ + 1)}: {page_exc}. Stopping fetch.",
+                            flush=True,
+                        )
+                        break
 
             if not all_conversations:
                 print("No conversations found or fetched.")
