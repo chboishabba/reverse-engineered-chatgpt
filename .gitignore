@@ -177,7 +177,9 @@ test.py
 *.sublime-project
 *.sublime-workspace
 ChatGPT.html
+ChatGPT - StatiBaker.html
 gpt-page-source-raw.txt
+gpt-page-source-raw-2.txt
 Reddit Test Message.html
 Reddit Test Message_files/
 scripts/prodder.vars.json
