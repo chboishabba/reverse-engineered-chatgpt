@@ -9,3 +9,7 @@
 
 ## Logs
 - Context-sync notes for “Reinstalling Codex in Docker”: see `docs/chat-context-sync-log.md`.
+
+## Setup Guides
+- Source install and CLI setup (editable install, offline fallback, token config):
+  `docs/source-install.md`.

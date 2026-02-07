@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added `docs/source-install.md` with generic local setup guidance:
+  editable install, restricted-network/offline fallback (`--no-build-isolation`),
+  token wiring for non-interactive CLI commands, and requirements-file
+  integration in parent projects.
 - Documented the automation-friendly CLI helpers and how they fit into scripting workflows.
 - Added metadata inspection (`--inspect`), read-only viewing (`--view`), and export (`--download`) modes to the interactive CLI so tools can request conversation lists, query recorded history, and rest easily accessible.
 - Added `scripts/context_sync.sh`, a customizable wrapper that runs the automation helpers in sequence and keeps an `rg` pass handy for exported chats.

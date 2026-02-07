@@ -99,6 +99,9 @@ ChatGPT has an official API which can be used to interface your Python code to i
 pip install re-gpt
 ```
 
+For local editable installs (including restricted-network/offline fallbacks and
+CLI token setup), see `docs/source-install.md`.
+
 ### Run the interactive CLI locally
 
 On macOS or Linux you can bootstrap a local development environment and start the
