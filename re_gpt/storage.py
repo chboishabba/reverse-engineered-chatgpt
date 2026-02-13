@@ -22,9 +22,9 @@ DEFAULT_EXPORT_DIR = Path("chat_exports")
 class PersistResult:
     """Result details after persisting a conversation."""
 
-    json_path: Path
     new_messages: int
     total_messages: int
+    json_path: Optional[Path] = None
     asset_paths: Tuple[Path, ...] = ()
     asset_errors: Tuple[str, ...] = ()
 
@@ -160,9 +160,11 @@ class ConversationStorage:
         self,
         db_path: Path | str = DEFAULT_DB_PATH,
         export_dir: Path | str = DEFAULT_EXPORT_DIR,
+        write_json: bool = False,
     ) -> None:
         self.db_path = Path(db_path).expanduser()
         self.export_dir = Path(export_dir)
+        self.write_json = bool(write_json)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(self.db_path)
         self._connection.execute("PRAGMA journal_mode=WAL;")
@@ -505,7 +507,9 @@ class ConversationStorage:
             conversation_key=conversation_key,
         )
         self.update_cached_message_count(conversation_id, total_messages)
-        json_path = self.export_conversation(export_basename, chat)
+        json_path: Optional[Path] = None
+        if self.write_json:
+            json_path = self.export_conversation(export_basename, chat)
 
         asset_paths: list[Path] = []
         asset_errors: list[str] = []
@@ -1148,7 +1152,7 @@ class NullConversationStorage:
         messages: Iterable[Mapping[str, Any]] | None = None,
         asset_fetcher: Optional[Callable[[str], AssetDownload]] = None,
     ) -> PersistResult:
-        return PersistResult(json_path=Path("."), new_messages=0, total_messages=0)
+        return PersistResult(json_path=None, new_messages=0, total_messages=0)
 
     def append_message(
         self,

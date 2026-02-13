@@ -35,7 +35,11 @@ class TestConversationStorage(unittest.TestCase):
         base_path = Path(self.tempdir.name)
         self.db_path = base_path / "history.sqlite3"
         self.export_dir = base_path / "exports"
-        self.storage = ConversationStorage(db_path=self.db_path, export_dir=self.export_dir)
+        self.storage = ConversationStorage(
+            db_path=self.db_path,
+            export_dir=self.export_dir,
+            write_json=True,
+        )
 
     def tearDown(self) -> None:
         self.storage.close()
@@ -102,6 +106,16 @@ class TestConversationStorage(unittest.TestCase):
         for index, (message_key,) in enumerate(rows, start=0):
             self.assertIsNotNone(message_key)
             self.assertIn(f".{index:04d}", message_key)
+
+    def test_persist_chat_skips_json_when_disabled(self) -> None:
+        storage = ConversationStorage(
+            db_path=self.db_path.parent / "history_no_json.sqlite3",
+            export_dir=self.export_dir,
+            write_json=False,
+        )
+        self.addCleanup(storage.close)
+        result = storage.persist_chat("conv-no-json", _make_chat("No JSON", "u", "a"))
+        self.assertIsNone(result.json_path)
 
     def test_persist_chat_downloads_assets(self) -> None:
         conversation_id = "conv-asset"

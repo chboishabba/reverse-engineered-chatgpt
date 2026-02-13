@@ -3,6 +3,7 @@ import base64
 import ctypes
 import inspect
 import json
+import os
 import re
 import time
 import uuid
@@ -497,11 +498,26 @@ class AsyncChatGPT:
             "pixel_ratio": 1,
         }
         self.user_agent = user_agent or get_default_user_agent() or USER_AGENT
+        self.debug_fetch = (
+            os.environ.get("RE_GPT_DEBUG_FETCH", "").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
+        self.debug_assets = (
+            os.environ.get("RE_GPT_DEBUG_ASSETS", "").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
         
         # do not need session mode
         self.free_mode = True if self.session_token is None else False
         self.auth_cookie = None
         self.devive_id = str(uuid.uuid4())
+
+    def _debug_log(self, message: str, *, channel: str = "fetch") -> None:
+        if channel == "asset" and not self.debug_assets:
+            return
+        if channel != "asset" and not self.debug_fetch:
+            return
+        print(f"[re-gpt:{channel}] {message}", flush=True)
 
     async def __aenter__(self):
         self.session = AsyncSession(
@@ -611,6 +627,49 @@ class AsyncChatGPT:
 
         return response.json()
 
+    async def fetch_conversation(
+        self,
+        conversation_id: str,
+        *,
+        since_message_id: Optional[str] = None,
+        since_time: Optional[float] = None,
+    ) -> dict:
+        """Retrieve a conversation mapping directly from the backend API."""
+
+        if not conversation_id:
+            raise ValueError("conversation_id must be provided")
+
+        url = CHATGPT_API.format(f"conversation/{conversation_id}")
+        headers = dict(self.build_request_headers())
+        headers["Accept"] = "application/json"
+        headers.pop("Content-Type", None)
+
+        params: dict[str, str] = {}
+        if since_message_id:
+            params["since_message_id"] = since_message_id
+        if since_time is not None:
+            params["since_time"] = str(since_time)
+
+        started = time.monotonic()
+        response = await self.session.get(url=url, headers=headers, params=params or None)
+        elapsed_ms = (time.monotonic() - started) * 1000.0
+
+        if response.status_code != 200:
+            raise UnexpectedResponseError(
+                f"HTTP {response.status_code} when fetching {conversation_id}",
+                getattr(response, "text", ""),
+            )
+
+        try:
+            payload = response.json()
+        except Exception as exc:
+            raise UnexpectedResponseError(exc, getattr(response, "text", ""))
+
+        self._debug_log(
+            f"fetch_conversation id={conversation_id} status={response.status_code} elapsed_ms={elapsed_ms:.1f}"
+        )
+        return payload
+
     async def fetch_auth_token(self) -> str:
         """
         Fetch the authentication token for the session.
@@ -702,11 +761,20 @@ class AsyncChatGPT:
             "order": "updated",
         }
         url = CHATGPT_API.format("conversations")
+        headers = dict(self.build_request_headers())
+        headers["Accept"] = "application/json"
+        headers.pop("Content-Type", None)
+        started = time.monotonic()
         response = await self.session.get(
-            url=url, params=params, headers=self.build_request_headers()
+            url=url, params=params, headers=headers
         )
-
-        return response.json()
+        payload = response.json()
+        items = payload.get("items", []) if isinstance(payload, dict) else []
+        elapsed_ms = (time.monotonic() - started) * 1000.0
+        self._debug_log(
+            f"list_conversations_page offset={offset} limit={limit} items={len(items)} elapsed_ms={elapsed_ms:.1f}"
+        )
+        return payload
 
     async def list_all_conversations(self, limit: int = 28) -> list[dict]:
         """Asynchronously retrieve metadata for all conversations.
@@ -721,10 +789,13 @@ class AsyncChatGPT:
 
         conversations: list[dict] = []
         offset = 0
+        page_count = 0
+        started = time.monotonic()
 
         while True:
             data = await self.list_conversations_page(offset=offset, limit=limit)
             items = data.get("items", [])
+            page_count += 1
 
             for item in items:
                 conversations.append(
@@ -738,7 +809,12 @@ class AsyncChatGPT:
             if len(items) < limit:
                 break
 
-            offset += limit
+            offset += len(items)
+
+        elapsed_s = max(0.001, time.monotonic() - started)
+        self._debug_log(
+            f"list_all_conversations pages={page_count} total={len(conversations)} rate={len(conversations)/elapsed_s:.2f} conv/s"
+        )
 
         return conversations
 

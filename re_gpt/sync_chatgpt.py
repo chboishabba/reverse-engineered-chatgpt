@@ -9,6 +9,7 @@ import base64
 import asyncio
 import html
 import re
+from urllib.parse import unquote
 from queue import Queue
 from threading import Thread
 from typing import Any, Callable, Generator, Optional
@@ -589,7 +590,9 @@ class SyncChatGPT(AsyncChatGPT):
         if since_time is not None:
             params["since_time"] = str(since_time)
 
+        started = time.monotonic()
         response = self.session.get(url=url, headers=headers, params=params or None)
+        elapsed_ms = (time.monotonic() - started) * 1000.0
         if response.status_code != 200:
             raise UnexpectedResponseError(
                 f"HTTP {response.status_code} when fetching {conversation_id}",
@@ -597,9 +600,13 @@ class SyncChatGPT(AsyncChatGPT):
             )
 
         try:
-            return response.json()
+            payload = response.json()
         except Exception as exc:
             raise UnexpectedResponseError(exc, getattr(response, "text", ""))
+        self._debug_log(
+            f"fetch_conversation id={conversation_id} status={response.status_code} elapsed_ms={elapsed_ms:.1f}"
+        )
+        return payload
 
     def create_new_conversation(
         self, model: Optional[str] = None, title: Optional[str] = None
@@ -683,6 +690,7 @@ class SyncChatGPT(AsyncChatGPT):
 
         attempt_errors: list[str] = []
         for candidate in candidates:
+            self._debug_log(f"asset/get candidate={candidate}", channel="asset")
             response = self.session.post(
                 url=url,
                 headers=headers,
@@ -703,6 +711,7 @@ class SyncChatGPT(AsyncChatGPT):
             for key in ("download_url", "url", "signed_url", "downloadUrl", "content_url"):
                 download_url = payload.get(key)
                 if download_url:
+                    self._debug_log(f"asset/get resolved candidate={candidate}", channel="asset")
                     return download_url
 
             attempt_errors.append(f"{candidate} -> missing download URL")
@@ -755,6 +764,10 @@ class SyncChatGPT(AsyncChatGPT):
                 for key in ("download_url", "url", "signed_url", "downloadUrl", "content_url"):
                     download_url = payload.get(key)
                     if download_url:
+                        self._debug_log(
+                            f"files-api resolved file_id={file_id}",
+                            channel="asset",
+                        )
                         return download_url
 
                 attempt_errors.append(f"{files_url} -> missing download URL")
@@ -789,15 +802,39 @@ class SyncChatGPT(AsyncChatGPT):
                 if not source_html:
                     return None
                 decoded = html.unescape(source_html)
-                pattern = re.compile(r"https://chatgpt\.com/backend-api/[^\s\"'>]+")
-                for match in pattern.finditer(decoded):
-                    url_match = match.group(0)
-                    if any(identifier in url_match for identifier in identifiers):
-                        return url_match
-                return None
+                variants = [
+                    decoded,
+                    decoded.replace("\\/", "/"),
+                    decoded.replace("\\u0026", "&"),
+                    decoded.replace("\\/", "/").replace("\\u0026", "&"),
+                ]
+                seen: set[str] = set()
+                pattern = re.compile(r"https://chatgpt\.com/backend-api/[^\s\"'>\\]+")
+                best_match: Optional[str] = None
+                for candidate_source in variants:
+                    if candidate_source in seen:
+                        continue
+                    seen.add(candidate_source)
+                    for match in pattern.finditer(candidate_source):
+                        url_match = match.group(0).strip().rstrip("\\")
+                        url_match = (
+                            url_match
+                            .replace("\\/", "/")
+                            .replace("\\u0026", "&")
+                            .replace("&amp;", "&")
+                        )
+                        url_match = unquote(url_match)
+                        if any(identifier in url_match for identifier in identifiers):
+                            if best_match is None or len(url_match) > len(best_match):
+                                best_match = url_match
+                return best_match
 
             url_match = _search(cached)
             if url_match:
+                self._debug_log(
+                    f"conversation-page resolved conversation_id={conv_id}",
+                    channel="asset",
+                )
                 return url_match
 
             if self.browser_challenge_solver:
@@ -809,6 +846,10 @@ class SyncChatGPT(AsyncChatGPT):
                     self._conversation_page_cache[conv_id] = rendered
                     url_match = _search(rendered)
                     if url_match:
+                        self._debug_log(
+                            f"rendered-page resolved conversation_id={conv_id}",
+                            channel="asset",
+                        )
                         return url_match
 
             return None
@@ -949,15 +990,28 @@ class SyncChatGPT(AsyncChatGPT):
         headers = dict(self.build_request_headers())
         headers["Accept"] = "application/json"
         headers.pop("Content-Type", None)
+        started = time.monotonic()
         response = self.session.get(url=url, params=params, headers=headers)
         try:
-            return response.json()
+            payload = response.json()
+            items = payload.get("items", []) if isinstance(payload, dict) else []
+            elapsed_ms = (time.monotonic() - started) * 1000.0
+            self._debug_log(
+                f"list_conversations_page offset={offset} limit={limit} items={len(items)} elapsed_ms={elapsed_ms:.1f}"
+            )
+            return payload
         except Exception:
             if self._looks_like_cloudflare_challenge(response):
                 self._launch_browser_challenge_solver(url)
                 retry = self.session.get(url=url, params=params, headers=headers)
                 try:
-                    return retry.json()
+                    payload = retry.json()
+                    items = payload.get("items", []) if isinstance(payload, dict) else []
+                    elapsed_ms = (time.monotonic() - started) * 1000.0
+                    self._debug_log(
+                        f"list_conversations_page retry offset={offset} limit={limit} items={len(items)} elapsed_ms={elapsed_ms:.1f}"
+                    )
+                    return payload
                 except Exception as exc:
                     raise UnexpectedResponseError(
                         "Failed to decode conversation list response after challenge.",
@@ -981,10 +1035,13 @@ class SyncChatGPT(AsyncChatGPT):
 
         conversations: list[dict] = []
         offset = 0
+        page_count = 0
+        started = time.monotonic()
 
         while True:
             data = self.list_conversations_page(offset=offset, limit=limit)
             items = data.get("items", [])
+            page_count += 1
 
             for item in items:
                 conversations.append(
@@ -998,7 +1055,12 @@ class SyncChatGPT(AsyncChatGPT):
             if len(items) < limit:
                 break
 
-            offset += limit
+            offset += len(items)
+
+        elapsed_s = max(0.001, time.monotonic() - started)
+        self._debug_log(
+            f"list_all_conversations pages={page_count} total={len(conversations)} rate={len(conversations)/elapsed_s:.2f} conv/s"
+        )
 
         return conversations
     

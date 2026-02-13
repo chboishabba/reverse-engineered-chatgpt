@@ -355,6 +355,45 @@ def run_latest_command(storage: ConversationStorage) -> None:
     print(f"{timestamp} assistant: {content}")
 
 
+def run_list_command(chatgpt: SyncChatGPT, storage: ConversationStorage) -> None:
+    """Stream conversation headers as each page is fetched.
+
+    This avoids waiting for the full catalog to load before emitting output.
+    Output format matches the legacy `--list` behavior:
+        CONVERSATION_ID<TAB>TITLE
+    """
+
+    offset = 0
+    seen_ids: set[str] = set()
+    total_printed = 0
+
+    while True:
+        page_data = chatgpt.list_conversations_page(offset=offset, limit=CONVERSATION_PAGE_SIZE)
+        items = page_data.get("items", []) if isinstance(page_data, dict) else []
+        if not items:
+            break
+
+        # Persist as we go so downstream tooling can resolve titles/ids immediately.
+        storage.record_conversations(items)
+
+        for conv in items:
+            cid = (conv or {}).get("id") or ""
+            title = (conv or {}).get("title") or "(no title)"
+            if cid and cid in seen_ids:
+                continue
+            if cid:
+                seen_ids.add(cid)
+            print(f"{cid}\t{title}", flush=True)
+            total_printed += 1
+
+        offset += len(items)
+        if len(items) < CONVERSATION_PAGE_SIZE:
+            break
+
+    if total_printed == 0:
+        print("No conversations found or fetched.", flush=True)
+
+
 def run_noninteractive_view(
     argument: str,
     chatgpt: SyncChatGPT,
@@ -962,13 +1001,14 @@ def handle_download_command(
         asset_info = ""
         if asset_bits:
             asset_info = " | " + ", ".join(asset_bits)
+        path_info = f" to {result.json_path}" if result.json_path else " to SQLite cache only"
         print(
-            "Saved conversation {cid} ({status}, cached {count}){assets} to {path}".format(
+            "Saved conversation {cid} ({status}, cached {count}){assets}{path}".format(
                 cid=conversation_id,
                 status=status,
                 count=result.total_messages,
                 assets=asset_info,
-                path=result.json_path,
+                path=path_info,
             )
         )
 
@@ -1022,6 +1062,11 @@ def main() -> None:
         help="Do not persist conversations or append messages to SQLite.",
     )
     parser.add_argument(
+        "--export-json",
+        action="store_true",
+        help="Also write conversation JSON files to chat_exports/ (disabled by default).",
+    )
+    parser.add_argument(
         "--browser-login",
         action="store_true",
         help="Launch a browser to log in to ChatGPT.",
@@ -1047,7 +1092,11 @@ def main() -> None:
     if args.since_last and not (args.view or args.download):
         parser.error("--since-last requires --view or --download.")
     
-    storage_context = NullConversationStorage() if args.nostore else ConversationStorage()
+    storage_context = (
+        NullConversationStorage()
+        if args.nostore
+        else ConversationStorage(write_json=args.export_json)
+    )
     if args.latest:
         with storage_context as storage:
             run_latest_command(storage)
@@ -1068,45 +1117,7 @@ def main() -> None:
             print("Storage disabled; conversations will not be saved locally.")
         
         if args.list:
-            all_conversations: list[dict] = []
-            try:
-                all_conversations = chatgpt.list_all_conversations()
-            except Exception as exc:  # noqa: BLE001 - fallback to paging.
-                print(f"List-all failed ({exc}); falling back to paging.", flush=True)
-                print("Fetching conversations in pages to debug potential hang...", flush=True)
-                offset = 0
-                page_limit = CONVERSATION_PAGE_SIZE # This is 10
-                num_pages_to_fetch = 3
-
-                for _ in range(num_pages_to_fetch):
-                    try:
-                        page_data = chatgpt.list_conversations_page(offset, page_limit)
-                        items = page_data.get("items", [])
-                        if not items:
-                            break # No more conversations
-                        all_conversations.extend(items)
-                        offset += page_limit
-                        print(
-                            f"Fetched page {(_ + 1)}/{num_pages_to_fetch} "
-                            f"({len(items)} conversations)...",
-                            flush=True,
-                        )
-                    except Exception as page_exc:
-                        print(
-                            f"Error fetching page {(_ + 1)}: {page_exc}. Stopping fetch.",
-                            flush=True,
-                        )
-                        break
-
-            if not all_conversations:
-                print("No conversations found or fetched.")
-            else:
-                print(f"Fetched a total of {len(all_conversations)} conversations.")
-                storage.record_conversations(all_conversations) # Still record what was fetched
-                for conv in all_conversations:
-                    cid = conv.get("id") or ""
-                    title = conv.get("title") or "(no title)"
-                    print(f"{cid}\t{title}")
+            run_list_command(chatgpt, storage)
         elif args.view:
             run_noninteractive_view(args.view, chatgpt, storage, since_last_override=args.since_last)
         elif args.inspect:

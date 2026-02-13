@@ -67,3 +67,33 @@ def test_async_list_all_conversations_pagination(monkeypatch):
         {"id": "3", "title": "c", "last_updated": 3},
     ]
     assert calls == [(0, 2), (2, 2)]
+
+
+def test_async_fetch_conversation_removes_stream_headers(monkeypatch):
+    client = AsyncChatGPT()
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {"ok": True}
+
+    class FakeSession:
+        async def get(self, url=None, headers=None, params=None):
+            captured["url"] = url
+            captured["headers"] = dict(headers or {})
+            captured["params"] = dict(params or {})
+            return FakeResponse()
+
+    monkeypatch.setattr(client, "build_request_headers", lambda: {"Content-Type": "application/json"})
+    client.session = FakeSession()
+
+    result = asyncio.run(client.fetch_conversation("conv-1", since_time=12.5))
+
+    assert result == {"ok": True}
+    assert captured["url"].endswith("/conversation/conv-1")
+    assert "Content-Type" not in captured["headers"]
+    assert captured["headers"]["Accept"] == "application/json"
+    assert captured["params"]["since_time"] == "12.5"

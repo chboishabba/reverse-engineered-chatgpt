@@ -203,20 +203,45 @@ After pasting your token, the launcher starts an interactive ChatGPT session whe
 
 ### Automation-friendly CLI commands
 
-The CLI also exposes non-interactive helpers that are tailored for scripted or AI-assisted flows such as the `$chat-context-sync` example: request a conversation catalog, `rg` through exported history, inspect the metadata, and then surface the most recent lines (optionally persisting the chat). All commands emit plain text so you can pipe them through `rg`, `awk`, or other tools.
+The CLI also exposes non-interactive helpers that are tailored for scripted or AI-assisted flows such as the `$chat-context-sync` example: request a conversation catalog, inspect metadata, and surface the most recent lines (optionally persisting the chat). All commands emit plain text so you can pipe them through `rg`, `awk`, or other tools.
 
 - `python -m re_gpt.cli --list`: Prints `CONVERSATION_ID<TAB>TITLE` for every saved chat so you can feed the IDs into downstream tooling.
 - `python -m re_gpt.cli --inspect <CONVERSATION_ID|TITLE>`: Shows stored metadata for a conversation including remote update time, when it was last seen, and how many messages are cached locally. If storage is empty, it will still query the remote catalog to surface timestamps.
 - `python -m re_gpt.cli --view "<CONVERSATION_ID|TITLE> [lines START[-END]] [since last update]"`: Streams the requested messages to stdout (no pager). Use the optional `lines` range or `since last update` tokens to limit the slice of messages you need to debug or sync with the UI.
-- `python -m re_gpt.cli --download <CONVERSATION_ID|TITLE|all|list>`: Mirrors the interactive `download` command so automation can persist exports (`chat_exports/`) without manual input.
+- `python -m re_gpt.cli --download <CONVERSATION_ID|TITLE|all|list>`: Mirrors the interactive `download` command and persists messages to SQLite cache. JSON file export is opt-in via `--export-json`.
 
 These helpers rely on the same `config.ini`/`~/.chatgpt_session` setup as the interactive CLI; they establish their own session and exit once the requested data has been emitted.
 
 A typical automation flow looks like:
 
-1. Run `python -m re_gpt.cli --list` and feed the ID or title into `rg` while searching the `chat_exports/` directory that `--download` keeps in sync.
+1. Run `python -m re_gpt.cli --list` and choose candidate conversation IDs.
 2. Use `python -m re_gpt.cli --inspect <ID>` to confirm when the remote conversation last changed and how many messages are already cached.
-3. Finally, emit the latest messages with `--view "<ID> since last update"` (or limit the output to a line range) so the next human-in-the-loop prompt can be composed.
+3. Emit the latest messages with `--view "<ID> since last update"` (or limit to a line range) for human verification.
+4. Use `scripts/list_sync_candidates.py` plus `scripts/pull_to_structurer.py` to ingest directly into your canonical SQLite archive (no JSON intermediate by default).
+
+When you also maintain a SQLite archive (for example `chat-export-structurer/my_archive.sqlite`),
+you can list only conversations that are missing from the archive or have a newer remote update:
+
+```bash
+python scripts/list_sync_candidates.py \
+  --archive-db ../chat-export-structurer/my_archive.sqlite \
+  --format ids
+```
+
+The command above prints one conversation ID per line. Save them to a file and use
+`scripts/pull_to_structurer.py --ids-file ...` for direct canonical ingestion.
+
+For canonical single-DB ingestion and sync/async benchmarking, use:
+
+```bash
+python scripts/pull_to_structurer.py --mode bench --limit 20 --json
+python scripts/pull_to_structurer.py --mode pull --engine async --limit 200 --rate-limit-rps 3 --concurrency 8
+```
+
+These flows fetch live conversations and ingest directly into `../chat-export-structurer/my_archive.sqlite` without writing intermediate JSON by default.
+
+For a concrete benchmark + targeted stale/missing pull example, see:
+`../docs/planning/chat_archive_pull_ingest_results_20260213.md`.
 
 For a repeatable baseline you can tweak, run `./scripts/context_sync.sh <conversation-id-or-title>`; it executes `--list`, `--inspect`, `--download`, and `--view` in order while letting you adjust the target, line range, or `rg` pattern from the top of the script. Each helper call is wrapped in `timeout 5s` to abort the newer CLI runs that tend to hang so you get a fresh failure instead of an indefinite wait.
 

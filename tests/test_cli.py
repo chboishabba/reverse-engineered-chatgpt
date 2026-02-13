@@ -1,4 +1,5 @@
 import unittest
+import argparse
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -243,9 +244,9 @@ class TestCli(unittest.TestCase):
     @patch('builtins.print')
     def test_list_conversations_flag(self, mock_print):
         mock_chatgpt = MagicMock()
-        mock_chatgpt.list_all_conversations.return_value = [
-            {'id': 'a', 'title': 'Alpha'},
-            {'id': 'b', 'title': 'Beta'},
+        mock_chatgpt.list_conversations_page.side_effect = [
+            {'items': [{'id': 'a', 'title': 'Alpha'}, {'id': 'b', 'title': 'Beta'}]},
+            {'items': []},
         ]
 
         mock_storage_ctx = MagicMock()
@@ -253,7 +254,19 @@ class TestCli(unittest.TestCase):
         mock_storage_ctx.__enter__.return_value = mock_storage_instance
         mock_storage_ctx.__exit__.return_value = False
 
-        args = MagicMock(list=True, nostore=False, key=None, model=None)
+        args = argparse.Namespace(
+            list=True,
+            view=None,
+            inspect=None,
+            download=None,
+            latest=False,
+            browser_login=False,
+            since_last=False,
+            nostore=False,
+            export_json=False,
+            key=None,
+            model=None,
+        )
         with patch('argparse.ArgumentParser.parse_args', return_value=args):
             with patch('re_gpt.cli.obtain_session_token', return_value='token'):
                 mock_sync_ctx = MagicMock()
@@ -262,11 +275,11 @@ class TestCli(unittest.TestCase):
                     with patch('re_gpt.cli.ConversationStorage', return_value=mock_storage_ctx):
                         cli.main()
 
-        mock_chatgpt.list_all_conversations.assert_called_once()
+        mock_chatgpt.list_conversations_page.assert_called()
         mock_storage_instance.record_conversations.assert_called_once_with(
-            mock_chatgpt.list_all_conversations.return_value
+            [{'id': 'a', 'title': 'Alpha'}, {'id': 'b', 'title': 'Beta'}]
         )
-        mock_print.assert_any_call("a\tAlpha")
+        mock_print.assert_any_call("a\tAlpha", flush=True)
 
     def test_parse_view_argument_lines_range(self):
         selector, lines_range, since = parse_view_argument(

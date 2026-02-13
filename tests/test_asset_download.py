@@ -180,6 +180,25 @@ class TestAssetDownload(unittest.TestCase):
             )
             self.assertIn(download_url, expected_candidates)
 
+    def test_resolve_asset_pointer_handles_escaped_backend_urls(self):
+        self.chatgpt.session.post.return_value = _make_response(404, text="missing")
+        self.chatgpt.session.get.return_value = _make_response(404, text="missing")
+        escaped_html = (
+            '{"url":"https:\\/\\/chatgpt.com\\/backend-api\\/estuary\\/content'
+            '?id=file-xyz\\u0026sig=abc"}'
+        )
+        self.chatgpt.fetch_conversation_page = MagicMock(return_value=escaped_html)
+
+        download_url = self.chatgpt.resolve_asset_pointer(
+            "sediment://file_xyz",
+            conversation_id="conv-escaped",
+        )
+
+        self.assertEqual(
+            download_url,
+            "https://chatgpt.com/backend-api/estuary/content?id=file-xyz&sig=abc",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
