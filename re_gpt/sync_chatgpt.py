@@ -1237,13 +1237,38 @@ class SyncChatGPT(AsyncChatGPT):
     def _looks_like_cloudflare_challenge(response) -> bool:
         if response is None:
             return False
-        if response.status_code in {403, 503} or "cf-mitigated" in response.headers:
-            try:
-                snippet = response.text
-            except Exception:
-                snippet = ""
-            snippet = (snippet or "").lower()
-            if "just a moment" in snippet or "__cf_chl_" in snippet or "cloudflare" in snippet:
+        status_code = int(getattr(response, "status_code", 0) or 0)
+        try:
+            headers = dict(getattr(response, "headers", {}) or {})
+        except Exception:
+            headers = {}
+
+        lowered_headers = {str(key).lower(): str(value).lower() for key, value in headers.items()}
+        if "cf-mitigated" in lowered_headers:
+            return True
+
+        try:
+            snippet = response.text
+        except Exception:
+            snippet = ""
+        snippet = (snippet or "").lower()
+
+        challenge_markers = (
+            "just a moment",
+            "__cf_chl_",
+            "__cf$cv$params",
+            "/cdn-cgi/challenge-platform/",
+            "challenges.cloudflare.com",
+            "cf-chl-bypass",
+            "attention required!",
+        )
+
+        if any(marker in snippet for marker in challenge_markers):
+            return True
+
+        if status_code in {403, 429, 503}:
+            server_header = lowered_headers.get("server", "")
+            if "cloudflare" in server_header or "cloudflare" in snippet:
                 return True
         return False
 

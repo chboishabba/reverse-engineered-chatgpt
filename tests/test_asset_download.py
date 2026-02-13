@@ -8,9 +8,15 @@ from unittest.mock import MagicMock
 from re_gpt.sync_chatgpt import SyncChatGPT
 
 
-def _make_response(status_code: int, payload: dict | None = None, text: str | None = None):
+def _make_response(
+    status_code: int,
+    payload: dict | None = None,
+    text: str | None = None,
+    headers: dict | None = None,
+):
     response = MagicMock()
     response.status_code = status_code
+    response.headers = headers or {}
     if payload is None:
         response.json.side_effect = ValueError("no json")
         response.text = text or ""
@@ -198,6 +204,34 @@ class TestAssetDownload(unittest.TestCase):
             download_url,
             "https://chatgpt.com/backend-api/estuary/content?id=file-xyz&sig=abc",
         )
+
+
+class TestCloudflareChallengeDetection(unittest.TestCase):
+    def test_detects_200_body_with_cf_cv_params_marker(self):
+        response = _make_response(
+            200,
+            text=(
+                "<script>window.__CF$cv$params={r:'x',t:'y'};"
+                "a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';</script>"
+            ),
+        )
+        self.assertTrue(SyncChatGPT._looks_like_cloudflare_challenge(response))
+
+    def test_detects_cf_mitigated_header(self):
+        response = _make_response(
+            200,
+            text="<html></html>",
+            headers={"cf-mitigated": "challenge"},
+        )
+        self.assertTrue(SyncChatGPT._looks_like_cloudflare_challenge(response))
+
+    def test_non_challenge_page_is_not_flagged(self):
+        response = _make_response(
+            200,
+            text="<html><body>normal conversation page</body></html>",
+            headers={"content-type": "text/html"},
+        )
+        self.assertFalse(SyncChatGPT._looks_like_cloudflare_challenge(response))
 
 
 if __name__ == "__main__":

@@ -202,6 +202,47 @@ class TestConversationStorage(unittest.TestCase):
             any(name.endswith(".png") and "file_ABC123" in name for name in asset_names)
         )
 
+    def test_persist_chat_passes_conversation_id_to_asset_fetcher_when_supported(self) -> None:
+        conversation_id = "conv-with-context"
+        pointer = "file-service://file-EXAMPLEASSET"
+
+        chat = {
+            "title": "Plot Run",
+            "mapping": {
+                "1": {
+                    "message": {
+                        "author": {"role": "assistant"},
+                        "content": {
+                            "content_type": "multimodal_text",
+                            "parts": [
+                                {
+                                    "content_type": "image_asset_pointer",
+                                    "asset_pointer": pointer,
+                                },
+                                "Here is the plot.",
+                            ],
+                        },
+                        "create_time": 1,
+                    }
+                }
+            },
+        }
+
+        captured: list[tuple[str, str]] = []
+
+        def fake_fetcher(asset_pointer: str, conversation_id: str | None = None) -> AssetDownload:
+            captured.append((asset_pointer, conversation_id or ""))
+            return AssetDownload(content=b"PNGDATA", content_type="image/png")
+
+        result = self.storage.persist_chat(
+            conversation_id,
+            chat,
+            asset_fetcher=fake_fetcher,
+        )
+
+        self.assertEqual(len(result.asset_paths), 1)
+        self.assertEqual(captured, [(pointer, conversation_id)])
+
 
 if __name__ == "__main__":
     unittest.main()

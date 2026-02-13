@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import mimetypes
 import re
@@ -473,7 +474,7 @@ class ConversationStorage:
         conversation_id: str,
         chat: Mapping[str, Any],
         messages: Iterable[Mapping[str, Any]] | None = None,
-        asset_fetcher: Optional[Callable[[str], AssetDownload]] = None,
+        asset_fetcher: Optional[Callable[..., AssetDownload]] = None,
     ) -> PersistResult:
         """Persist a conversation to JSON and the database."""
 
@@ -520,6 +521,7 @@ class ConversationStorage:
                     export_basename,
                     discovered_assets,
                     asset_fetcher,
+                    conversation_id=conversation_id,
                 )
                 asset_paths.extend(downloaded)
                 asset_errors.extend(failures)
@@ -759,7 +761,9 @@ class ConversationStorage:
         self,
         export_basename: str,
         assets: Sequence[ImageAsset],
-        asset_fetcher: Callable[[str], AssetDownload],
+        asset_fetcher: Callable[..., AssetDownload],
+        *,
+        conversation_id: Optional[str] = None,
     ) -> Tuple[list[Path], list[str]]:
         assets_dir = self.export_dir / f"{export_basename}_files"
         assets_dir.mkdir(parents=True, exist_ok=True)
@@ -792,7 +796,11 @@ class ConversationStorage:
                 continue
 
             try:
-                download = asset_fetcher(pointer)
+                download = self._invoke_asset_fetcher(
+                    asset_fetcher,
+                    pointer,
+                    conversation_id=conversation_id,
+                )
             except Exception as exc:  # noqa: BLE001 - surface asset failures to caller.
                 failures.append(f"{pointer}: {exc}")
                 continue
@@ -811,6 +819,39 @@ class ConversationStorage:
             saved_paths.append(file_path)
 
         return saved_paths, failures
+
+    @staticmethod
+    def _invoke_asset_fetcher(
+        asset_fetcher: Callable[..., AssetDownload],
+        pointer: str,
+        *,
+        conversation_id: Optional[str],
+    ) -> AssetDownload:
+        if not conversation_id:
+            return asset_fetcher(pointer)
+
+        try:
+            signature = inspect.signature(asset_fetcher)
+        except (TypeError, ValueError):
+            signature = None
+
+        if signature is None:
+            return asset_fetcher(pointer)
+
+        params = list(signature.parameters.values())
+        accepts_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params)
+        if "conversation_id" in signature.parameters or accepts_kwargs:
+            return asset_fetcher(pointer, conversation_id=conversation_id)
+
+        positional = [
+            param
+            for param in params
+            if param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        ]
+        if len(positional) >= 2:
+            return asset_fetcher(pointer, conversation_id)
+
+        return asset_fetcher(pointer)
 
     @staticmethod
     def _extract_file_id(pointer: str) -> str:
@@ -1150,7 +1191,7 @@ class NullConversationStorage:
         conversation_id: str,
         chat: Mapping[str, Any],
         messages: Iterable[Mapping[str, Any]] | None = None,
-        asset_fetcher: Optional[Callable[[str], AssetDownload]] = None,
+        asset_fetcher: Optional[Callable[..., AssetDownload]] = None,
     ) -> PersistResult:
         return PersistResult(json_path=None, new_messages=0, total_messages=0)
 
