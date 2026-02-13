@@ -86,6 +86,73 @@ class AsyncRateLimiter:
             self._next_allowed = now + self.interval
 
 
+def _normalize_title(value: object) -> str:
+    raw = str(value or "")
+    return " ".join(raw.strip().lower().split())
+
+
+def _looks_like_conversation_id(value: str) -> bool:
+    text = value.strip()
+    if not text:
+        return False
+    parts = text.split("-")
+    if len(parts) != 5:
+        return False
+    expected = (8, 4, 4, 4, 12)
+    if any(len(part) != expected[idx] for idx, part in enumerate(parts)):
+        return False
+    allowed = set("0123456789abcdefABCDEF")
+    return all(ch in allowed for ch in text.replace("-", ""))
+
+
+def _parse_csv_values(raw: Optional[str]) -> list[str]:
+    if not raw:
+        return []
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def _parse_value_file(path_value: Optional[str]) -> list[str]:
+    values: list[str] = []
+    if not path_value:
+        return values
+    path = Path(path_value).expanduser()
+    for raw_line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        values.append(line)
+    return values
+
+
+def _parse_selector_file(path_value: Optional[str]) -> tuple[list[str], list[str]]:
+    ids: list[str] = []
+    titles: list[str] = []
+    if not path_value:
+        return ids, titles
+    path = Path(path_value).expanduser()
+    for raw_line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" in line:
+            prefix, remainder = line.split(":", 1)
+            prefix = prefix.strip().lower()
+            remainder = remainder.strip()
+            if not remainder:
+                continue
+            if prefix in {"id", "conversation_id"}:
+                ids.append(remainder)
+                continue
+            if prefix in {"title", "name"}:
+                titles.append(remainder)
+                continue
+        if _looks_like_conversation_id(line):
+            ids.append(line)
+        else:
+            titles.append(line)
+    return ids, titles
+
+
 def _iso_to_epoch(value: Any) -> Optional[float]:
     if value is None:
         return None
@@ -244,41 +311,105 @@ def _discover_targets(
     token: str,
     *,
     ids: list[str],
+    titles: list[str],
+    title_match: str,
     limit: int,
     page_size: int,
+    max_pages: Optional[int],
     skip_existing: bool,
     existing_updates: dict[str, float],
     debug: bool,
 ) -> list[FetchTarget]:
-    if ids:
+    if ids and not titles:
         return [FetchTarget(conversation_id=i, title="", update_time=None) for i in ids]
 
     targets: list[FetchTarget] = []
+    seen_target_ids: set[str] = set()
+    id_selectors = {value.strip() for value in ids if value.strip()}
+    normalized_title_selectors: list[str] = []
+    for title in titles:
+        normalized = _normalize_title(title)
+        if normalized and normalized not in normalized_title_selectors:
+            normalized_title_selectors.append(normalized)
+
     with SyncChatGPT(session_token=token) as chatgpt:
         offset = 0
+        pages = 0
+        matched_ids: set[str] = set()
+        matched_titles: set[str] = set()
         while True:
+            if max_pages is not None and pages >= max_pages:
+                break
             page = chatgpt.list_conversations_page(offset=offset, limit=page_size)
             items = page.get("items", []) if isinstance(page, dict) else []
             if not items:
                 break
+            pages += 1
+            if debug:
+                print(f"[discover] page={pages} offset={offset} items={len(items)}")
             for item in items:
                 cid = str(item.get("id") or "").strip()
                 if not cid:
                     continue
                 title = str(item.get("title") or "")
+                normalized_title = _normalize_title(title)
                 update = _iso_to_epoch(item.get("update_time") or item.get("last_updated"))
+
+                if id_selectors or normalized_title_selectors:
+                    id_hit = cid in id_selectors
+                    title_hit = False
+                    if normalized_title_selectors:
+                        if title_match == "contains":
+                            matched_selectors = [sel for sel in normalized_title_selectors if sel in normalized_title]
+                            title_hit = bool(matched_selectors)
+                            if title_hit:
+                                matched_titles.update(matched_selectors)
+                        else:
+                            title_hit = normalized_title in normalized_title_selectors
+                            if title_hit:
+                                matched_titles.add(normalized_title)
+                    if id_hit:
+                        matched_ids.add(cid)
+                    if not (id_hit or title_hit):
+                        continue
 
                 if skip_existing and update is not None:
                     cached_update = existing_updates.get(cid)
                     if cached_update is not None and cached_update >= update:
                         continue
 
+                if cid in seen_target_ids:
+                    continue
+                seen_target_ids.add(cid)
                 targets.append(FetchTarget(conversation_id=cid, title=title, update_time=update))
                 if limit > 0 and len(targets) >= limit:
                     return targets
+
+            if (
+                title_match == "exact"
+                and id_selectors
+                and normalized_title_selectors
+                and matched_ids.issuperset(id_selectors)
+                and matched_titles.issuperset(normalized_title_selectors)
+            ):
+                break
+            if title_match == "exact" and id_selectors and not normalized_title_selectors and matched_ids.issuperset(id_selectors):
+                break
+            if title_match == "exact" and normalized_title_selectors and not id_selectors and matched_titles.issuperset(normalized_title_selectors):
+                break
+
             offset += len(items)
             if len(items) < page_size:
                 break
+
+    for convo_id in ids:
+        convo_id = convo_id.strip()
+        if not convo_id or convo_id in seen_target_ids:
+            continue
+        targets.append(FetchTarget(conversation_id=convo_id, title="", update_time=None))
+        seen_target_ids.add(convo_id)
+        if limit > 0 and len(targets) >= limit:
+            break
 
     if debug:
         print(f"[discover] discovered targets={len(targets)}")
@@ -452,25 +583,39 @@ def _run_engine(
     return results, time.monotonic() - started
 
 
-def _parse_ids(args: argparse.Namespace) -> list[str]:
+def _parse_selectors(args: argparse.Namespace) -> tuple[list[str], list[str]]:
     ids: list[str] = []
+    titles: list[str] = []
+
     if args.ids:
-        ids.extend([part.strip() for part in args.ids.split(",") if part.strip()])
+        ids.extend(_parse_csv_values(args.ids))
     if args.ids_file:
-        path = Path(args.ids_file).expanduser()
-        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
-        for line in lines:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            ids.append(line)
-    deduped: list[str] = []
+        ids.extend(_parse_value_file(args.ids_file))
+    if args.titles:
+        titles.extend(_parse_csv_values(args.titles))
+    if args.titles_file:
+        titles.extend(_parse_value_file(args.titles_file))
+    selector_ids, selector_titles = _parse_selector_file(args.selectors_file)
+    ids.extend(selector_ids)
+    titles.extend(selector_titles)
+
+    deduped_ids: list[str] = []
     seen: set[str] = set()
     for item in ids:
         if item not in seen:
             seen.add(item)
-            deduped.append(item)
-    return deduped
+            deduped_ids.append(item)
+
+    deduped_titles: list[str] = []
+    seen_titles: set[str] = set()
+    for item in titles:
+        normalized = _normalize_title(item)
+        if not normalized or normalized in seen_titles:
+            continue
+        seen_titles.add(normalized)
+        deduped_titles.append(item.strip())
+
+    return deduped_ids, deduped_titles
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -483,8 +628,24 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--engine", choices=("sync", "async"), default="async")
     parser.add_argument("--limit", type=int, default=50, help="How many conversations to fetch when IDs are not provided")
     parser.add_argument("--page-size", type=int, default=28)
+    parser.add_argument("--max-pages", type=int, help="Optional cap on catalog pages to scan during discovery")
     parser.add_argument("--ids", help="Comma-separated conversation IDs")
     parser.add_argument("--ids-file", help="File containing one conversation ID per line")
+    parser.add_argument("--titles", help="Comma-separated conversation titles/selectors")
+    parser.add_argument("--titles-file", help="File containing one title selector per line")
+    parser.add_argument(
+        "--selectors-file",
+        help=(
+            "File with mixed selectors (lines can be raw ID/title, or prefixed with "
+            "'id:' / 'title:')."
+        ),
+    )
+    parser.add_argument(
+        "--title-match",
+        choices=("exact", "contains"),
+        default="exact",
+        help="How title selectors are matched against live titles (default: exact).",
+    )
     parser.add_argument("--concurrency", type=int, default=8)
     parser.add_argument("--rate-limit-rps", type=float, default=3.0)
     parser.add_argument("--skip-existing", action="store_true", default=True)
@@ -507,12 +668,15 @@ def main() -> int:
     source_id = args.source_id or f"pull_{dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
 
     existing = _load_existing_updates(db_path, account_id=args.account) if args.skip_existing else {}
-    ids = _parse_ids(args)
+    ids, titles = _parse_selectors(args)
     targets = _discover_targets(
         token,
         ids=ids,
+        titles=titles,
+        title_match=args.title_match,
         limit=max(0, args.limit),
         page_size=max(1, args.page_size),
+        max_pages=args.max_pages,
         skip_existing=args.skip_existing,
         existing_updates=existing,
         debug=args.debug,
@@ -538,6 +702,10 @@ def main() -> int:
         "requested_targets": len(targets),
         "source_id": source_id,
         "db": str(db_path),
+        "selected_id_filters": len(ids),
+        "selected_title_filters": len(titles),
+        "title_match": args.title_match,
+        "max_pages": args.max_pages,
     }
 
     if args.mode == "bench":

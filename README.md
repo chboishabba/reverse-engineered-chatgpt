@@ -225,11 +225,45 @@ you can list only conversations that are missing from the archive or have a newe
 ```bash
 python scripts/list_sync_candidates.py \
   --archive-db ../chat-export-structurer/my_archive.sqlite \
-  --format ids
+  --format summary
 ```
 
-The command above prints one conversation ID per line. Save them to a file and use
-`scripts/pull_to_structurer.py --ids-file ...` for direct canonical ingestion.
+Use `--format ids` to print one conversation ID per line for targeted pulls:
+
+```bash
+python scripts/list_sync_candidates.py \
+  --archive-db ../chat-export-structurer/my_archive.sqlite \
+  --format ids > /tmp/stale_ids.txt
+python scripts/pull_to_structurer.py --mode pull --engine async --ids-file /tmp/stale_ids.txt
+```
+
+You can also scope checks/pulls to an explicit mixed selector set (IDs and/or titles):
+
+```bash
+cat >/tmp/chat_selectors.txt <<'EOF'
+id:6963a49a-b484-8324-89d7-8f2b456011a9
+title:Browne v Dunn Parsing
+EOF
+
+python scripts/list_sync_candidates.py \
+  --archive-db ../chat-export-structurer/my_archive.sqlite \
+  --selectors-file /tmp/chat_selectors.txt \
+  --title-match exact \
+  --stale-threshold-sec 60 \
+  --format summary
+
+python scripts/pull_to_structurer.py \
+  --mode pull \
+  --engine async \
+  --selectors-file /tmp/chat_selectors.txt \
+  --title-match exact \
+  --max-pages 5 \
+  --no-skip-existing \
+  --json
+```
+
+For title-only selection, pass `--titles` / `--titles-file`. For ID-only selection,
+pass `--ids` / `--ids-file`.
 
 For canonical single-DB ingestion and sync/async benchmarking, use:
 
