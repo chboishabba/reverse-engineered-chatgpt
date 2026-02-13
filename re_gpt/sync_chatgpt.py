@@ -1,5 +1,6 @@
 import ctypes
 import inspect
+import os
 import time
 import uuid
 import websockets
@@ -9,7 +10,7 @@ import base64
 import asyncio
 import html
 import re
-from urllib.parse import unquote
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 from queue import Queue
 from threading import Thread
 from typing import Any, Callable, Generator, Optional
@@ -460,9 +461,26 @@ class SyncChatGPT(AsyncChatGPT):
         self.browser_challenge_solver = browser_challenge_solver
         self._frontend_cookies: dict[str, str] = {}
         self._conversation_page_cache: dict[str, str] = {}
+        self._shared_asset_urls: list[str] = []
+        self._shared_asset_file_cache: dict[str, str] = {}
+
+        env_shared_urls = os.getenv("RE_GPT_SHARED_ASSET_URLS", "")
+        if env_shared_urls:
+            for entry in re.split(r"[,\n]", env_shared_urls):
+                self.register_shared_asset_url(entry)
 
         self.stop_websocket_flag = False
         self.stop_websocket = None
+
+    def register_shared_asset_url(self, shared_url: str) -> None:
+        """Register a shared message URL (``https://chatgpt.com/s/m_...``) for asset fallback."""
+        if not shared_url:
+            return
+        value = str(shared_url).strip()
+        if not value:
+            return
+        if value not in self._shared_asset_urls:
+            self._shared_asset_urls.append(value)
 
     def __enter__(self):
         self.session = Session(
@@ -858,6 +876,123 @@ class SyncChatGPT(AsyncChatGPT):
             download_url = _resolve_via_conversation_page(conversation_id, candidates)
             if download_url:
                 return download_url
+
+        def _extract_file_id_from_public_content_url(url_value: str) -> Optional[str]:
+            parsed = urlparse(url_value)
+            marker = "/backend-api/estuary/public_content/enc/"
+            if marker not in parsed.path:
+                return None
+            encoded = parsed.path.split(marker, 1)[1].split("/", 1)[0].strip()
+            if not encoded:
+                return None
+            padded = encoded + ("=" * (-len(encoded) % 4))
+            try:
+                decoded = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8", errors="ignore")
+            except Exception:
+                return None
+            try:
+                payload = json.loads(decoded)
+            except Exception:
+                payload = {}
+            if not isinstance(payload, dict):
+                return None
+            raw_id = str(payload.get("id") or "")
+            match = re.search(r"(file[-_][A-Za-z0-9]+)", raw_id)
+            if not match:
+                return None
+            return match.group(1)
+
+        def _normalize_shared_candidate_url(raw_url: str) -> str:
+            value = (raw_url or "").strip()
+            if not value:
+                return ""
+            if value.startswith("/"):
+                value = urljoin("https://chatgpt.com", value)
+            return unquote(
+                value.replace("\\/", "/").replace("\\u0026", "&").replace("&amp;", "&")
+            )
+
+        def _resolve_via_shared_urls(pointer_values: list[str]) -> Optional[str]:
+            if not self._shared_asset_urls:
+                return None
+
+            identifiers: list[str] = []
+            for pointer_value in pointer_values:
+                for file_id in _iter_file_ids(pointer_value):
+                    if file_id not in identifiers:
+                        identifiers.append(file_id)
+
+            if not identifiers:
+                return None
+
+            for file_id in identifiers:
+                cached = self._shared_asset_file_cache.get(file_id)
+                if cached:
+                    return cached
+
+            for shared_url in self._shared_asset_urls:
+                try:
+                    response = self.session.get(
+                        shared_url,
+                        headers={
+                            "User-Agent": USER_AGENT,
+                            "Accept": "*/*",
+                        },
+                        allow_redirects=False,
+                    )
+                except Exception as exc:
+                    attempt_errors.append(f"{shared_url} -> {exc}")
+                    continue
+
+                candidates_to_check: list[str] = []
+                location = ""
+                try:
+                    location = str(response.headers.get("Location") or response.headers.get("location") or "").strip()
+                except Exception:
+                    location = ""
+                if location:
+                    candidates_to_check.append(_normalize_shared_candidate_url(location))
+
+                response_url = str(getattr(response, "url", "") or "").strip()
+                if response_url:
+                    candidates_to_check.append(_normalize_shared_candidate_url(response_url))
+
+                for candidate_url in candidates_to_check:
+                    if not candidate_url:
+                        continue
+                    parsed = urlparse(candidate_url)
+                    query_id = (parse_qs(parsed.query).get("id") or [None])[0]
+                    extracted = query_id or _extract_file_id_from_public_content_url(candidate_url)
+                    if extracted:
+                        variants = {extracted}
+                        if extracted.startswith("file_"):
+                            variants.add(extracted.replace("file_", "file-", 1))
+                        if extracted.startswith("file-"):
+                            variants.add(extracted.replace("file-", "file_", 1))
+                        if any(v in identifiers for v in variants):
+                            for v in variants:
+                                self._shared_asset_file_cache[v] = candidate_url
+                            self._debug_log(
+                                f"shared-url resolved via {shared_url}",
+                                channel="asset",
+                            )
+                            return candidate_url
+
+                    if any(identifier in candidate_url for identifier in identifiers):
+                        for identifier in identifiers:
+                            if identifier in candidate_url:
+                                self._shared_asset_file_cache[identifier] = candidate_url
+                        self._debug_log(
+                            f"shared-url resolved via substring {shared_url}",
+                            channel="asset",
+                        )
+                        return candidate_url
+
+            return None
+
+        download_url = _resolve_via_shared_urls(candidates)
+        if download_url:
+            return download_url
 
         raise UnexpectedResponseError(
             f"Asset pointer {asset_pointer} did not include a download URL",

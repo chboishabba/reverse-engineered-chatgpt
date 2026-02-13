@@ -1,9 +1,10 @@
+import base64
 import html
 import json
 import re
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from re_gpt.sync_chatgpt import SyncChatGPT
 
@@ -30,6 +31,17 @@ class TestAssetDownload(unittest.TestCase):
     def setUp(self) -> None:
         self.chatgpt = SyncChatGPT(session_token="dummy", auth_token="token")
         self.chatgpt.session = MagicMock()
+
+    def test_registers_shared_asset_urls_from_env(self):
+        with patch.dict(
+            "os.environ",
+            {"RE_GPT_SHARED_ASSET_URLS": "https://chatgpt.com/s/m_one, https://chatgpt.com/s/m_two"},
+            clear=False,
+        ):
+            chatgpt = SyncChatGPT(session_token="dummy", auth_token="token")
+
+        self.assertIn("https://chatgpt.com/s/m_one", chatgpt._shared_asset_urls)
+        self.assertIn("https://chatgpt.com/s/m_two", chatgpt._shared_asset_urls)
 
     def test_resolve_asset_pointer_handles_sediment_fallback(self):
         first = _make_response(404, text="not found")
@@ -204,6 +216,53 @@ class TestAssetDownload(unittest.TestCase):
             download_url,
             "https://chatgpt.com/backend-api/estuary/content?id=file-xyz&sig=abc",
         )
+
+    def test_resolve_asset_pointer_uses_registered_shared_url_redirect(self):
+        self.chatgpt.session.post.return_value = _make_response(404, text="missing")
+        shared_url = "https://chatgpt.com/s/m_demo"
+        resolved_url = "https://chatgpt.com/backend-api/estuary/content?id=file-xyz&sig=abc"
+
+        def fake_get(url, *args, **kwargs):
+            if "/backend-api/files/" in url:
+                return _make_response(404, text="missing")
+            if url == shared_url:
+                return _make_response(302, text="", headers={"Location": resolved_url})
+            return _make_response(404, text="missing")
+
+        self.chatgpt.session.get.side_effect = fake_get
+        self.chatgpt.register_shared_asset_url(shared_url)
+
+        download_url = self.chatgpt.resolve_asset_pointer("sediment://file_xyz")
+
+        self.assertEqual(download_url, resolved_url)
+
+    def test_resolve_asset_pointer_uses_shared_public_content_token(self):
+        self.chatgpt.session.post.return_value = _make_response(404, text="missing")
+        shared_url = "https://chatgpt.com/s/m_public"
+        token_payload = {
+            "id": "m_abc:file_123abc",
+            "ts": "1",
+            "p": "pyi",
+            "cid": "1",
+            "sig": "deadbeef",
+            "v": "0",
+        }
+        encoded = base64.urlsafe_b64encode(json.dumps(token_payload).encode("utf-8")).decode("ascii").rstrip("=")
+        public_content_url = f"https://chatgpt.com/backend-api/estuary/public_content/enc/{encoded}"
+
+        def fake_get(url, *args, **kwargs):
+            if "/backend-api/files/" in url:
+                return _make_response(404, text="missing")
+            if url == shared_url:
+                return _make_response(302, text="", headers={"Location": public_content_url})
+            return _make_response(404, text="missing")
+
+        self.chatgpt.session.get.side_effect = fake_get
+        self.chatgpt.register_shared_asset_url(shared_url)
+
+        download_url = self.chatgpt.resolve_asset_pointer("sediment://file_123abc")
+
+        self.assertEqual(download_url, public_content_url)
 
 
 class TestCloudflareChallengeDetection(unittest.TestCase):

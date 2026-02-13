@@ -265,6 +265,16 @@ python scripts/pull_to_structurer.py \
 For title-only selection, pass `--titles` / `--titles-file`. For ID-only selection,
 pass `--ids` / `--ids-file`.
 
+If image assets require share-link resolution (`https://chatgpt.com/s/m_...`), set:
+
+```bash
+export RE_GPT_SHARED_ASSET_URLS="https://chatgpt.com/s/m_698eb5ffaeb881918520bbf34f205162"
+```
+
+Multiple URLs are supported (comma-separated). The asset resolver will use these
+as a fallback when `asset/get` and `backend-api/files/.../download` do not return
+a direct download URL.
+
 For canonical single-DB ingestion and sync/async benchmarking, use:
 
 ```bash
