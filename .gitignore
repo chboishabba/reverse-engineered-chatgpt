@@ -185,3 +185,5 @@ Reddit Test Message_files/
 scripts/prodder.vars.json
 scripts/expected_payload.json
 scripts/generated_payload.json
+
+# Generated artifacts\n__pycache__/\n*.pyc\n.pytest_cache/\ndist/\nbuild/\ntarget/\n*.swp\n*.kate-swp\n.DS_Store\n
