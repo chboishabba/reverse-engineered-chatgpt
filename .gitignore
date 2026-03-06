@@ -186,4 +186,23 @@ scripts/prodder.vars.json
 scripts/expected_payload.json
 scripts/generated_payload.json
 
-# Generated artifacts\n__pycache__/\n*.pyc\n.pytest_cache/\ndist/\nbuild/\ntarget/\n*.swp\n*.kate-swp\n.DS_Store\n
+# Generated artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+build/
+target/
+*.swp
+*.kate-swp
+.DS_Store
+
+# Chat history / local DBs
+chat*_history*.sqlite*
+chatgpt_history*.sqlite*
+codex_history*.sqlite*
+*chat_history*.sqlite*
+chatgpt_history*.sqlite*-wal
+chatgpt_history*.sqlite*-shm
+codex_history*.sqlite*-wal
+codex_history*.sqlite*-shm
