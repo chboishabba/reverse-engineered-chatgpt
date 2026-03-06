@@ -219,12 +219,12 @@ A typical automation flow looks like:
 3. Emit the latest messages with `--view "<ID> since last update"` (or limit to a line range) for human verification.
 4. Use `scripts/list_sync_candidates.py` plus `scripts/pull_to_structurer.py` to ingest directly into your canonical SQLite archive (no JSON intermediate by default).
 
-When you also maintain a SQLite archive (for example `chat-export-structurer/my_archive.sqlite`),
+When you also maintain a SQLite archive (for example `~/.chat_archive.sqlite`),
 you can list only conversations that are missing from the archive or have a newer remote update:
 
 ```bash
 python scripts/list_sync_candidates.py \
-  --archive-db ../chat-export-structurer/my_archive.sqlite \
+  --archive-db ~/.chat_archive.sqlite \
   --format summary
 ```
 
@@ -232,7 +232,7 @@ Use `--format ids` to print one conversation ID per line for targeted pulls:
 
 ```bash
 python scripts/list_sync_candidates.py \
-  --archive-db ../chat-export-structurer/my_archive.sqlite \
+  --archive-db ~/.chat_archive.sqlite \
   --format ids > /tmp/stale_ids.txt
 python scripts/pull_to_structurer.py --mode pull --engine async --ids-file /tmp/stale_ids.txt
 ```
@@ -246,7 +246,7 @@ title:Browne v Dunn Parsing
 EOF
 
 python scripts/list_sync_candidates.py \
-  --archive-db ../chat-export-structurer/my_archive.sqlite \
+  --archive-db ~/.chat_archive.sqlite \
   --selectors-file /tmp/chat_selectors.txt \
   --title-match exact \
   --stale-threshold-sec 60 \
@@ -282,7 +282,7 @@ python scripts/pull_to_structurer.py --mode bench --limit 20 --json
 python scripts/pull_to_structurer.py --mode pull --engine async --limit 200 --rate-limit-rps 3 --concurrency 8
 ```
 
-These flows fetch live conversations and ingest directly into `../chat-export-structurer/my_archive.sqlite` without writing intermediate JSON by default.
+These flows fetch live conversations and ingest directly into `~/.chat_archive.sqlite` without writing intermediate JSON by default.
 
 For a concrete benchmark + targeted stale/missing pull example, see:
 `../docs/planning/chat_archive_pull_ingest_results_20260213.md`.

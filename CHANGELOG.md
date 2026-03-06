@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Added `scripts/pull_to_structurer.py` for high-throughput live fetch + direct
-  ingest into `chat-export-structurer/my_archive.sqlite`, including sync/async benchmarking
+  ingest into `~/.chat_archive.sqlite`, including sync/async benchmarking
   and rate-limited async pulls.
 - Added async parity method `AsyncChatGPT.fetch_conversation(...)` and fetch-path
   debug logging (`RE_GPT_DEBUG_FETCH=1`).

@@ -325,7 +325,7 @@ def main() -> int:
     parser.add_argument(
         "--archive-db",
         required=True,
-        help="Path to archive SQLite DB (for example ../chat-export-structurer/my_archive.sqlite).",
+        help="Path to archive SQLite DB (for example ~/.chat_archive.sqlite).",
     )
     parser.add_argument("--token", help="Session token value (defaults to config.ini or ~/.chatgpt_session).")
     parser.add_argument("--platform", default="chatgpt", help="Archive platform filter (default: chatgpt).")

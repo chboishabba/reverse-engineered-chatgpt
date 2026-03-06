@@ -3,7 +3,7 @@
 
 Default behavior:
 - fetch live conversations via re_gpt
-- ingest directly into chat-export-structurer/my_archive.sqlite
+- ingest directly into ~/.chat_archive.sqlite
 - do not write intermediate JSON exports
 """
 
@@ -621,7 +621,7 @@ def _parse_selectors(args: argparse.Namespace) -> tuple[list[str], list[str]]:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--token", help="Session token (defaults to ~/.chatgpt_session or config)")
-    parser.add_argument("--db", default=str(ROOT / "chat-export-structurer" / "my_archive.sqlite"))
+    parser.add_argument("--db", default=str(Path.home() / ".chat_archive.sqlite"))
     parser.add_argument("--account", default="main")
     parser.add_argument("--source-id", help="Source ID for ingestion (default: auto UTC timestamp)")
     parser.add_argument("--mode", choices=("pull", "bench"), default="pull")

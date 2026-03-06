@@ -8,7 +8,7 @@
 ## Interaction Model
 1. Authenticate using a session token.
 2. List/view/download conversation data via CLI and Python API.
-3. Persist canonical conversation records to `chat-export-structurer/my_archive.sqlite` via direct ingest.
+3. Persist canonical conversation records to `~/.chat_archive.sqlite` via direct ingest.
 4. Expose metadata for context synchronization tasks.
 
 ## Exchange Channels
