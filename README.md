@@ -92,6 +92,19 @@ ChatGPT has an official API which can be used to interface your Python code to i
 > pip install re-gpt[browser]
 > playwright install firefox
 > ```
+>
+> Authenticated conversation fetches also rely on frontend cookies in addition
+> to `__Secure-next-auth.session-token`. If `api/auth/session` comes back with
+> a JSON `WARNING_BANNER` and no `accessToken`, the correct recovery is to
+> hydrate the frontend cookie jar from `https://chatgpt.com/`, preserve any
+> non-empty existing session token, and fall back to `client-bootstrap`
+> extraction where available, not to immediately assume the stored token is
+> stale. If the frontend still renders `authStatus: logged_out`, a browser-
+> authenticated path is still required.
+>
+> If your browser stores the session token in chunked form, put the chunks in
+> `~/.chatgpt_session_new` as one raw chunk per line. The library will treat
+> those lines as a single stitched token before starting auth bootstrap.
 
 ### Installation
 

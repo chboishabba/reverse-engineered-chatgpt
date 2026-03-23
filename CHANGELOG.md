@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Added chunked session-token file support:
+  - `get_session_token()` can now read `~/.chatgpt_session_new` and stitch
+    multiple raw lines into one token before auth bootstrap
+  - documented the chunked-token workflow in the README and repo context
+- Hardened auth bootstrap for authenticated live fetches:
+  - preserve non-empty `__Secure-next-auth.session-token` values when frontend
+    responses hand back an empty replacement cookie
+  - retry warning-banner-only `api/auth/session` responses with frontend-cookie
+    hydration
+  - add `client-bootstrap` access-token fallback plus an async sync-bootstrap
+    escape hatch
+  - add focused regression coverage in
+    `tests/test_list_all_conversations.py`
 - Added `scripts/pull_to_structurer.py` for high-throughput live fetch + direct
   ingest into `~/.chat_archive.sqlite`, including sync/async benchmarking
   and rate-limited async pulls.

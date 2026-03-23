@@ -158,6 +158,18 @@ def get_model_slug(chat):
     return default_slug
 
 
+def _read_stitched_session_token_file(path: Path) -> str:
+    if not path.is_file():
+        return ""
+    lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
+    parts = [line for line in lines if line]
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    return "".join(parts)
+
+
 def get_session_token(config_path: str = "config.ini") -> str:
     """Retrieve the ChatGPT session token.
 
@@ -183,6 +195,11 @@ def get_session_token(config_path: str = "config.ini") -> str:
         token = parser.get("session", "token", fallback="").strip()
         if token and token != "YOUR_SESSION_TOKEN":
             return token
+
+    chunked_session_file = Path.home() / ".chatgpt_session_new"
+    token = _read_stitched_session_token_file(chunked_session_file)
+    if token:
+        return token
 
     session_file = Path.home() / ".chatgpt_session"
     if session_file.is_file():

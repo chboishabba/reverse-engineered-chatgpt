@@ -26,6 +26,7 @@ from .async_chatgpt import (
     MODELS,
     WS_REGISTER_URL,
     CHATGPT_FREE_API,
+    extract_access_token_from_bootstrap_html,
 )
 from .errors import (
     BackendError,
@@ -1040,28 +1041,7 @@ class SyncChatGPT(AsyncChatGPT):
 
         Returns: authentication token.
         """
-        url = "https://chatgpt.com/api/auth/session"
-        cookies = {"__Secure-next-auth.session-token": self.session_token}
-
-        headers = {
-            "User-Agent": self.user_agent,
-            "Accept": "*/*",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Alt-Used": "chatgpt.com",
-            "Connection": "keep-alive",
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "same-origin",
-            "Sec-GPC": "1",
-            "Cookie": "; ".join(
-                [
-                    f"{cookie_key}={cookie_value}"
-                    for cookie_key, cookie_value in cookies.items()
-                ]
-            ),
-        }
-
-        response = self.session.get(url=url, headers=headers)
+        response = self._request_auth_session()
         try:
             response.raise_for_status()
         except Exception as e:
@@ -1071,6 +1051,21 @@ class SyncChatGPT(AsyncChatGPT):
         access_token = response_json.get("accessToken")
         if access_token:
             return access_token
+
+        if response_json.get("WARNING_BANNER"):
+            bootstrap_html = self._bootstrap_frontend_cookies()
+            access_token = extract_access_token_from_bootstrap_html(bootstrap_html)
+            if access_token:
+                return access_token
+            response = self._request_auth_session()
+            try:
+                response.raise_for_status()
+            except Exception as e:
+                raise InvalidSessionToken from e
+            response_json = response.json()
+            access_token = response_json.get("accessToken")
+            if access_token:
+                return access_token
 
         raise UnexpectedResponseError(
             "accessToken missing in auth response", response.text
@@ -1312,6 +1307,33 @@ class SyncChatGPT(AsyncChatGPT):
 
         return response_cookies
 
+    def _bootstrap_frontend_cookies(self) -> str:
+        response = self._perform_frontend_get(
+            "https://chatgpt.com/",
+            headers=self._build_frontend_page_headers(),
+            purpose="ChatGPT home page",
+            allow_browser_fallback=True,
+        )
+        return getattr(response, "text", "") or ""
+
+    def _request_auth_session(self):
+        headers = {
+            "User-Agent": self.user_agent,
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Alt-Used": "chatgpt.com",
+            "Connection": "keep-alive",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-GPC": "1",
+        }
+        return self.session.get(
+            url="https://chatgpt.com/api/auth/session",
+            headers=headers,
+            cookies=dict(self._frontend_cookies) or None,
+        )
+
     def _build_frontend_page_headers(self) -> dict[str, str]:
         headers = {
             "User-Agent": self.user_agent,
@@ -1358,6 +1380,8 @@ class SyncChatGPT(AsyncChatGPT):
                 domain = getattr(cookie, "domain", "") or ""
                 path = getattr(cookie, "path", "/") or "/"
             if not name or value is None:
+                continue
+            if not str(value).strip() and self._frontend_cookies.get(str(name) or ""):
                 continue
             normalized_domain = domain.lstrip(".") or "chatgpt.com"
             if not normalized_domain.endswith("chatgpt.com"):

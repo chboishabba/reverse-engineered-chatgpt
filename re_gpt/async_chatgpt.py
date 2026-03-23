@@ -7,10 +7,10 @@ import os
 import re
 import time
 import uuid
-from typing import AsyncGenerator, Callable, Optional
+from typing import Any, AsyncGenerator, Callable, Optional
 
 import websockets
-from curl_cffi.requests import AsyncSession
+from curl_cffi.requests import AsyncSession, Session
 
 from .errors import (
     BackendError,
@@ -39,6 +39,28 @@ MODELS = {
     "gpt-4": {"slug": "gpt-4", "needs_arkose_token": True},
     "gpt-3.5": {"slug": "text-davinci-002-render-sha", "needs_arkose_token": False},
 }
+
+CLIENT_BOOTSTRAP_PATTERN = re.compile(
+    r'<script[^>]+id="client-bootstrap"[^>]*>(.*?)</script>',
+    flags=re.IGNORECASE | re.DOTALL,
+)
+
+
+def extract_access_token_from_bootstrap_html(payload: str) -> Optional[str]:
+    if not payload:
+        return None
+    match = CLIENT_BOOTSTRAP_PATTERN.search(payload)
+    if not match:
+        return None
+    try:
+        bootstrap = json.loads(match.group(1))
+    except Exception:
+        return None
+    session = bootstrap.get("session")
+    if not isinstance(session, dict):
+        return None
+    access_token = session.get("accessToken")
+    return access_token if isinstance(access_token, str) and access_token.strip() else None
 
 
 class AsyncConversation:
@@ -511,6 +533,7 @@ class AsyncChatGPT:
         self.free_mode = True if self.session_token is None else False
         self.auth_cookie = None
         self.devive_id = str(uuid.uuid4())
+        self._frontend_cookies: dict[str, str] = {}
 
     def _debug_log(self, message: str, *, channel: str = "fetch") -> None:
         if channel == "asset" and not self.debug_assets:
@@ -523,6 +546,18 @@ class AsyncChatGPT:
         self.session = AsyncSession(
             impersonate="chrome110", timeout=99999, proxies=self.proxies
         )
+        self._frontend_cookies = {}
+        if self.session_token:
+            self._frontend_cookies["__Secure-next-auth.session-token"] = self.session_token
+            try:
+                self.session.cookies.set(
+                    "__Secure-next-auth.session-token",
+                    self.session_token,
+                    domain="chatgpt.com",
+                    path="/",
+                )
+            except Exception:
+                self.session.cookies.set("__Secure-next-auth.session-token", self.session_token)
         if self.generate_arkose_token:
             self.binary_path = await async_get_binary_path(self.session)
 
@@ -670,18 +705,101 @@ class AsyncChatGPT:
         )
         return payload
 
-    async def fetch_auth_token(self) -> str:
-        """
-        Fetch the authentication token for the session.
+    def _build_frontend_page_headers(self) -> dict[str, str]:
+        return {
+            "User-Agent": self.user_agent,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+        }
 
-        Raises:
-            InvalidSessionToken: If the session token is invalid.
+    def _merge_cookie_container(self, cookies: Any) -> None:
+        if not cookies:
+            return
 
-        Returns: authentication token.
-        """
-        url = "https://chatgpt.com/api/auth/session"
-        cookies = {"__Secure-next-auth.session-token": self.session_token}
+        jar = None
+        if hasattr(cookies, "jar"):
+            jar = cookies.jar
+        elif isinstance(cookies, dict):
+            jar = [
+                type("CookieTuple", (), {"name": key, "value": value, "domain": "chatgpt.com", "path": "/"})
+                for key, value in cookies.items()
+            ]
+        elif isinstance(cookies, list):
+            jar = cookies
 
+        if jar is None:
+            return
+
+        for cookie in jar:
+            if isinstance(cookie, dict):
+                name = cookie.get("name")
+                value = cookie.get("value")
+                domain = cookie.get("domain", "") or ""
+                path = cookie.get("path", "/") or "/"
+            else:
+                name = getattr(cookie, "name", None)
+                value = getattr(cookie, "value", None)
+                domain = getattr(cookie, "domain", "") or ""
+                path = getattr(cookie, "path", "/") or "/"
+            if not name or value is None:
+                continue
+            if not str(value).strip() and self._frontend_cookies.get(str(name) or ""):
+                continue
+            normalized_domain = domain.lstrip(".") or "chatgpt.com"
+            if not normalized_domain.endswith("chatgpt.com"):
+                continue
+            self._frontend_cookies[name] = value
+            try:
+                self.session.cookies.set(name, value, domain=normalized_domain, path=path)
+            except Exception:
+                self.session.cookies.set(name, value)
+
+    async def _bootstrap_frontend_cookies(self) -> str:
+        response = await self.session.get(
+            url="https://chatgpt.com/",
+            headers=self._build_frontend_page_headers(),
+            cookies=dict(self._frontend_cookies) or None,
+        )
+        self._merge_cookie_container(response.cookies)
+        return getattr(response, "text", "") or ""
+
+    def _bootstrap_frontend_cookies_sync_fallback(self) -> tuple[str, dict[str, str]]:
+        session = Session(impersonate="chrome110", timeout=30, proxies=self.proxies)
+        if self.session_token:
+            try:
+                session.cookies.set(
+                    "__Secure-next-auth.session-token",
+                    self.session_token,
+                    domain="chatgpt.com",
+                    path="/",
+                )
+            except Exception:
+                session.cookies.set("__Secure-next-auth.session-token", self.session_token)
+        response = session.get(
+            url="https://chatgpt.com/",
+            headers=self._build_frontend_page_headers(),
+            cookies={"__Secure-next-auth.session-token": self.session_token} if self.session_token else None,
+        )
+        cookie_map: dict[str, str] = {}
+        for jar in (getattr(session.cookies, "jar", []), getattr(response.cookies, "jar", [])):
+            for cookie in jar:
+                name = getattr(cookie, "name", None)
+                value = getattr(cookie, "value", None)
+                domain = (getattr(cookie, "domain", "") or "").lstrip(".") or "chatgpt.com"
+                if not name or value is None or not domain.endswith("chatgpt.com"):
+                    continue
+                cookie_map[name] = value
+        return getattr(response, "text", "") or "", cookie_map
+
+    async def _request_auth_session(self):
         headers = {
             "User-Agent": self.user_agent,
             "Accept": "*/*",
@@ -692,15 +810,23 @@ class AsyncChatGPT:
             "Sec-Fetch-Mode": "cors",
             "Sec-Fetch-Site": "same-origin",
             "Sec-GPC": "1",
-            "Cookie": "; ".join(
-                [
-                    f"{cookie_key}={cookie_value}"
-                    for cookie_key, cookie_value in cookies.items()
-                ]
-            ),
         }
+        return await self.session.get(
+            url="https://chatgpt.com/api/auth/session",
+            headers=headers,
+            cookies=dict(self._frontend_cookies) or None,
+        )
 
-        response = await self.session.get(url=url, headers=headers)
+    async def fetch_auth_token(self) -> str:
+        """
+        Fetch the authentication token for the session.
+
+        Raises:
+            InvalidSessionToken: If the session token is invalid.
+
+        Returns: authentication token.
+        """
+        response = await self._request_auth_session()
         try:
             response.raise_for_status()
         except Exception as e:
@@ -710,6 +836,28 @@ class AsyncChatGPT:
         access_token = response_json.get("accessToken")
         if access_token:
             return access_token
+
+        if response_json.get("WARNING_BANNER"):
+            bootstrap_html = await self._bootstrap_frontend_cookies()
+            access_token = extract_access_token_from_bootstrap_html(bootstrap_html)
+            if access_token:
+                return access_token
+            bootstrap_html, bootstrap_cookies = await asyncio.to_thread(
+                self._bootstrap_frontend_cookies_sync_fallback
+            )
+            self._merge_cookie_container(bootstrap_cookies)
+            access_token = extract_access_token_from_bootstrap_html(bootstrap_html)
+            if access_token:
+                return access_token
+            response = await self._request_auth_session()
+            try:
+                response.raise_for_status()
+            except Exception as e:
+                raise InvalidSessionToken from e
+            response_json = response.json()
+            access_token = response_json.get("accessToken")
+            if access_token:
+                return access_token
 
         raise UnexpectedResponseError(
             "accessToken missing in auth response", response.text
