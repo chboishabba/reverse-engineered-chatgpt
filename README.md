@@ -93,6 +93,12 @@ ChatGPT has an official API which can be used to interface your Python code to i
 > playwright install firefox
 > ```
 >
+> Treat that browser path as an experimental fallback, not the primary recovery
+> path. The current priority is restoring direct web pulls and auth bootstrap
+> without relying on the Cloudflare/Playwright flow. If a live fetch falls into
+> browser-challenge handling, treat that as a frontdoor/auth issue to debug
+> rather than proof that installing Playwright is the real fix.
+>
 > Authenticated conversation fetches also rely on frontend cookies in addition
 > to `__Secure-next-auth.session-token`. If `api/auth/session` comes back with
 > a JSON `WARNING_BANNER` and no `accessToken`, the correct recovery is to
