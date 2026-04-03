@@ -22,11 +22,16 @@ from .storage import (
     extract_ordered_messages,
 )
 from .sync_chatgpt import SyncChatGPT, SyncConversation
+from .normalized_artifact import write_conversation_source_artifact
 from .utils import (
     get_default_model,
     get_default_user_agent,
     get_model_slug,
     get_session_token,
+)
+from .retrieval_follow import (
+    write_conversation_list_follow_artifact,
+    write_conversation_list_follow_normalized_artifact,
 )
 
 # Exit commands recognised by the CLI.
@@ -355,7 +360,15 @@ def run_latest_command(storage: ConversationStorage) -> None:
     print(f"{timestamp} assistant: {content}")
 
 
-def run_list_command(chatgpt: SyncChatGPT, storage: ConversationStorage) -> None:
+def run_list_command(
+    chatgpt: SyncChatGPT,
+    storage: ConversationStorage,
+    *,
+    follow_out: str | None = None,
+    follow_normalized_out: str | None = None,
+    follow_max: int = 10,
+    follow_no_stop: bool = False,
+) -> None:
     """Stream conversation headers as each page is fetched.
 
     This avoids waiting for the full catalog to load before emitting output.
@@ -366,6 +379,10 @@ def run_list_command(chatgpt: SyncChatGPT, storage: ConversationStorage) -> None
     offset = 0
     seen_ids: set[str] = set()
     total_printed = 0
+    retrieved_ids: list[str] = []
+
+    if follow_max <= 0:
+        follow_max = 10
 
     while True:
         page_data = chatgpt.list_conversations_page(offset=offset, limit=CONVERSATION_PAGE_SIZE)
@@ -383,6 +400,8 @@ def run_list_command(chatgpt: SyncChatGPT, storage: ConversationStorage) -> None
                 continue
             if cid:
                 seen_ids.add(cid)
+                if len(retrieved_ids) < follow_max:
+                    retrieved_ids.append(cid)
             print(f"{cid}\t{title}", flush=True)
             total_printed += 1
 
@@ -392,6 +411,32 @@ def run_list_command(chatgpt: SyncChatGPT, storage: ConversationStorage) -> None
 
     if total_printed == 0:
         print("No conversations found or fetched.", flush=True)
+
+    if follow_out:
+        write_conversation_list_follow_artifact(
+            follow_out,
+            query="conversation list",
+            result_refs=retrieved_ids,
+            total_results=total_printed,
+            max_results=follow_max,
+            stop_after=not follow_no_stop,
+            trigger_params={"page_size": CONVERSATION_PAGE_SIZE},
+        )
+        print(f"Derived follow artifact written to {follow_out}", flush=True)
+    if follow_normalized_out:
+        write_conversation_list_follow_normalized_artifact(
+            follow_normalized_out,
+            query="conversation list",
+            result_refs=retrieved_ids,
+            total_results=total_printed,
+            max_results=follow_max,
+            stop_after=not follow_no_stop,
+            trigger_params={"page_size": CONVERSATION_PAGE_SIZE},
+        )
+        print(
+            f"Normalized derived follow artifact written to {follow_normalized_out}",
+            flush=True,
+        )
 
 
 def run_noninteractive_view(
@@ -860,6 +905,7 @@ def handle_download_command(
     current_page: Optional[List[Dict]] = None,
     cached_conversations: Optional[List[Dict]] = None,
     since_last_update: bool = False,
+    normalized_artifact_out: Optional[str] = None,
 ) -> None:
     """Download and persist conversations based on ``user_input``."""
 
@@ -965,6 +1011,10 @@ def handle_download_command(
             return
         targets = filtered_targets
 
+    if normalized_artifact_out and len(targets) != 1:
+        print("--normalized-artifact-out currently requires exactly one download target.")
+        return
+
     for conversation_id in targets:
         conversation = chatgpt.get_conversation(conversation_id)
         try:
@@ -1011,6 +1061,21 @@ def handle_download_command(
                 path=path_info,
             )
         )
+        if normalized_artifact_out:
+            artifact_path = normalized_artifact_out
+            if len(targets) == 1:
+                artifact_path = normalized_artifact_out
+            write_conversation_source_artifact(
+                artifact_path,
+                conversation_id=conversation_id,
+                title=chat.get("title") if isinstance(chat, dict) else None,
+                json_path=str(result.json_path) if result.json_path else None,
+                remote_update_time=chat.get("update_time") if isinstance(chat, dict) else None,
+                total_messages=result.total_messages,
+                new_messages=result.new_messages,
+                asset_count=len(result.asset_paths),
+            )
+            print(f"  Normalized artifact: {artifact_path}")
 
 
 def main() -> None:
@@ -1027,6 +1092,27 @@ def main() -> None:
         "--list",
         action="store_true",
         help="Print conversation IDs and titles to stdout (use redirection for `rg`).",
+    )
+    parser.add_argument(
+        "--list-follow-out",
+        type=str,
+        help="Write a derived retrieval follow artifact describing the conversation catalog.",
+    )
+    parser.add_argument(
+        "--list-follow-normalized-out",
+        type=str,
+        help="Write the suite-normalized derived_product wrapper for the conversation catalog follow artifact.",
+    )
+    parser.add_argument(
+        "--list-follow-max",
+        type=int,
+        default=10,
+        help="Maximum conversation IDs captured in the follow artifact (default: 10).",
+    )
+    parser.add_argument(
+        "--list-follow-no-stop",
+        action="store_true",
+        help="Leave the follow artifact open-ended instead of marking it as a stop signal.",
     )
     parser.add_argument(
         "--view",
@@ -1065,6 +1151,11 @@ def main() -> None:
         "--export-json",
         action="store_true",
         help="Also write conversation JSON files to chat_exports/ (disabled by default).",
+    )
+    parser.add_argument(
+        "--normalized-artifact-out",
+        type=str,
+        help="Write a producer-owned root normalized artifact for a single downloaded conversation.",
     )
     parser.add_argument(
         "--browser-login",
@@ -1117,7 +1208,14 @@ def main() -> None:
             print("Storage disabled; conversations will not be saved locally.")
         
         if args.list:
-            run_list_command(chatgpt, storage)
+            run_list_command(
+                chatgpt,
+                storage,
+                follow_out=args.list_follow_out,
+                follow_normalized_out=args.list_follow_normalized_out,
+                follow_max=args.list_follow_max,
+                follow_no_stop=args.list_follow_no_stop,
+            )
         elif args.view:
             run_noninteractive_view(args.view, chatgpt, storage, since_last_override=args.since_last)
         elif args.inspect:
@@ -1128,6 +1226,7 @@ def main() -> None:
                 chatgpt,
                 storage,
                 since_last_update=args.since_last,
+                normalized_artifact_out=args.normalized_artifact_out,
             )
         elif args.browser_login:
             chatgpt.start_browser_session()

@@ -18,6 +18,7 @@ import json
 import sqlite3
 import sys
 import time
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
@@ -52,6 +53,71 @@ class FetchResult:
     message_count: int
     error: str = ""
     messages: tuple[dict[str, Any], ...] = ()
+
+
+class FetchProgressReporter:
+    def __init__(self, *, total: int, engine: str, enabled: bool = True) -> None:
+        self.total = max(0, int(total))
+        self.engine = engine
+        self.enabled = enabled
+        self.started = time.monotonic()
+        self.completed = 0
+        self.ok = 0
+        self.failures = 0
+        self.messages = 0
+        self.in_flight = 0
+        self._last_emit = 0.0
+        self._lock = threading.Lock()
+
+    def start_target(self) -> None:
+        if not self.enabled:
+            return
+        with self._lock:
+            self.in_flight += 1
+            self._emit_locked("starting", force=self.completed == 0)
+
+    def finish_target(self, *, ok: bool, message_count: int) -> None:
+        if not self.enabled:
+            return
+        with self._lock:
+            self.in_flight = max(0, self.in_flight - 1)
+            self.completed += 1
+            self.messages += max(0, int(message_count))
+            if ok:
+                self.ok += 1
+            else:
+                self.failures += 1
+            self._emit_locked("progress", force=True)
+
+    def finish(self) -> None:
+        if not self.enabled:
+            return
+        with self._lock:
+            self._emit_locked("complete", force=True)
+
+    def _emit_locked(self, stage: str, *, force: bool = False) -> None:
+        now = time.monotonic()
+        if not force and self._last_emit and (now - self._last_emit) < 1.0:
+            return
+        elapsed = max(0.001, now - self.started)
+        rate = self.completed / elapsed
+        eta = ((self.total - self.completed) / rate) if rate > 0 and self.completed < self.total else 0.0
+        line = (
+            f"[fetch:{self.engine}] status={stage} done={self.completed}/{self.total} "
+            f"in_flight={self.in_flight} ok={self.ok} err={self.failures} msgs={self.messages} "
+            f"rate={rate:.2f} conv/s elapsed={_format_duration(elapsed)} eta={_format_duration(eta)}"
+        )
+        print(line, file=sys.stderr, flush=True)
+        self._last_emit = now
+
+
+def _format_duration(seconds: float) -> str:
+    total = max(0, int(seconds))
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f"{hours:d}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
 
 
 class SyncRateLimiter:
@@ -423,6 +489,7 @@ def _fetch_sync(
     rate_limit_rps: float,
     extract_text: Callable[[dict[str, Any]], str],
     debug: bool,
+    progress: FetchProgressReporter | None = None,
 ) -> list[FetchResult]:
     limiter = SyncRateLimiter(rate_limit_rps)
     results: list[FetchResult] = []
@@ -431,6 +498,8 @@ def _fetch_sync(
         for idx, target in enumerate(targets, start=1):
             limiter.wait()
             started = time.monotonic()
+            if progress:
+                progress.start_target()
             try:
                 chat = chatgpt.fetch_conversation(target.conversation_id)
                 parsed = _extract_messages_for_ingest(chat, extract_text=extract_text)
@@ -457,6 +526,8 @@ def _fetch_sync(
                 )
 
             results.append(result)
+            if progress:
+                progress.finish_target(ok=result.ok, message_count=result.message_count)
             if debug:
                 status = "ok" if result.ok else "err"
                 print(
@@ -475,6 +546,7 @@ async def _fetch_async(
     rate_limit_rps: float,
     extract_text: Callable[[dict[str, Any]], str],
     debug: bool,
+    progress: FetchProgressReporter | None = None,
 ) -> list[FetchResult]:
     limiter = AsyncRateLimiter(rate_limit_rps)
     sem = asyncio.Semaphore(max(1, concurrency))
@@ -485,6 +557,8 @@ async def _fetch_async(
             async with sem:
                 await limiter.wait()
                 started = time.monotonic()
+                if progress:
+                    progress.start_target()
                 try:
                     chat = await chatgpt.fetch_conversation(target.conversation_id)
                     parsed = _extract_messages_for_ingest(chat, extract_text=extract_text)
@@ -508,6 +582,8 @@ async def _fetch_async(
                         error=str(exc),
                     )
 
+                if progress:
+                    progress.finish_target(ok=result.ok, message_count=result.message_count)
                 if debug:
                     status = "ok" if result.ok else "err"
                     print(
@@ -559,8 +635,10 @@ def _run_engine(
     rate_limit_rps: float,
     extract_text: Callable[[dict[str, Any]], str],
     debug: bool,
+    progress_enabled: bool = True,
 ) -> tuple[list[FetchResult], float]:
     started = time.monotonic()
+    progress = FetchProgressReporter(total=len(targets), engine=engine, enabled=progress_enabled)
     if engine == "sync":
         results = _fetch_sync(
             token,
@@ -568,6 +646,7 @@ def _run_engine(
             rate_limit_rps=rate_limit_rps,
             extract_text=extract_text,
             debug=debug,
+            progress=progress,
         )
     else:
         results = asyncio.run(
@@ -578,8 +657,10 @@ def _run_engine(
                 rate_limit_rps=rate_limit_rps,
                 extract_text=extract_text,
                 debug=debug,
+                progress=progress,
             )
         )
+    progress.finish()
     return results, time.monotonic() - started
 
 
@@ -653,6 +734,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true", help="Fetch only; do not ingest")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable summary")
+    parser.add_argument("--no-progress", action="store_true", help="Suppress stderr fetch progress updates")
     return parser
 
 
@@ -717,6 +799,7 @@ def main() -> int:
             rate_limit_rps=args.rate_limit_rps,
             extract_text=extract_text,
             debug=args.debug,
+            progress_enabled=not args.no_progress,
         )
         async_results, async_elapsed = _run_engine(
             "async",
@@ -726,6 +809,7 @@ def main() -> int:
             rate_limit_rps=args.rate_limit_rps,
             extract_text=extract_text,
             debug=args.debug,
+            progress_enabled=not args.no_progress,
         )
 
         summaries["sync"] = _summarize(sync_results, sync_elapsed)
@@ -754,6 +838,7 @@ def main() -> int:
             rate_limit_rps=args.rate_limit_rps,
             extract_text=extract_text,
             debug=args.debug,
+            progress_enabled=not args.no_progress,
         )
         summaries[args.engine] = _summarize(results, elapsed)
 

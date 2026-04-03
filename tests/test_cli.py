@@ -1,6 +1,8 @@
 import unittest
 import argparse
+import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, patch
 
 import tests.mock_helper
@@ -131,6 +133,40 @@ class TestCli(unittest.TestCase):
         ]
         combined = " ".join(printed_messages)
         self.assertIn("saved 1 image(s)", combined)
+
+    @patch('builtins.print')
+    def test_download_conversation_can_write_normalized_artifact(self, mock_print):
+        mock_chatgpt = MagicMock()
+        mock_chatgpt.list_all_conversations.return_value = [
+            {'id': '123', 'title': 'Test Conversation'}
+        ]
+        mock_chatgpt.get_conversation.return_value.fetch_chat.return_value = {
+            'title': 'Test Conversation',
+            'update_time': 456.0,
+        }
+
+        mock_storage = MagicMock()
+        with TemporaryDirectory() as temp_dir:
+            normalized_path = Path(temp_dir) / "conversation.normalized.json"
+            mock_storage.persist_chat.return_value = PersistResult(
+                json_path=Path(temp_dir) / "conversation_123.json",
+                new_messages=1,
+                total_messages=2,
+            )
+            mock_storage.record_conversations.return_value = CatalogUpdateStats()
+
+            cli.handle_download_command(
+                'download 123',
+                mock_chatgpt,
+                mock_storage,
+                normalized_artifact_out=str(normalized_path),
+            )
+
+            self.assertTrue(normalized_path.exists())
+            payload = json.loads(normalized_path.read_text(encoding='utf-8'))
+            self.assertEqual(payload["schema_version"], "itir.normalized.artifact.v1")
+            self.assertEqual(payload["artifact_role"], "source_artifact")
+            self.assertEqual(payload["summary"]["conversation_id"], "123")
 
     @patch('builtins.print')
     def test_download_list_catalogues_conversations(self, mock_print):

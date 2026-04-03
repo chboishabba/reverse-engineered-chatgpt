@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from re_gpt.normalized_artifact import build_conversation_source_artifact
 from re_gpt.storage import AssetDownload, ConversationStorage
 
 
@@ -242,6 +243,27 @@ class TestConversationStorage(unittest.TestCase):
 
         self.assertEqual(len(result.asset_paths), 1)
         self.assertEqual(captured, [(pointer, conversation_id)])
+
+    def test_conversation_source_artifact_wraps_downloaded_chat(self) -> None:
+        chat = _make_chat("Sample Chat", "Hello", "Hi there", update_time=456.0)
+        result = self.storage.persist_chat("conv-123", chat)
+
+        payload = build_conversation_source_artifact(
+            conversation_id="conv-123",
+            title=chat["title"],
+            json_path=str(result.json_path) if result.json_path else None,
+            remote_update_time=chat["update_time"],
+            total_messages=result.total_messages,
+            new_messages=result.new_messages,
+            asset_count=len(result.asset_paths),
+        )
+
+        self.assertEqual(payload["schema_version"], "itir.normalized.artifact.v1")
+        self.assertEqual(payload["artifact_role"], "source_artifact")
+        self.assertEqual(payload["authority"]["authority_class"], "archive")
+        self.assertFalse(payload["authority"]["derived"])
+        self.assertEqual(payload["summary"]["total_messages"], 2)
+        self.assertEqual(payload["summary"]["conversation_id"], "conv-123")
 
 
 if __name__ == "__main__":
