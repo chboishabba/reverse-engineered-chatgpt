@@ -1211,10 +1211,10 @@ def main() -> None:
             run_list_command(
                 chatgpt,
                 storage,
-                follow_out=args.list_follow_out,
-                follow_normalized_out=args.list_follow_normalized_out,
-                follow_max=args.list_follow_max,
-                follow_no_stop=args.list_follow_no_stop,
+                follow_out=getattr(args, "list_follow_out", None),
+                follow_normalized_out=getattr(args, "list_follow_normalized_out", None),
+                follow_max=getattr(args, "list_follow_max", 10),
+                follow_no_stop=getattr(args, "list_follow_no_stop", False),
             )
         elif args.view:
             run_noninteractive_view(args.view, chatgpt, storage, since_last_override=args.since_last)

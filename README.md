@@ -84,20 +84,12 @@ ChatGPT has an official API which can be used to interface your Python code to i
 
 > [!TIP]
 > Some endpoints (e.g., the shared chat pages at `https://chatgpt.com/c/...`) are
-> occasionally guarded by Cloudflare challenges. When that happens the CLI can
-> launch a temporary Playwright browser so you can clear the check and reuse the
-> resulting cookies. Install the optional browser helper with:
->
-> ```sh
-> pip install re-gpt[browser]
-> playwright install firefox
-> ```
->
-> Treat that browser path as an experimental fallback, not the primary recovery
-> path. The current priority is restoring direct web pulls and auth bootstrap
-> without relying on the Cloudflare/Playwright flow. If a live fetch falls into
-> browser-challenge handling, treat that as a frontdoor/auth issue to debug
-> rather than proof that installing Playwright is the real fix.
+> occasionally guarded by Cloudflare challenges. Browser-based challenge
+> solving has been removed from this client because the spawned browser path is
+> not a reliable recovery mechanism here. If a live fetch hits Cloudflare,
+> treat that as a frontdoor/auth issue to debug and refresh the stored session
+> secret or cookie state instead of trying to solve the challenge in a spawned
+> browser.
 >
 > Authenticated conversation fetches also rely on frontend cookies in addition
 > to `__Secure-next-auth.session-token`. If `api/auth/session` comes back with
@@ -151,9 +143,7 @@ To run the test suite, use the `run_tests.sh` script:
 
 This script will ensure the test dependencies are installed in the virtual
 environment and then execute the tests. The asset download tests use an inline
-HTML fixture, so no extra files are required in the repository root. The script
-also installs the Playwright browser dependency, which requires network access
-during setup.
+HTML fixture, so no extra files are required in the repository root.
 ### Configuration
 
 Copy `config.example.ini` to `config.ini` and update the placeholder values or

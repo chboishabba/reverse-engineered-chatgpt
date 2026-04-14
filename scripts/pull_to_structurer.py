@@ -66,6 +66,8 @@ class FetchProgressReporter:
         self.failures = 0
         self.messages = 0
         self.in_flight = 0
+        self._active_started: list[float] = []
+        self._completed_duration_s = 0.0
         self._last_emit = 0.0
         self._lock = threading.Lock()
 
@@ -73,6 +75,7 @@ class FetchProgressReporter:
         if not self.enabled:
             return
         with self._lock:
+            self._active_started.append(time.monotonic())
             self.in_flight += 1
             self._emit_locked("starting", force=self.completed == 0)
 
@@ -80,6 +83,9 @@ class FetchProgressReporter:
         if not self.enabled:
             return
         with self._lock:
+            now = time.monotonic()
+            started = self._active_started.pop(0) if self._active_started else now
+            self._completed_duration_s += max(0.0, now - started)
             self.in_flight = max(0, self.in_flight - 1)
             self.completed += 1
             self.messages += max(0, int(message_count))
@@ -101,7 +107,13 @@ class FetchProgressReporter:
             return
         elapsed = max(0.001, now - self.started)
         rate = self.completed / elapsed
-        eta = ((self.total - self.completed) / rate) if rate > 0 and self.completed < self.total else 0.0
+        if rate <= 0.0 and self.in_flight > 0:
+            avg_active_age = sum(max(0.0, now - started) for started in self._active_started) / max(1, len(self._active_started))
+            if avg_active_age >= 1.0:
+                rate = self.in_flight / avg_active_age
+        eta = 0.0
+        if self.completed < self.total and rate > 0.0:
+            eta = (self.total - self.completed) / rate
         line = (
             f"[fetch:{self.engine}] status={stage} done={self.completed}/{self.total} "
             f"in_flight={self.in_flight} ok={self.ok} err={self.failures} msgs={self.messages} "

@@ -9,7 +9,7 @@ This file captures the current working context for this repository.
 ## Recent progress (2026-01-17 11:24 UTC)
 
 - Confirmed the authenticated https://chatgpt.com/ tab is stable; only preload/extension warnings appear in the console and backend/API requests are returning 200s.
-- Captured the live tab's key `localStorage` entries (for example: `statsig.session_id.1792610830`, `client-correlated-secret`, `oai/apps/debugSettings`, and the conversation-history cache keys) to guide MCP/CDP reattachment without spinning up Playwright.
+- Captured the live tab's key `localStorage` entries (for example: `statsig.session_id.1792610830`, `client-correlated-secret`, `oai/apps/debugSettings`, and the conversation-history cache keys) to guide MCP/CDP reattachment without relying on the removed Playwright challenge path.
 
 ## Test status
 

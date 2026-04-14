@@ -71,10 +71,10 @@ def main() -> int:
     user_agent = user_agent or get_default_user_agent()
     with SyncChatGPT(session_token=token, user_agent=user_agent) as chatgpt:
         if playwright_refresh:
-            try:
-                chatgpt._launch_browser_challenge_solver("https://chatgpt.com/")
-            except Exception as exc:
-                print(f"Playwright refresh failed: {exc}")
+            print(
+                "Playwright refresh requested, but browser challenge solving has been removed. "
+                "Refresh the stored session secret instead."
+            )
         page = chatgpt.list_conversations_page(offset=0, limit=1)
         items = page.get("items", [])
         if not items:

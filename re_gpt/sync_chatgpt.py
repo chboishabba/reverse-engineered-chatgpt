@@ -170,8 +170,8 @@ class SyncConversation(AsyncConversation):
         Retrieve the rendered conversation page from chatgpt.com.
 
         Args:
-            allow_browser_fallback (bool): Launch a Playwright browser if
-                Cloudflare challenges the request. Defaults to True.
+            allow_browser_fallback (bool): Retained for compatibility. Browser
+                fallback is disabled and Cloudflare challenges fail closed.
 
         Returns:
             str: HTML content of the conversation page.
@@ -418,7 +418,7 @@ class SyncChatGPT(AsyncChatGPT):
         exit_callback_function: Optional[Callable] = None,
         auth_token: Optional[str] = None,
         websocket_mode: Optional[bool] = False,
-        browser_challenge_solver: Optional[str] = "firefox",
+        browser_challenge_solver: Optional[str] = None,
         default_model: Optional[str] = None,
         conversation_mode: Optional[dict] = None,
         timezone: Optional[str] = None,
@@ -435,9 +435,9 @@ class SyncChatGPT(AsyncChatGPT):
             exit_callback_function (Optional[callable]): A function to be called on exit. Defaults to None.
             auth_token (Optional[str]): An authentication token. Defaults to None.
             websocket_mode (Optional[bool]): Toggle whether to use WebSocket for chat. Defaults to False.
-            browser_challenge_solver (Optional[str]): Browser engine to use when solving
-                interactive Cloudflare challenges (``\"firefox\"`` by default). Set to
-                ``None`` to disable the Playwright fallback.
+            browser_challenge_solver (Optional[str]): Deprecated browser challenge
+                solver setting. Browser-based Cloudflare fallback is disabled and any
+                non-``None`` value is ignored.
             default_model (Optional[str]): Default model slug or alias for new conversations.
             conversation_mode (Optional[dict]): Conversation mode payload to include (optional).
             timezone (Optional[str]): Timezone label for chat payloads.
@@ -459,7 +459,10 @@ class SyncChatGPT(AsyncChatGPT):
             user_agent=user_agent,
         )
 
-        self.browser_challenge_solver = browser_challenge_solver
+        # Browser-launched Cloudflare handling is disabled. In practice the
+        # spawned browser cannot complete the challenge reliably here, so the
+        # client should fail closed and rely on stored session state instead.
+        self.browser_challenge_solver = None
         self._frontend_cookies: dict[str, str] = {}
         self._conversation_page_cache: dict[str, str] = {}
         self._shared_asset_urls: list[str] = []
@@ -556,12 +559,15 @@ class SyncChatGPT(AsyncChatGPT):
 
     def start_browser_session(self, url: str = "https://chatgpt.com/") -> None:
         """
-        Launch a Playwright browser to allow the user to log in or solve challenges.
+        Browser-launched challenge solving has been removed.
         
         Args:
-            url (str): The URL to open in the browser. Defaults to "https://chatgpt.com/".
+            url (str): Retained for compatibility; unused.
         """
-        self._launch_browser_challenge_solver(url)
+        raise UnexpectedResponseError(
+            "Browser challenge solving is disabled.",
+            "Refresh the stored session secret instead of launching Playwright.",
+        )
 
     def get_conversation(self, conversation_id: str, title: Optional[str] = None) -> SyncConversation:
         """
@@ -856,21 +862,6 @@ class SyncChatGPT(AsyncChatGPT):
                 )
                 return url_match
 
-            if self.browser_challenge_solver:
-                try:
-                    rendered = self._render_frontend_page(f"https://chatgpt.com/c/{conv_id}")
-                except Exception as exc:
-                    attempt_errors.append(f"rendered conversation page {conv_id} -> {exc}")
-                else:
-                    self._conversation_page_cache[conv_id] = rendered
-                    url_match = _search(rendered)
-                    if url_match:
-                        self._debug_log(
-                            f"rendered-page resolved conversation_id={conv_id}",
-                            channel="asset",
-                        )
-                        return url_match
-
             return None
 
         if conversation_id:
@@ -1132,21 +1123,10 @@ class SyncChatGPT(AsyncChatGPT):
             return payload
         except Exception:
             if self._looks_like_cloudflare_challenge(response):
-                self._launch_browser_challenge_solver(url)
-                retry = self.session.get(url=url, params=params, headers=headers)
-                try:
-                    payload = retry.json()
-                    items = payload.get("items", []) if isinstance(payload, dict) else []
-                    elapsed_ms = (time.monotonic() - started) * 1000.0
-                    self._debug_log(
-                        f"list_conversations_page retry offset={offset} limit={limit} items={len(items)} elapsed_ms={elapsed_ms:.1f}"
-                    )
-                    return payload
-                except Exception as exc:
-                    raise UnexpectedResponseError(
-                        "Failed to decode conversation list response after challenge.",
-                        getattr(retry, "text", ""),
-                    ) from exc
+                raise UnexpectedResponseError(
+                    "Failed to decode conversation list response because Cloudflare challenged the request.",
+                    getattr(response, "text", ""),
+                )
             raise UnexpectedResponseError(
                 "Failed to decode conversation list response.",
                 getattr(response, "text", ""),
@@ -1432,126 +1412,16 @@ class SyncChatGPT(AsyncChatGPT):
         return False
 
     def _launch_browser_challenge_solver(self, url: str) -> None:
-        if not self.browser_challenge_solver:
-            raise UnexpectedResponseError(
-                "Cloudflare challenge encountered, but browser fallback is disabled.",
-                "Set 'browser_challenge_solver' to a Playwright engine (e.g. 'firefox') to enable it.",
-            )
-
-        try:
-            from playwright.sync_api import sync_playwright
-        except ImportError as exc:
-            raise UnexpectedResponseError(
-                "Cloudflare challenge encountered, but Playwright is not installed.",
-                "Install with `pip install playwright` and run `playwright install firefox`.",
-            ) from exc
-
-        print(
-            f"Cloudflare challenged the request for {url}.\n"
-            "Launching Playwright so you can solve it (a browser window should appear). "
-            "Complete the verification, confirm the target page loads, then return here "
-            "and press Enter to continue."
+        raise UnexpectedResponseError(
+            f"Cloudflare challenged the request for {url}.",
+            "Browser challenge solving has been removed; refresh the stored session secret instead.",
         )
 
-        with sync_playwright() as playwright:
-            solver = (self.browser_challenge_solver or "firefox").lower()
-            if solver == "chromium":
-                browser = playwright.chromium.launch(headless=False)
-            elif solver == "webkit":
-                browser = playwright.webkit.launch(headless=False)
-            else:
-                browser = playwright.firefox.launch(headless=False)
-
-            context = browser.new_context(user_agent=self.user_agent)
-
-            if self._frontend_cookies:
-                cookie_payload = []
-                for name, value in self._frontend_cookies.items():
-                    cookie_payload.append(
-                        {
-                            "name": name,
-                            "value": value,
-                            "domain": "chatgpt.com",
-                            "path": "/",
-                            "secure": True,
-                        }
-                    )
-                try:
-                    context.add_cookies(cookie_payload)
-                except Exception:
-                    # If a cookie add fails, fall back to launching without them.
-                    pass
-
-            page = context.new_page()
-            try:
-                page.goto(url, wait_until="networkidle", timeout=60000)
-            except Exception:
-                # Allow manual navigation if automatic load times out.
-                pass
-
-            # Temporarily save a screenshot for debugging purposes
-            screenshot_path = "/home/c/.gemini/tmp/effe4da374b32799015e63f5ff4001f7ab7869260b283c4e8b5c885937b20f12/playwright_screenshot.png"
-            page.screenshot(path=screenshot_path)
-            print(f"Screenshot saved to {screenshot_path}")
-
-            input("Press Enter after the page finishes loading and the challenge is cleared...")
-
-            cookies = context.cookies()
-            browser.close()
-
-        self._merge_cookie_container(cookies)
-
     def _render_frontend_page(self, url: str) -> str:
-        if not self.browser_challenge_solver:
-            raise UnexpectedResponseError(
-                "Playwright rendering requested, but browser fallback is disabled.",
-                "Set 'browser_challenge_solver' to an engine (e.g. 'firefox') to enable it.",
-            )
-
-        try:
-            from playwright.sync_api import sync_playwright
-        except ImportError as exc:
-            raise UnexpectedResponseError(
-                "Playwright rendering requested, but Playwright is not installed.",
-                "Install with `pip install playwright` and run `playwright install firefox`.",
-            ) from exc
-
-        solver = (self.browser_challenge_solver or "firefox").lower()
-        with sync_playwright() as playwright:
-            if solver == "chromium":
-                browser = playwright.chromium.launch(headless=True)
-            elif solver == "webkit":
-                browser = playwright.webkit.launch(headless=True)
-            else:
-                browser = playwright.firefox.launch(headless=True)
-
-            context = browser.new_context(user_agent=self.user_agent)
-
-            if self._frontend_cookies:
-                cookie_payload = []
-                for name, value in self._frontend_cookies.items():
-                    cookie_payload.append(
-                        {
-                            "name": name,
-                            "value": value,
-                            "domain": "chatgpt.com",
-                            "path": "/",
-                            "secure": True,
-                        }
-                    )
-                try:
-                    context.add_cookies(cookie_payload)
-                except Exception:
-                    pass
-
-            page = context.new_page()
-            page.goto(url, wait_until="networkidle", timeout=60000)
-            html_content = page.content()
-            cookies = context.cookies()
-            browser.close()
-
-        self._merge_cookie_container(cookies)
-        return html_content
+        raise UnexpectedResponseError(
+            f"Playwright rendering for {url} is disabled.",
+            "Use the stored session secret instead of browser rendering.",
+        )
 
     def _perform_frontend_get(
         self,
@@ -1560,21 +1430,14 @@ class SyncChatGPT(AsyncChatGPT):
         purpose: str,
         allow_browser_fallback: bool = True,
     ):
+        # `allow_browser_fallback` is retained for compatibility only. Browser
+        # challenge solving has been removed.
         response = self.session.get(
             url=url,
             headers=headers,
             cookies=dict(self._frontend_cookies) or None,
         )
         self._merge_cookie_container(response.cookies)
-
-        if self._looks_like_cloudflare_challenge(response) and allow_browser_fallback:
-            self._launch_browser_challenge_solver(url)
-            response = self.session.get(
-                url=url,
-                headers=headers,
-                cookies=dict(self._frontend_cookies) or None,
-            )
-            self._merge_cookie_container(response.cookies)
 
         if self._looks_like_cloudflare_challenge(response):
             raise UnexpectedResponseError(
@@ -1589,6 +1452,8 @@ class SyncChatGPT(AsyncChatGPT):
         conversation_id: str,
         allow_browser_fallback: bool = True,
     ) -> str:
+        # `allow_browser_fallback` is retained for compatibility only. Browser
+        # challenge solving has been removed.
         if not conversation_id:
             raise ValueError("conversation_id must be provided")
 
