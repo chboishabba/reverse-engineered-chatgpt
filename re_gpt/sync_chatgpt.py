@@ -506,6 +506,7 @@ class SyncChatGPT(AsyncChatGPT):
                 self.session.cookies.set(
                     "__Secure-next-auth.session-token", self.session_token
                 )
+        self._apply_affinity_overrides_from_env()
 
         if self.generate_arkose_token:
             self.binary_path = sync_get_binary_path(self.session)
@@ -608,6 +609,7 @@ class SyncChatGPT(AsyncChatGPT):
         url = CHATGPT_API.format(f"conversation/{conversation_id}")
         headers = dict(self.build_request_headers())
         headers["Accept"] = "application/json"
+        self._debug_request_context(headers)
 
         params: dict[str, str] = {}
         if since_message_id:
@@ -628,6 +630,12 @@ class SyncChatGPT(AsyncChatGPT):
             payload = response.json()
         except Exception as exc:
             raise UnexpectedResponseError(exc, getattr(response, "text", ""))
+        mapping = payload.get("mapping", {}) if isinstance(payload, dict) else {}
+        current_node = payload.get("current_node") if isinstance(payload, dict) else None
+        self._debug_log(
+            f"fetch_conversation_tail id={conversation_id} "
+            f"mapping_count={len(mapping)} current_node={current_node or ''}"
+        )
         self._debug_log(
             f"fetch_conversation id={conversation_id} status={response.status_code} elapsed_ms={elapsed_ms:.1f}"
         )

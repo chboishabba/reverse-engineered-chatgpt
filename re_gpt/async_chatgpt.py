@@ -542,6 +542,75 @@ class AsyncChatGPT:
             return
         print(f"[re-gpt:{channel}] {message}", flush=True)
 
+    def _debug_request_context(self, headers: dict[str, str]) -> None:
+        cookie_names = sorted(self._frontend_cookies.keys())
+        route_value = self._frontend_cookies.get("oai-chat-web-route") or ""
+        self._debug_log(
+            "request_context "
+            f"cookie_count={len(cookie_names)} "
+            f"has_route_cookie={'oai-chat-web-route' in self._frontend_cookies} "
+            f"route_len={len(route_value)} "
+            f"has_oai_did_cookie={'oai-did' in self._frontend_cookies} "
+            f"device_id={self.devive_id or ''} "
+            f"has_authorization={'Authorization' in headers} "
+            f"has_oai_device_header={bool(headers.get('Oai-device-id'))} "
+            f"has_oai_session_header={bool(headers.get('OAI-Session-Id'))} "
+            f"has_client_version_header={bool(headers.get('OAI-Client-Version'))} "
+            f"has_client_build_header={bool(headers.get('OAI-Client-Build-Number'))} "
+            f"has_target_path_header={bool(headers.get('X-OpenAI-Target-Path'))} "
+            f"has_target_route_header={bool(headers.get('X-OpenAI-Target-Route'))} "
+            f"cookie_names={','.join(cookie_names[:12])}"
+        )
+
+    def _apply_affinity_overrides_from_env(self) -> None:
+        route_cookie = os.environ.get("RE_GPT_ROUTE_COOKIE", "").strip()
+        did_cookie = os.environ.get("RE_GPT_DID_COOKIE", "").strip()
+        puid_cookie = os.environ.get("RE_GPT_PUID_COOKIE", "").strip()
+        device_id = os.environ.get("RE_GPT_DEVICE_ID", "").strip()
+
+        if route_cookie:
+            self._frontend_cookies["oai-chat-web-route"] = route_cookie
+            try:
+                self.session.cookies.set(
+                    "oai-chat-web-route",
+                    route_cookie,
+                    domain="chatgpt.com",
+                    path="/",
+                )
+            except Exception:
+                self.session.cookies.set("oai-chat-web-route", route_cookie)
+
+        if did_cookie:
+            self._frontend_cookies["oai-did"] = did_cookie
+            try:
+                self.session.cookies.set(
+                    "oai-did",
+                    did_cookie,
+                    domain="chatgpt.com",
+                    path="/",
+                )
+            except Exception:
+                self.session.cookies.set("oai-did", did_cookie)
+
+        if puid_cookie:
+            self._frontend_cookies["_puid"] = puid_cookie
+            try:
+                self.session.cookies.set(
+                    "_puid",
+                    puid_cookie,
+                    domain="chatgpt.com",
+                    path="/",
+                )
+            except Exception:
+                self.session.cookies.set("_puid", puid_cookie)
+
+        if device_id:
+            self.devive_id = device_id
+
+    @staticmethod
+    def _env_override(name: str) -> str:
+        return os.environ.get(name, "").strip()
+
     async def __aenter__(self):
         self.session = AsyncSession(
             impersonate="chrome110", timeout=99999, proxies=self.proxies
@@ -558,6 +627,7 @@ class AsyncChatGPT:
                 )
             except Exception:
                 self.session.cookies.set("__Secure-next-auth.session-token", self.session_token)
+        self._apply_affinity_overrides_from_env()
         if self.generate_arkose_token:
             self.binary_path = await async_get_binary_path(self.session)
 
@@ -617,6 +687,32 @@ class AsyncChatGPT:
             headers["Cookie"] = ';'.join([f"{key}={value}" for key, value in self.auth_cookie.items()])
         else:
             headers["Authorization"] = f"Bearer {self.auth_token}"
+
+        user_agent = self._env_override("RE_GPT_USER_AGENT")
+        referer = self._env_override("RE_GPT_REFERER")
+        session_id = self._env_override("RE_GPT_OAI_SESSION_ID")
+        client_version = self._env_override("RE_GPT_OAI_CLIENT_VERSION")
+        client_build = self._env_override("RE_GPT_OAI_CLIENT_BUILD_NUMBER")
+        target_path = self._env_override("RE_GPT_TARGET_PATH")
+        target_route = self._env_override("RE_GPT_TARGET_ROUTE")
+        accept_language = self._env_override("RE_GPT_ACCEPT_LANGUAGE")
+
+        if user_agent:
+            headers["User-Agent"] = user_agent
+        if referer:
+            headers["Referer"] = referer
+        if session_id:
+            headers["OAI-Session-Id"] = session_id
+        if client_version:
+            headers["OAI-Client-Version"] = client_version
+        if client_build:
+            headers["OAI-Client-Build-Number"] = client_build
+        if target_path:
+            headers["X-OpenAI-Target-Path"] = target_path
+        if target_route:
+            headers["X-OpenAI-Target-Route"] = target_route
+        if accept_language:
+            headers["Accept-Language"] = accept_language
 
         return headers
 
@@ -678,6 +774,7 @@ class AsyncChatGPT:
         headers = dict(self.build_request_headers())
         headers["Accept"] = "application/json"
         headers.pop("Content-Type", None)
+        self._debug_request_context(headers)
 
         params: dict[str, str] = {}
         if since_message_id:
@@ -699,6 +796,13 @@ class AsyncChatGPT:
             payload = response.json()
         except Exception as exc:
             raise UnexpectedResponseError(exc, getattr(response, "text", ""))
+
+        mapping = payload.get("mapping", {}) if isinstance(payload, dict) else {}
+        current_node = payload.get("current_node") if isinstance(payload, dict) else None
+        self._debug_log(
+            f"fetch_conversation_tail id={conversation_id} "
+            f"mapping_count={len(mapping)} current_node={current_node or ''}"
+        )
 
         self._debug_log(
             f"fetch_conversation id={conversation_id} status={response.status_code} elapsed_ms={elapsed_ms:.1f}"
