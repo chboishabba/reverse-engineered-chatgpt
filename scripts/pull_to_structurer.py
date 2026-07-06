@@ -53,6 +53,9 @@ class FetchResult:
     message_count: int
     error: str = ""
     messages: tuple[dict[str, Any], ...] = ()
+    requested_conversation_id: str = ""
+    payload_conversation_id: Optional[str] = None
+    identity_verified: bool = False
 
 
 class FetchProgressReporter:
@@ -349,6 +352,33 @@ def _extract_messages_for_ingest(chat: dict[str, Any], *, extract_text: Callable
     return messages
 
 
+def _payload_conversation_id(chat: dict[str, Any]) -> Optional[str]:
+    for key in ("id", "conversation_id"):
+        value = chat.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return None
+
+
+def _validate_payload_identity(
+    chat: dict[str, Any],
+    requested_conversation_id: str,
+) -> tuple[Optional[str], bool, str]:
+    payload_id = _payload_conversation_id(chat)
+    requested_id = str(requested_conversation_id or "").strip()
+    if payload_id is None:
+        return None, False, "payload conversation identity is missing"
+    if payload_id != requested_id:
+        return payload_id, False, (
+            "payload conversation identity mismatch: "
+            f"requested={requested_id} payload={payload_id}"
+        )
+    return payload_id, True, ""
+
+
 def _load_existing_updates(db_path: Path, *, account_id: str) -> dict[str, float]:
     if not db_path.exists():
         return {}
@@ -501,6 +531,7 @@ def _fetch_sync(
     rate_limit_rps: float,
     extract_text: Callable[[dict[str, Any]], str],
     debug: bool,
+    unsafe_allow_unverified_payload_id: bool = False,
     progress: FetchProgressReporter | None = None,
 ) -> list[FetchResult]:
     limiter = SyncRateLimiter(rate_limit_rps)
@@ -514,6 +545,12 @@ def _fetch_sync(
                 progress.start_target()
             try:
                 chat = chatgpt.fetch_conversation(target.conversation_id)
+                payload_id, identity_verified, identity_error = _validate_payload_identity(
+                    chat,
+                    target.conversation_id,
+                )
+                if not identity_verified and not unsafe_allow_unverified_payload_id:
+                    raise ValueError(identity_error)
                 parsed = _extract_messages_for_ingest(chat, extract_text=extract_text)
                 duration = time.monotonic() - started
                 result = FetchResult(
@@ -524,6 +561,9 @@ def _fetch_sync(
                     duration_s=duration,
                     message_count=len(parsed),
                     messages=tuple(parsed),
+                    requested_conversation_id=target.conversation_id,
+                    payload_conversation_id=payload_id,
+                    identity_verified=identity_verified,
                 )
             except Exception as exc:  # noqa: BLE001
                 duration = time.monotonic() - started
@@ -535,6 +575,7 @@ def _fetch_sync(
                     duration_s=duration,
                     message_count=0,
                     error=str(exc),
+                    requested_conversation_id=target.conversation_id,
                 )
 
             results.append(result)
@@ -558,6 +599,7 @@ async def _fetch_async(
     rate_limit_rps: float,
     extract_text: Callable[[dict[str, Any]], str],
     debug: bool,
+    unsafe_allow_unverified_payload_id: bool = False,
     progress: FetchProgressReporter | None = None,
 ) -> list[FetchResult]:
     limiter = AsyncRateLimiter(rate_limit_rps)
@@ -573,6 +615,12 @@ async def _fetch_async(
                     progress.start_target()
                 try:
                     chat = await chatgpt.fetch_conversation(target.conversation_id)
+                    payload_id, identity_verified, identity_error = _validate_payload_identity(
+                        chat,
+                        target.conversation_id,
+                    )
+                    if not identity_verified and not unsafe_allow_unverified_payload_id:
+                        raise ValueError(identity_error)
                     parsed = _extract_messages_for_ingest(chat, extract_text=extract_text)
                     result = FetchResult(
                         conversation_id=target.conversation_id,
@@ -582,6 +630,9 @@ async def _fetch_async(
                         duration_s=time.monotonic() - started,
                         message_count=len(parsed),
                         messages=tuple(parsed),
+                        requested_conversation_id=target.conversation_id,
+                        payload_conversation_id=payload_id,
+                        identity_verified=identity_verified,
                     )
                 except Exception as exc:  # noqa: BLE001
                     result = FetchResult(
@@ -592,6 +643,7 @@ async def _fetch_async(
                         duration_s=time.monotonic() - started,
                         message_count=0,
                         error=str(exc),
+                        requested_conversation_id=target.conversation_id,
                     )
 
                 if progress:
@@ -608,15 +660,45 @@ async def _fetch_async(
         return list(await asyncio.gather(*tasks))
 
 
-def _flatten_for_ingest(results: Iterable[FetchResult]) -> list[dict[str, Any]]:
+def _flatten_for_ingest(
+    results: Iterable[FetchResult],
+    *,
+    unsafe_allow_unverified_payload_id: bool = False,
+) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for result in results:
         if not result.ok:
             continue
+        if not result.identity_verified and not unsafe_allow_unverified_payload_id:
+            raise ValueError(
+                "Refusing to flatten unverified payload identity for "
+                f"{result.requested_conversation_id or result.conversation_id}."
+            )
+        thread_id = result.payload_conversation_id
+        if not thread_id:
+            if not unsafe_allow_unverified_payload_id:
+                raise ValueError(
+                    "Refusing to flatten payload with missing conversation identity for "
+                    f"{result.requested_conversation_id or result.conversation_id}."
+                )
+            thread_id = result.requested_conversation_id or result.conversation_id
         for msg in result.messages:
             rec = dict(msg)
-            rec["thread_id"] = result.conversation_id
+            rec["thread_id"] = thread_id
             rec["thread_title"] = result.title
+            rec["requested_conversation_id"] = result.requested_conversation_id or result.conversation_id
+            rec["payload_conversation_id"] = result.payload_conversation_id
+            rec["identity_verified"] = result.identity_verified
+            rec["provenance_json"] = json.dumps(
+                {
+                    "chatgpt_payload_identity": {
+                        "requested_conversation_id": result.requested_conversation_id or result.conversation_id,
+                        "payload_conversation_id": result.payload_conversation_id,
+                        "identity_verified": result.identity_verified,
+                    }
+                },
+                sort_keys=True,
+            )
             out.append(rec)
     return out
 
@@ -648,6 +730,7 @@ def _run_engine(
     extract_text: Callable[[dict[str, Any]], str],
     debug: bool,
     progress_enabled: bool = True,
+    unsafe_allow_unverified_payload_id: bool = False,
 ) -> tuple[list[FetchResult], float]:
     started = time.monotonic()
     progress = FetchProgressReporter(total=len(targets), engine=engine, enabled=progress_enabled)
@@ -658,6 +741,7 @@ def _run_engine(
             rate_limit_rps=rate_limit_rps,
             extract_text=extract_text,
             debug=debug,
+            unsafe_allow_unverified_payload_id=unsafe_allow_unverified_payload_id,
             progress=progress,
         )
     else:
@@ -669,6 +753,7 @@ def _run_engine(
                 rate_limit_rps=rate_limit_rps,
                 extract_text=extract_text,
                 debug=debug,
+                unsafe_allow_unverified_payload_id=unsafe_allow_unverified_payload_id,
                 progress=progress,
             )
         )
@@ -747,6 +832,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable summary")
     parser.add_argument("--no-progress", action="store_true", help="Suppress stderr fetch progress updates")
+    parser.add_argument(
+        "--unsafe-allow-unverified-payload-id",
+        action="store_true",
+        help=(
+            "Emergency override: ingest fetched payloads even when the response "
+            "does not prove its conversation id. Records unverified provenance."
+        ),
+    )
     return parser
 
 
@@ -812,6 +905,7 @@ def main() -> int:
             extract_text=extract_text,
             debug=args.debug,
             progress_enabled=not args.no_progress,
+            unsafe_allow_unverified_payload_id=args.unsafe_allow_unverified_payload_id,
         )
         async_results, async_elapsed = _run_engine(
             "async",
@@ -822,6 +916,7 @@ def main() -> int:
             extract_text=extract_text,
             debug=args.debug,
             progress_enabled=not args.no_progress,
+            unsafe_allow_unverified_payload_id=args.unsafe_allow_unverified_payload_id,
         )
 
         summaries["sync"] = _summarize(sync_results, sync_elapsed)
@@ -830,7 +925,10 @@ def main() -> int:
         # Optional ingest using async results in benchmark mode.
         if not args.dry_run:
             ingest_module = _load_structurer_ingest()
-            normalized = _flatten_for_ingest(async_results)
+            normalized = _flatten_for_ingest(
+                async_results,
+                unsafe_allow_unverified_payload_id=args.unsafe_allow_unverified_payload_id,
+            )
             ingest_stats = ingest_module.ingest_parsed_messages(
                 normalized,
                 db_path=str(db_path),
@@ -851,12 +949,16 @@ def main() -> int:
             extract_text=extract_text,
             debug=args.debug,
             progress_enabled=not args.no_progress,
+            unsafe_allow_unverified_payload_id=args.unsafe_allow_unverified_payload_id,
         )
         summaries[args.engine] = _summarize(results, elapsed)
 
         if not args.dry_run:
             ingest_module = _load_structurer_ingest()
-            normalized = _flatten_for_ingest(results)
+            normalized = _flatten_for_ingest(
+                results,
+                unsafe_allow_unverified_payload_id=args.unsafe_allow_unverified_payload_id,
+            )
             ingest_stats = ingest_module.ingest_parsed_messages(
                 normalized,
                 db_path=str(db_path),
