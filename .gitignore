@@ -198,6 +198,7 @@ target/
 .DS_Store
 
 # Chat history / local DBs
+chatgpt_browser_profile/
 chat*_history*.sqlite*
 chatgpt_history*.sqlite*
 codex_history*.sqlite*

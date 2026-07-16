@@ -12,9 +12,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as dt
+import hashlib
 import importlib
 import importlib.util
 import json
+import re
 import sqlite3
 import sys
 import time
@@ -56,6 +58,7 @@ class FetchResult:
     requested_conversation_id: str = ""
     payload_conversation_id: Optional[str] = None
     identity_verified: bool = False
+    artifacts: tuple[dict[str, Any], ...] = ()
 
 
 class FetchProgressReporter:
@@ -310,6 +313,65 @@ def _extract_messages_for_ingest(chat: dict[str, Any], *, extract_text: Callable
     if not isinstance(mapping, dict):
         return []
 
+    current_node = str(chat.get("current_node") or "")
+    active_nodes: set[str] = set()
+    cursor = current_node
+    seen: set[str] = set()
+    while cursor and cursor not in seen and cursor in mapping:
+        seen.add(cursor)
+        active_nodes.add(cursor)
+        parent = mapping.get(cursor, {}).get("parent") if isinstance(mapping.get(cursor), dict) else None
+        cursor = str(parent or "")
+    if not current_node:
+        active_nodes = {str(node_id) for node_id in mapping}
+
+    def metadata_value(message: dict[str, Any], *keys: str) -> str:
+        containers = [message, message.get("metadata") if isinstance(message.get("metadata"), dict) else {}]
+        for container in containers:
+            for key in keys:
+                value = container.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        return ""
+
+    def classify(message: dict[str, Any], content: str) -> dict[str, str]:
+        author = message.get("author") if isinstance(message.get("author"), dict) else {}
+        role = str(author.get("role") or "")
+        metadata = message.get("metadata") if isinstance(message.get("metadata"), dict) else {}
+        token_match = re.search(r"filecite[^\s]*", content, flags=re.IGNORECASE)
+        citation_token = token_match.group(0) if token_match else metadata_value(message, "citation_token", "filecite")
+        filename = metadata_value(message, "filename", "file_name", "source_name", "name")
+        pointer = metadata_value(message, "asset_pointer", "image_url", "file_id")
+        if not pointer:
+            pointer_match = re.search(r"(?:file-service|fileservice|sediment)://[A-Za-z0-9._-]+", content, flags=re.IGNORECASE)
+            pointer = pointer_match.group(0) if pointer_match else ""
+        if not pointer and isinstance(metadata.get("attachments"), list):
+            for attachment in metadata["attachments"]:
+                if isinstance(attachment, dict):
+                    pointer = str(attachment.get("asset_pointer") or attachment.get("id") or "")
+                    filename = filename or str(attachment.get("filename") or attachment.get("name") or "")
+                    break
+        tool_kind = ""
+        source_scope = ""
+        if role in {"tool", "system"}:
+            tool_kind = "tool"
+            if citation_token or "NotebookLM Source" in content or "filecite" in content:
+                tool_kind = "file_context"
+                source_scope = "project_file_context"
+            elif pointer or "jupyter" in json.dumps(metadata, sort_keys=True).lower():
+                tool_kind = "artifact_output"
+                source_scope = "generated_or_programmatic_artifact"
+            else:
+                source_scope = "tool_output"
+        return {
+            "tool_kind": tool_kind,
+            "citation_token": citation_token,
+            "filename": filename,
+            "asset_pointer": pointer,
+            "source_scope": source_scope,
+            "visibility": "compact" if tool_kind == "file_context" else "visible",
+        }
+
     messages: list[dict[str, Any]] = []
     for node_id, node in mapping.items():
         if not isinstance(node, dict):
@@ -337,6 +399,7 @@ def _extract_messages_for_ingest(chat: dict[str, Any], *, extract_text: Callable
             continue
 
         source_message_id = str(message.get("id") or node_id or "")
+        classification = classify(message, content)
 
         messages.append(
             {
@@ -345,11 +408,93 @@ def _extract_messages_for_ingest(chat: dict[str, Any], *, extract_text: Callable
                 "content": content,
                 "created_at": created_at,
                 "source_message_id": source_message_id,
+                "node_id": str(node_id),
+                "parent_node_id": str(node.get("parent") or ""),
+                "branch_membership": "active" if node_id in active_nodes else "inactive",
+                "body_storage_ref": source_message_id,
+                "mime_type": metadata_value(message, "mime_type", "mimeType"),
+                "provenance_refs": [{"kind": classification["source_scope"]}] if classification["source_scope"] else [],
+                **classification,
             }
         )
 
     messages.sort(key=lambda item: item.get("created_at") or 0)
     return messages
+
+
+def _asset_artifact_inputs(messages: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    artifacts: list[dict[str, Any]] = []
+    for message in messages:
+        pointer = str(message.get("asset_pointer") or "").strip()
+        if not pointer or pointer in seen:
+            continue
+        seen.add(pointer)
+        artifacts.append({
+            "artifact_id": pointer.rsplit("/", 1)[-1],
+            "kind": "programmatic_image" if message.get("tool_kind") == "artifact_output" else "generated_image",
+            "mime_type": str(message.get("mime_type") or "image/png"),
+            "asset_pointer": pointer,
+            "source_message_id": str(message.get("source_message_id") or ""),
+        })
+    return artifacts
+
+
+def _save_asset_records(
+    records: list[dict[str, Any]], *, conversation_id: str, downloader: Callable[[str], Any]
+) -> tuple[dict[str, Any], ...]:
+    root = Path.home() / "chat_archive_artifacts" / conversation_id
+    output: list[dict[str, Any]] = []
+    for record in records:
+        try:
+            download = downloader(str(record["asset_pointer"]))
+            content = getattr(download, "content", None)
+            content_type = getattr(download, "content_type", None)
+            if content is None and isinstance(download, tuple):
+                content, content_type = download
+            if not isinstance(content, (bytes, bytearray)):
+                raise TypeError("asset downloader returned no binary content")
+            digest = hashlib.sha256(content).hexdigest()
+            extension = ".png" if str(content_type or record.get("mime_type")) == "image/png" else ".bin"
+            path = root / f"{record['artifact_id']}{extension}"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+            output.append({
+                **record,
+                "local_path": str(path),
+                "mime_type": str(content_type or record.get("mime_type") or "application/octet-stream"),
+                "size_bytes": len(content),
+                "sha256": digest,
+            })
+        except Exception as exc:  # noqa: BLE001 - preserve failed artifact as metadata
+            output.append({**record, "download_error": str(exc)})
+    return tuple(output)
+
+
+async def _save_asset_records_async(
+    records: list[dict[str, Any]], *, conversation_id: str, downloader: Callable[[str], Any]
+) -> tuple[dict[str, Any], ...]:
+    async def fetch(pointer: str) -> Any:
+        value = downloader(pointer)
+        return await value if hasattr(value, "__await__") else value
+
+    root = Path.home() / "chat_archive_artifacts" / conversation_id
+    output: list[dict[str, Any]] = []
+    for record in records:
+        try:
+            download = await fetch(str(record["asset_pointer"]))
+            content, content_type = download
+            if not isinstance(content, (bytes, bytearray)):
+                raise TypeError("asset downloader returned no binary content")
+            digest = hashlib.sha256(content).hexdigest()
+            extension = ".png" if str(content_type or record.get("mime_type")) == "image/png" else ".bin"
+            path = root / f"{record['artifact_id']}{extension}"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+            output.append({**record, "local_path": str(path), "mime_type": str(content_type or record.get("mime_type") or "application/octet-stream"), "size_bytes": len(content), "sha256": digest})
+        except Exception as exc:  # noqa: BLE001
+            output.append({**record, "download_error": str(exc)})
+    return tuple(output)
 
 
 def _payload_conversation_id(chat: dict[str, Any]) -> Optional[str]:
@@ -552,6 +697,11 @@ def _fetch_sync(
                 if not identity_verified and not unsafe_allow_unverified_payload_id:
                     raise ValueError(identity_error)
                 parsed = _extract_messages_for_ingest(chat, extract_text=extract_text)
+                asset_records = _save_asset_records(
+                    _asset_artifact_inputs(parsed),
+                    conversation_id=target.conversation_id,
+                    downloader=lambda pointer: chatgpt.download_asset(pointer, conversation_id=target.conversation_id),
+                ) if hasattr(chatgpt, "download_asset") else ()
                 duration = time.monotonic() - started
                 result = FetchResult(
                     conversation_id=target.conversation_id,
@@ -564,6 +714,7 @@ def _fetch_sync(
                     requested_conversation_id=target.conversation_id,
                     payload_conversation_id=payload_id,
                     identity_verified=identity_verified,
+                    artifacts=asset_records,
                 )
             except Exception as exc:  # noqa: BLE001
                 duration = time.monotonic() - started
@@ -622,6 +773,11 @@ async def _fetch_async(
                     if not identity_verified and not unsafe_allow_unverified_payload_id:
                         raise ValueError(identity_error)
                     parsed = _extract_messages_for_ingest(chat, extract_text=extract_text)
+                    asset_records = await _save_asset_records_async(
+                        _asset_artifact_inputs(parsed),
+                        conversation_id=target.conversation_id,
+                        downloader=lambda pointer: chatgpt.download_asset(pointer, conversation_id=target.conversation_id),
+                    ) if hasattr(chatgpt, "download_asset") else ()
                     result = FetchResult(
                         conversation_id=target.conversation_id,
                         title=chat.get("title") or target.title,
@@ -633,6 +789,7 @@ async def _fetch_async(
                         requested_conversation_id=target.conversation_id,
                         payload_conversation_id=payload_id,
                         identity_verified=identity_verified,
+                        artifacts=asset_records,
                     )
                 except Exception as exc:  # noqa: BLE001
                     result = FetchResult(
@@ -701,6 +858,16 @@ def _flatten_for_ingest(
             )
             out.append(rec)
     return out
+
+
+def _artifacts_for_ingest(results: Iterable[FetchResult]) -> dict[str, list[dict[str, Any]]]:
+    output: dict[str, list[dict[str, Any]]] = {}
+    for result in results:
+        if not result.ok or not result.payload_conversation_id:
+            continue
+        if result.artifacts:
+            output[result.payload_conversation_id] = [dict(item) for item in result.artifacts]
+    return output
 
 
 def _summarize(results: list[FetchResult], duration_s: float) -> dict[str, Any]:
@@ -938,6 +1105,11 @@ def main() -> int:
                 upsert_empty_text=True,
                 debug=args.debug,
             )
+            artifact_stats = ingest_module.ingest_thread_artifacts(
+                db_path=str(db_path), platform="chatgpt", account_id=args.account,
+                artifacts_by_thread=_artifacts_for_ingest(async_results),
+            )
+            ingest_stats["artifact_index"] = artifact_stats
             summaries["ingest"] = ingest_stats
     else:
         results, elapsed = _run_engine(
@@ -968,6 +1140,11 @@ def main() -> int:
                 upsert_empty_text=True,
                 debug=args.debug,
             )
+            artifact_stats = ingest_module.ingest_thread_artifacts(
+                db_path=str(db_path), platform="chatgpt", account_id=args.account,
+                artifacts_by_thread=_artifacts_for_ingest(results),
+            )
+            ingest_stats["artifact_index"] = artifact_stats
             summaries["ingest"] = ingest_stats
 
     if args.json:

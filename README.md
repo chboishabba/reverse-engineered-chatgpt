@@ -260,7 +260,111 @@ python scripts/list_sync_candidates.py \
   --title-match exact \
   --stale-threshold-sec 60 \
   --format summary
+```
 
+### DOM relay for long conversations
+
+When backend POST requests are rejected but you still need to drive an existing
+ChatGPT thread automatically, use the browser-profile DOM relay instead of the
+reverse-engineered conversation POST path.
+
+1. Seed a persistent Chromium profile once:
+
+   ```bash
+   cd /home/c/Documents/code/ITIR-suite/reverse-engineered-chatgpt
+   /home/c/Documents/code/ITIR-suite/.venv/bin/python setup_browser_profile.py
+   ```
+
+2. Submit through the real ChatGPT composer:
+
+   ```bash
+   printf '%s\n' "Reply with the next action items." | \
+     /home/c/Documents/code/ITIR-suite/.venv/bin/python chatgpt_dom_relay.py \
+     --headed 6a33ae58-cb84-83ec-b187-ddab3179ccbb
+   ```
+
+`--headed` is required when Cloudflare challenges headless Chromium. The
+relay starts that browser minimized and keeps the long conversation out of
+the foreground.
+
+The scripts use the installed Chrome channel because the persistent profile
+must be opened by the same Chrome family that created it.
+
+3. Optionally resolve short aliases from `chatgpt_threads.json` in the project
+   root or `~/.chatgpt_threads.json`:
+
+   ```json
+   {
+     "ns": "6a33ae58-cb84-83ec-b187-ddab3179ccbb",
+     "ym": "6a3ca60a-fe1c-83ec-867b-ac0c6698acd8"
+   }
+   ```
+
+   Then call:
+
+   ```bash
+   printf '%s\n' "Status update?" | \
+     /home/c/Documents/code/ITIR-suite/.venv/bin/python chatgpt_dom_relay.py \
+     --headed ns
+   ```
+
+`chatgpt_dom_relay.py` opens the real conversation page in a persistent browser
+profile, types into the live composer, clicks send, waits for the assistant
+reply to stabilize, and prints the latest assistant turn. This is intended for
+the "long conversation is laggy, but browser-auth still works" case; it does
+not depend on the blocked `/backend-api/conversation` POST path.
+
+### Codex/ChatGPT feedback loop
+
+Codex CLI already exposes the machine-readable handoff surfaces needed for a
+bounded loop: `--json` emits the Codex session id and
+`--output-last-message` writes the final response. The bridge uses those files
+instead of copying terminal or browser UI text:
+
+```bash
+/home/c/Documents/code/ITIR-suite/.venv/bin/python \
+  scripts/codex_chatgpt_loop.py \
+  --repo /home/c/Documents/code/ITIR-suite \
+  --thread 6a4dda85-fe34-83ec-aee0-5987219cbc82 \
+  --prompt-file /path/to/codex-task.txt \
+  --rounds 2
+```
+
+Each loop is durable under `.autonomous-orchestrator/codex-chatgpt-loops/`:
+the state file records the Codex session id, each Codex final message, and each
+ChatGPT response. The next round resumes the same Codex session with the
+ChatGPT response as external feedback. Use `--headless` only where the
+profile/environment can pass Cloudflare; headed Chrome is the reliable mode
+for this profile.
+
+The AO runner already provides the supervisor primitives: child process
+launch, rolling output, heartbeat, timeout, and durable state. It does not
+currently perform this external handoff itself. Treat the bridge as one
+bounded implementation lane under AO/LRD rather than making the shared AO
+runtime depend on ChatGPT-specific browser state.
+
+The current Codex/ChatGPT pairings are stored in
+`codex_chatgpt_threads.json`. To fetch the latest GPT response and feed it
+back into an existing Codex session without sending another GPT message:
+
+```bash
+/home/c/Documents/code/ITIR-suite/.venv/bin/python \
+  scripts/codex_chatgpt_loop.py \
+  --pair ns \
+  --feedback-only
+
+/home/c/Documents/code/ITIR-suite/.venv/bin/python \
+  scripts/codex_chatgpt_loop.py \
+  --pair ym \
+  --feedback-only
+```
+
+The browser copy-button selectors are not needed for this loop. The relay
+extracts the assistant message text from the rendered turn nodes and writes it
+to JSON, which is more stable than clicking a copy control whose markup can
+change.
+
+```bash
 python scripts/pull_to_structurer.py \
   --mode pull \
   --engine async \

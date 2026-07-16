@@ -613,7 +613,7 @@ class AsyncChatGPT:
 
     async def __aenter__(self):
         self.session = AsyncSession(
-            impersonate="chrome110", timeout=99999, proxies=self.proxies
+            impersonate="chrome142", timeout=99999, proxies=self.proxies
         )
         self._frontend_cookies = {}
         if self.session_token:
@@ -876,7 +876,7 @@ class AsyncChatGPT:
         return getattr(response, "text", "") or ""
 
     def _bootstrap_frontend_cookies_sync_fallback(self) -> tuple[str, dict[str, str]]:
-        session = Session(impersonate="chrome110", timeout=30, proxies=self.proxies)
+        session = Session(impersonate="chrome142", timeout=30, proxies=self.proxies)
         if self.session_token:
             try:
                 session.cookies.set(
@@ -920,6 +920,60 @@ class AsyncChatGPT:
             headers=headers,
             cookies=dict(self._frontend_cookies) or None,
         )
+
+    async def resolve_asset_pointer(self, asset_pointer: str) -> str:
+        """Resolve a ChatGPT asset pointer to a signed download URL."""
+        pointer = str(asset_pointer or "").strip()
+        if not pointer:
+            raise ValueError("asset_pointer must be provided")
+        if pointer.startswith(("http://", "https://")):
+            return pointer
+        candidates = [pointer]
+        if "://" in pointer:
+            scheme, remainder = pointer.split("://", 1)
+            if scheme.lower() in {"file", "fileservice", "sediment"}:
+                candidates.append(f"file-service://{remainder}")
+                if remainder.startswith("file_"):
+                    candidates.append(f"file-service://{remainder.replace('file_', 'file-', 1)}")
+        else:
+            candidates.append(f"file-service://{pointer}")
+        headers = dict(self.build_request_headers())
+        headers["Accept"] = "application/json"
+        errors: list[str] = []
+        for candidate in dict.fromkeys(candidates):
+            response = await self.session.post(
+                url=CHATGPT_API.format("asset/get"),
+                headers=headers,
+                json={"asset_pointer": candidate},
+            )
+            if response.status_code != 200:
+                errors.append(f"{candidate} -> {response.status_code}")
+                continue
+            payload = response.json()
+            if isinstance(payload, dict):
+                for key in ("download_url", "url", "signed_url", "downloadUrl", "content_url"):
+                    value = payload.get(key)
+                    if value:
+                        return str(value)
+            errors.append(f"{candidate} -> missing download URL")
+        raise UnexpectedResponseError(
+            f"Asset pointer {asset_pointer} did not include a download URL",
+            "; ".join(errors),
+        )
+
+    async def download_asset(self, asset_pointer: str, conversation_id: Optional[str] = None):
+        """Download an asset payload for the archive artifact pipeline."""
+        download_url = await self.resolve_asset_pointer(asset_pointer)
+        response = await self.session.get(
+            download_url,
+            headers={"User-Agent": USER_AGENT, "Accept": "*/*"},
+        )
+        if response.status_code != 200:
+            raise UnexpectedResponseError(
+                f"Failed to download asset for {asset_pointer}",
+                str(getattr(response, "text", "")),
+            )
+        return response.content, response.headers.get("Content-Type")
 
     async def fetch_auth_token(self) -> str:
         """
