@@ -19,7 +19,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "re-gpt = re_gpt.cli:main",
+            "re-gpt = re_gpt.entrypoint:main",
             "re-gpt-browser = re_gpt.accessibility_browser:main",
         ],
     },
