@@ -16,6 +16,12 @@ class _Completed:
         self.stderr = stderr
 
 
+def _relay_file(tmp_path: Path) -> Path:
+    relay = tmp_path / "chatgpt_dom_relay.py"
+    relay.touch()
+    return relay
+
+
 def test_submit_prompt_prefers_api_transport(monkeypatch, tmp_path: Path) -> None:
     calls: list[tuple[list[str], str]] = []
 
@@ -33,7 +39,7 @@ def test_submit_prompt_prefers_api_transport(monkeypatch, tmp_path: Path) -> Non
     result = submit_prompt(
         "abc",
         "hello",
-        relay_path=tmp_path / "chatgpt_dom_relay.py",
+        relay_path=_relay_file(tmp_path),
         headed=True,
     )
 
@@ -70,7 +76,7 @@ def test_submit_prompt_falls_back_to_dom(monkeypatch, tmp_path: Path) -> None:
     result = submit_prompt(
         "abc",
         "hello",
-        relay_path=tmp_path / "chatgpt_dom_relay.py",
+        relay_path=_relay_file(tmp_path),
     )
 
     assert calls == ["api", "dom"]
@@ -90,7 +96,7 @@ def test_submit_prompt_reports_both_transport_failures(monkeypatch, tmp_path: Pa
         submit_prompt(
             "abc",
             "hello",
-            relay_path=tmp_path / "chatgpt_dom_relay.py",
+            relay_path=_relay_file(tmp_path),
         )
 
     message = str(excinfo.value)
