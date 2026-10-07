@@ -12,6 +12,7 @@ setup(
         "Bug Tracker": "https://github.com/Zai-Kun/reverse-engineered-chatgpt/issues",
     },
     packages=find_packages(),
+    py_modules=["chatgpt_dom_relay"],
     install_requires=["curl_cffi==0.5.9", "websockets==12.0"],
     extras_require={
         "browser": ["playwright>=1.47"],
