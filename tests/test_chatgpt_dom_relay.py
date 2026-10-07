@@ -11,7 +11,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from chatgpt_dom_relay import (
+    EDITOR_TEXT_SELECTORS,
     assistant_reply_after_prompt,
+    assistant_reply_after_rendered_text,
     build_conversation_url,
     extract_thread_id,
     latest_assistant_from_sse,
@@ -20,6 +22,10 @@ from chatgpt_dom_relay import (
     resolve_thread_selector,
     summarize_snapshot,
 )
+
+
+def test_editor_text_selectors_include_textarea_fallback() -> None:
+    assert "textarea[placeholder]" in EDITOR_TEXT_SELECTORS
 
 
 def test_extract_thread_id_from_url() -> None:
@@ -126,6 +132,27 @@ def test_assistant_reply_after_prompt_ignores_hydrated_history() -> None:
     }
     assert assistant_reply_after_prompt(snapshot, "Knock knock") == "Who's there?"
     assert assistant_reply_after_prompt(snapshot, "new question") is None
+
+
+def test_assistant_reply_after_rendered_text_uses_latest_matching_prompt() -> None:
+    page_text = """Earlier history
+Today 8:25 PM
+You said:
+RE-GPT browser transport probe: reply exactly ACK.
+ChatGPT said:
+
+ACK
+
+ChatGPT can make mistakes. Check important info.
+Latest response
+"""
+
+    assert (
+        assistant_reply_after_rendered_text(
+            page_text, "RE-GPT browser transport probe: reply exactly ACK."
+        )
+        == "ACK"
+    )
 
 
 def test_latest_assistant_from_sse_uses_final_assistant_event() -> None:

@@ -42,6 +42,7 @@ COMPOSER_SELECTORS = (
 EDITOR_TEXT_SELECTORS = (
     "#prompt-textarea > p:nth-child(1)",
     "#prompt-textarea",
+    "textarea[placeholder]",
 )
 SEND_BUTTON_SELECTORS = (
     "#composer-submit-button",
@@ -157,6 +158,17 @@ def assistant_reply_after_prompt(snapshot: dict[str, Any], prompt: str) -> str |
             text = str(turn.get("text") or "").strip()
             return text or None
     return None
+
+
+def assistant_reply_after_rendered_text(page_text: str, prompt: str) -> str | None:
+    """Return the assistant reply from ChatGPT's current labeled turn markup."""
+    marker = f"You said:\n{prompt.strip()}\nChatGPT said:"
+    start = page_text.rfind(marker)
+    if start < 0:
+        return None
+    reply = page_text[start + len(marker) :]
+    reply = reply.split("\nChatGPT can make mistakes.", 1)[0].strip()
+    return reply or None
 
 
 def latest_assistant_from_sse(raw: str) -> str:
@@ -466,6 +478,9 @@ class ChatGPTDomRelay:
         while time.monotonic() < deadline:
             snapshot = summarize_snapshot(await self.snapshot())
             reply = assistant_reply_after_prompt(snapshot, prompt)
+            if reply is None:
+                page_text = await self.page.locator("main").inner_text()
+                reply = assistant_reply_after_rendered_text(page_text, prompt)
             if reply is not None:
                 latest = snapshot
                 latest["latest_assistant"] = reply

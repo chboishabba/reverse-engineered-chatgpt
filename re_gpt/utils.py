@@ -202,10 +202,9 @@ def get_session_token(config_path: str = "config.ini") -> str:
         return token
 
     session_file = Path.home() / ".chatgpt_session"
-    if session_file.is_file():
-        token = session_file.read_text(encoding="utf-8").strip()
-        if token:
-            return token
+    token = _read_stitched_session_token_file(session_file)
+    if token:
+        return token
 
     raise TokenNotProvided()
 
