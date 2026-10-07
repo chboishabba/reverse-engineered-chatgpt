@@ -1,10 +1,15 @@
 """Accessibility-first browser-owned ChatGPT transport.
 
 This module keeps authentication and mutation state inside a real browser while
-allowing displayless operation.  The default mode uses Playwright's ``chromium``
-channel, which opts into Chromium's modern unified headless implementation.  A
-normal headed Chrome launch remains available as an explicit compatibility
-fallback.
+allowing operation on systems with no usable graphical display.
+
+The default ``displayless`` mode runs normal Chrome without Chrome's headless
+mode and selects Chromium's Linux Ozone headless platform backend instead.  In
+other words, the browser still uses its ordinary browser/window stack, while
+Ozone provides an off-screen platform surface that does not require X11,
+Wayland, or a physical monitor.  Playwright unified Chromium headless remains
+available as a secondary mode, and normal headed Chrome remains an explicit
+compatibility fallback.
 
 The transport deliberately reuses :class:`chatgpt_dom_relay.ChatGPTDomRelay`
 for ChatGPT-specific protocol and DOM behavior.  It changes browser lifecycle
@@ -16,7 +21,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import contextlib
 import json
 import sys
 from pathlib import Path
@@ -32,17 +36,17 @@ from chatgpt_dom_relay import (
     resolve_thread_selector,
 )
 
-BROWSER_MODES = ("headless", "headed")
+BROWSER_MODES = ("displayless", "headless", "headed")
 
 
 class AccessibilityBrowserRelay(ChatGPTDomRelay):
-    """ChatGPT relay with a displayless real-Chromium browser mode."""
+    """ChatGPT relay with displayless and conventional browser modes."""
 
     def __init__(
         self,
         *,
         profile_dir: Path,
-        browser_mode: str = "headless",
+        browser_mode: str = "displayless",
         timeout_ms: int,
         idle_ms: int,
     ) -> None:
@@ -53,7 +57,7 @@ class AccessibilityBrowserRelay(ChatGPTDomRelay):
         self.browser_mode = browser_mode
         super().__init__(
             profile_dir=profile_dir,
-            headed=browser_mode == "headed",
+            headed=browser_mode in {"displayless", "headed"},
             timeout_ms=timeout_ms,
             idle_ms=idle_ms,
         )
@@ -61,21 +65,40 @@ class AccessibilityBrowserRelay(ChatGPTDomRelay):
     def launch_options(self) -> dict[str, Any]:
         """Return Playwright launch options for the selected browser mode."""
 
-        headed = self.browser_mode == "headed"
+        base_args = [
+            "--no-first-run",
+            "--no-default-browser-check",
+        ]
+
+        if self.browser_mode == "displayless":
+            return {
+                # Deliberately *not* Chrome's --headless mode.  Chromium's
+                # Ozone headless platform is the Linux display backend here.
+                "headless": False,
+                "channel": "chrome",
+                "args": [
+                    *base_args,
+                    "--ozone-platform=headless",
+                    "--ozone-override-screen-size=1440,960",
+                ],
+                "viewport": {"width": 1440, "height": 960},
+            }
+
+        if self.browser_mode == "headless":
+            return {
+                # Playwright documents channel="chromium" as opting into the
+                # modern unified Chromium headless implementation rather than
+                # chromium-headless-shell.
+                "headless": True,
+                "channel": "chromium",
+                "args": base_args,
+                "viewport": {"width": 1440, "height": 960},
+            }
+
         return {
-            "headless": not headed,
-            # Playwright documents channel="chromium" as opting into modern
-            # unified headless, i.e. the regular Chromium browser rather than
-            # chromium-headless-shell.  Keep branded Chrome for the explicit
-            # headed compatibility path so existing browser profiles continue
-            # to behave as before.
-            "channel": "chrome" if headed else "chromium",
-            "args": [
-                "--disable-blink-features=AutomationControlled",
-                "--no-first-run",
-                "--no-default-browser-check",
-                *(["--start-minimized"] if headed else []),
-            ],
+            "headless": False,
+            "channel": "chrome",
+            "args": [*base_args, "--start-minimized"],
             "viewport": {"width": 1440, "height": 960},
         }
 
@@ -102,8 +125,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Accessibility-first ChatGPT relay using a browser-owned session. "
-            "Defaults to Playwright unified Chromium headless and falls back "
-            "from same-origin API submission to the real composer DOM."
+            "Defaults to normal Chrome on Chromium's displayless Ozone backend; "
+            "same-origin API submission falls back to the real composer DOM."
         )
     )
     parser.add_argument(
@@ -128,10 +151,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--browser-mode",
         choices=BROWSER_MODES,
-        default="headless",
+        default="displayless",
         help=(
-            "Browser lifecycle mode. 'headless' uses Playwright's unified Chromium "
-            "headless implementation; 'headed' uses installed Chrome (default: %(default)s)."
+            "Browser lifecycle mode: displayless = normal Chrome on Ozone's "
+            "off-screen backend; headless = Playwright unified Chromium headless; "
+            "headed = normal Chrome window (default: %(default)s)."
         ),
     )
     parser.add_argument(
