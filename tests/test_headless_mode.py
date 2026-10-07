@@ -11,13 +11,22 @@ from re_gpt.accessibility_browser import (
 )
 
 
-def test_parser_defaults_to_unified_headless() -> None:
+def test_parser_defaults_to_displayless_ozone() -> None:
     args = build_parser().parse_args(["6a33ae58-cb84-83ec-b187-ddab3179ccbb", "--prompt", "hi"])
-    assert args.browser_mode == "headless"
+    assert args.browser_mode == "displayless"
 
 
-def test_parser_accepts_headed_fallback() -> None:
-    args = build_parser().parse_args(
+def test_parser_accepts_unified_headless_and_headed_fallbacks() -> None:
+    headless = build_parser().parse_args(
+        [
+            "6a33ae58-cb84-83ec-b187-ddab3179ccbb",
+            "--prompt",
+            "hi",
+            "--browser-mode",
+            "headless",
+        ]
+    )
+    headed = build_parser().parse_args(
         [
             "6a33ae58-cb84-83ec-b187-ddab3179ccbb",
             "--prompt",
@@ -26,7 +35,8 @@ def test_parser_accepts_headed_fallback() -> None:
             "headed",
         ]
     )
-    assert args.browser_mode == "headed"
+    assert headless.browser_mode == "headless"
+    assert headed.browser_mode == "headed"
 
 
 def test_legacy_headed_flag_maps_to_headed_mode() -> None:
@@ -36,7 +46,22 @@ def test_legacy_headed_flag_maps_to_headed_mode() -> None:
     assert resolve_browser_mode(args) == "headed"
 
 
-def test_launch_options_use_playwright_chromium_for_unified_headless(tmp_path: Path) -> None:
+def test_launch_options_use_ozone_displayless_without_chrome_headless(tmp_path: Path) -> None:
+    relay = AccessibilityBrowserRelay(
+        profile_dir=tmp_path / "profile",
+        browser_mode="displayless",
+        timeout_ms=1000,
+        idle_ms=100,
+    )
+    options = relay.launch_options()
+    assert options["headless"] is False
+    assert options["channel"] == "chrome"
+    assert "--ozone-platform=headless" in options["args"]
+    assert "--ozone-override-screen-size=1440,960" in options["args"]
+    assert "--start-minimized" not in options["args"]
+
+
+def test_launch_options_keep_unified_chromium_headless_as_secondary_mode(tmp_path: Path) -> None:
     relay = AccessibilityBrowserRelay(
         profile_dir=tmp_path / "profile",
         browser_mode="headless",
@@ -46,7 +71,7 @@ def test_launch_options_use_playwright_chromium_for_unified_headless(tmp_path: P
     options = relay.launch_options()
     assert options["headless"] is True
     assert options["channel"] == "chromium"
-    assert "--start-minimized" not in options["args"]
+    assert "--ozone-platform=headless" not in options["args"]
 
 
 def test_launch_options_use_system_chrome_for_headed_fallback(tmp_path: Path) -> None:
@@ -60,6 +85,7 @@ def test_launch_options_use_system_chrome_for_headed_fallback(tmp_path: Path) ->
     assert options["headless"] is False
     assert options["channel"] == "chrome"
     assert "--start-minimized" in options["args"]
+    assert "--ozone-platform=headless" not in options["args"]
 
 
 def test_relay_rejects_unknown_browser_mode(tmp_path: Path) -> None:
