@@ -238,8 +238,6 @@ def write_main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 2
-        if reconciled_assistant and not latest:
-            print(reconciled_assistant)
 
     # Even when the browser observed an assistant, a missing canonical user node
     # is an exactly-once ambiguity: archive state is authoritative, so do not
@@ -251,6 +249,9 @@ def write_main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+
+    if reconciled_assistant and not latest:
+        print(reconciled_assistant)
 
     print(
         "[re-gpt] reconciled {conversation_id}: +{new_messages} new message(s), "
