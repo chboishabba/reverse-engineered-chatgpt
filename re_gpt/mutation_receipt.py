@@ -32,11 +32,13 @@ def _message_role(message: dict[str, Any]) -> str:
 
 
 def _message_time(message: dict[str, Any]) -> float | None:
-    raw = message.get("create_time")
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return None
+    for key in ("create_time", "update_time"):
+        raw = message.get(key)
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 def classify_prompt_mutation(
@@ -48,7 +50,7 @@ def classify_prompt_mutation(
     """Find a newly-created exact user prompt and any assistant child.
 
     ``not_before`` prevents an old identical probe from certifying a failed new
-    send.  Quoted prompt text in assistant/tool messages is ignored because the
+    send. Quoted prompt text in assistant/tool messages is ignored because the
     role must be ``user`` and the message content must exactly match the prompt.
     """
 
