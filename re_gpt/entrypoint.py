@@ -8,6 +8,12 @@ import sys
 from pathlib import Path
 from typing import Any, TextIO
 
+from .read_plane import fetch_validated_conversation, install_validated_sync_read_plane
+
+# The supported executable always installs the validated sync read compatibility
+# layer before delegating to the legacy CLI surface.
+install_validated_sync_read_plane()
+
 from .browser_write import BrowserWriteError, submit_prompt
 from .cli import main as legacy_main
 from .storage import ConversationStorage, extract_ordered_messages
@@ -58,8 +64,7 @@ def reconcile_conversation(
         default_model=default_model,
         user_agent=user_agent,
     ) as chatgpt:
-        conversation = chatgpt.get_conversation(conversation_id)
-        chat = conversation.fetch_chat()
+        chat = fetch_validated_conversation(chatgpt, conversation_id)
         messages = extract_ordered_messages(chat)
         asset_fetcher = None
         if hasattr(chatgpt, "download_asset"):
@@ -102,7 +107,7 @@ def build_write_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--browser-profile",
         type=Path,
-        help="Persistent browser profile used for the browser-owned session.",
+        help="Persistent browser profile used when the relay launches Chrome.",
     )
     parser.add_argument(
         "--browser-mode",
@@ -111,7 +116,14 @@ def build_write_parser() -> argparse.ArgumentParser:
         help=(
             "displayless = normal Chrome on Ozone off-screen backend; "
             "headless = unified Chromium headless; headed = normal Chrome window "
-            "(default: %(default)s)."
+            "(default: %(default)s). Ignored when --cdp-endpoint is used."
+        ),
+    )
+    parser.add_argument(
+        "--cdp-endpoint",
+        help=(
+            "Attach to an already-running Chromium/Chrome instance over CDP, for "
+            "example http://127.0.0.1:9222. The relay will not close that browser."
         ),
     )
     parser.add_argument(
@@ -148,6 +160,7 @@ def write_main(argv: list[str] | None = None) -> int:
             prompt,
             profile_dir=args.browser_profile,
             browser_mode=args.browser_mode,
+            cdp_endpoint=args.cdp_endpoint,
             timeout=args.write_timeout,
         )
     except (BrowserWriteError, OSError, ValueError) as exc:
@@ -189,7 +202,7 @@ def write_main(argv: list[str] | None = None) -> int:
 def main() -> int:
     """Route browser mutations here and delegate every legacy command unchanged."""
 
-    if "--send" in sys.argv[1:]:
+    if any(arg == "--send" or arg.startswith("--send=") for arg in sys.argv[1:]):
         return write_main(sys.argv[1:])
     legacy_main()
     return 0
