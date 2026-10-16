@@ -1,26 +1,18 @@
 """Accessibility-first browser-owned ChatGPT transport.
 
-This module keeps authentication and mutation state inside a real browser while
-allowing operation on systems with no usable graphical display.
-
-The default ``displayless`` mode runs normal Chrome without Chrome's headless
-mode and selects Chromium's Linux Ozone headless platform backend instead.  In
-other words, the browser still uses its ordinary browser/window stack, while
-Ozone provides an off-screen platform surface that does not require X11,
-Wayland, or a physical monitor.  Playwright unified Chromium headless remains
-available as a secondary mode, and normal headed Chrome remains an explicit
-compatibility fallback.
-
-The transport deliberately reuses :class:`chatgpt_dom_relay.ChatGPTDomRelay`
-for ChatGPT-specific protocol and DOM behavior.  It changes browser lifecycle
-only; same-origin API submission, DOM submission, and reply detection stay in
-one implementation.
+The relay can either launch a browser or attach to an already-running
+Chromium/Chrome instance over CDP.  Launch mode supports normal Chrome on
+Chromium's displayless Ozone backend, Playwright unified Chromium headless,
+and a conventional headed Chrome fallback.  Attach mode reuses an existing
+browser-owned authenticated session and never closes that browser or its
+contexts when the relay exits.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import sys
 from pathlib import Path
@@ -40,13 +32,14 @@ BROWSER_MODES = ("displayless", "headless", "headed")
 
 
 class AccessibilityBrowserRelay(ChatGPTDomRelay):
-    """ChatGPT relay with displayless and conventional browser modes."""
+    """ChatGPT relay with launched and non-owning attached browser modes."""
 
     def __init__(
         self,
         *,
         profile_dir: Path,
         browser_mode: str = "displayless",
+        cdp_endpoint: str | None = None,
         timeout_ms: int,
         idle_ms: int,
     ) -> None:
@@ -55,6 +48,9 @@ class AccessibilityBrowserRelay(ChatGPTDomRelay):
                 f"unknown browser mode {browser_mode!r}; expected one of {BROWSER_MODES}"
             )
         self.browser_mode = browser_mode
+        self.cdp_endpoint = cdp_endpoint.strip() if cdp_endpoint else None
+        self._attached_browser = None
+        self._attached = bool(self.cdp_endpoint)
         super().__init__(
             profile_dir=profile_dir,
             headed=browser_mode in {"displayless", "headed"},
@@ -62,8 +58,12 @@ class AccessibilityBrowserRelay(ChatGPTDomRelay):
             idle_ms=idle_ms,
         )
 
+    @property
+    def attaches_existing_browser(self) -> bool:
+        return self._attached
+
     def launch_options(self) -> dict[str, Any]:
-        """Return Playwright launch options for the selected browser mode."""
+        """Return Playwright launch options for a relay-owned browser."""
 
         base_args = [
             "--no-first-run",
@@ -72,8 +72,6 @@ class AccessibilityBrowserRelay(ChatGPTDomRelay):
 
         if self.browser_mode == "displayless":
             return {
-                # Deliberately *not* Chrome's --headless mode.  Chromium's
-                # Ozone headless platform is the Linux display backend here.
                 "headless": False,
                 "channel": "chrome",
                 "args": [
@@ -86,9 +84,6 @@ class AccessibilityBrowserRelay(ChatGPTDomRelay):
 
         if self.browser_mode == "headless":
             return {
-                # Playwright documents channel="chromium" as opting into the
-                # modern unified Chromium headless implementation rather than
-                # chromium-headless-shell.
                 "headless": True,
                 "channel": "chromium",
                 "args": base_args,
@@ -105,9 +100,34 @@ class AccessibilityBrowserRelay(ChatGPTDomRelay):
     async def __aenter__(self) -> "AccessibilityBrowserRelay":
         from playwright.async_api import async_playwright
 
+        self._playwright = await async_playwright().start()
+
+        if self.cdp_endpoint:
+            self._log(f"attaching to existing browser at {self.cdp_endpoint}")
+            self._attached_browser = await self._playwright.chromium.connect_over_cdp(
+                self.cdp_endpoint,
+                timeout=self.timeout_ms,
+            )
+            contexts = self._attached_browser.contexts
+            if not contexts:
+                raise RuntimeError(
+                    "CDP browser has no browser context; open Chrome with a normal profile first."
+                )
+            self._context = contexts[0]
+            chatgpt_pages = [
+                page
+                for context in contexts
+                for page in context.pages
+                if "chatgpt.com" in (page.url or "")
+            ]
+            if chatgpt_pages:
+                self._page = chatgpt_pages[0]
+            else:
+                self._page = await self._context.new_page()
+            return self
+
         self.profile_dir.mkdir(parents=True, exist_ok=True)
         clear_stale_profile_locks(self.profile_dir)
-        self._playwright = await async_playwright().start()
         options = self.launch_options()
         self._context = await self._playwright.chromium.launch_persistent_context(
             user_data_dir=str(self.profile_dir),
@@ -120,13 +140,23 @@ class AccessibilityBrowserRelay(ChatGPTDomRelay):
         )
         return self
 
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        if self.cdp_endpoint:
+            # Non-owning attach: disconnect Playwright only. Closing the context
+            # would close the user's already-running authenticated browser tabs.
+            if self._playwright is not None:
+                with contextlib.suppress(Exception):
+                    await self._playwright.stop()
+            return
+        await super().__aexit__(exc_type, exc, tb)
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Accessibility-first ChatGPT relay using a browser-owned session. "
-            "Defaults to normal Chrome on Chromium's displayless Ozone backend; "
-            "same-origin API submission falls back to the real composer DOM."
+            "Launch normal Chrome on Ozone displayless by default, or attach to "
+            "an already-running authenticated browser over CDP."
         )
     )
     parser.add_argument(
@@ -146,22 +176,29 @@ def build_parser() -> argparse.ArgumentParser:
         "--profile-dir",
         type=Path,
         default=DEFAULT_PROFILE_DIR,
-        help="Persistent browser profile directory (default: %(default)s).",
+        help="Persistent browser profile directory used only when launching a browser.",
     )
     parser.add_argument(
         "--browser-mode",
         choices=BROWSER_MODES,
         default="displayless",
         help=(
-            "Browser lifecycle mode: displayless = normal Chrome on Ozone's "
-            "off-screen backend; headless = Playwright unified Chromium headless; "
-            "headed = normal Chrome window (default: %(default)s)."
+            "Launch mode: displayless = normal Chrome on Ozone off-screen backend; "
+            "headless = unified Chromium headless; headed = normal Chrome window. "
+            "Ignored with --cdp-endpoint."
+        ),
+    )
+    parser.add_argument(
+        "--cdp-endpoint",
+        help=(
+            "Attach to an already-running Chromium/Chrome browser over CDP, e.g. "
+            "http://127.0.0.1:9222. Attached browsers are not closed by the relay."
         ),
     )
     parser.add_argument(
         "--headed",
         action="store_true",
-        help="Compatibility alias for --browser-mode headed.",
+        help="Compatibility alias for --browser-mode headed when launching.",
     )
     parser.add_argument(
         "--transport",
@@ -211,6 +248,7 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
     async with AccessibilityBrowserRelay(
         profile_dir=args.profile_dir,
         browser_mode=browser_mode,
+        cdp_endpoint=args.cdp_endpoint,
         timeout_ms=args.timeout * 1000,
         idle_ms=args.idle_ms,
     ) as relay:
@@ -228,7 +266,7 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                 continue
 
             result["transport"] = transport
-            result["browser_mode"] = browser_mode
+            result["browser_mode"] = "attached" if args.cdp_endpoint else browser_mode
             result["resolved_thread_id"] = thread_id
             if failures:
                 result["fallback_from"] = failures[-1][0]
