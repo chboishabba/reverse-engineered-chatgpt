@@ -1,7 +1,7 @@
 """Canonical single-conversation read compatibility layer.
 
 The supported CLI uses :meth:`SyncChatGPT.fetch_conversation` for exact
-conversation reads.  Legacy ``SyncConversation.fetch_chat`` remains available
+conversation reads. Legacy ``SyncConversation.fetch_chat`` remains available
 for callers that hold a conversation object, but delegates to the validated
 parent fetcher instead of performing its own unchecked HTTP request.
 """
@@ -31,7 +31,9 @@ def is_conversation_uuid(value: str) -> bool:
     return str(parsed).lower() == value.lower()
 
 
-def _populate_legacy_conversation_state(conversation: SyncConversation, chat: dict[str, Any]) -> None:
+def _populate_legacy_conversation_state(
+    conversation: SyncConversation, chat: dict[str, Any]
+) -> None:
     mapping = chat.get("mapping")
     if not isinstance(mapping, dict) or not mapping:
         raise ValueError("conversation response has no non-empty mapping")
@@ -53,6 +55,15 @@ def validated_fetch_chat(conversation: SyncConversation) -> dict[str, Any]:
     chat = conversation.chatgpt.fetch_conversation(conversation.conversation_id)
     _populate_legacy_conversation_state(conversation, chat)
     return chat
+
+
+def install_sync_fetch_chat_compatibility() -> None:
+    """Replace the legacy unchecked request with the validated parent fetcher."""
+
+    if getattr(SyncConversation.fetch_chat, "_re_gpt_validated", False):
+        return
+    validated_fetch_chat._re_gpt_validated = True  # type: ignore[attr-defined]
+    SyncConversation.fetch_chat = validated_fetch_chat  # type: ignore[method-assign]
 
 
 def _install_uuid_view_handler(cli_module) -> None:
@@ -206,14 +217,13 @@ def _install_uuid_download_handler(cli_module) -> None:
 def install_validated_sync_read_plane() -> None:
     """Install validated sync reads across the supported legacy CLI seams."""
 
-    if getattr(SyncConversation.fetch_chat, "_re_gpt_validated", False):
-        return
-
-    validated_fetch_chat._re_gpt_validated = True  # type: ignore[attr-defined]
-    SyncConversation.fetch_chat = validated_fetch_chat  # type: ignore[method-assign]
+    install_sync_fetch_chat_compatibility()
 
     # Import lazily to avoid a module cycle: cli imports SyncConversation.
     from . import cli as cli_module
 
+    if getattr(cli_module.run_noninteractive_view, "_re_gpt_validated", False):
+        return
     _install_uuid_view_handler(cli_module)
     _install_uuid_download_handler(cli_module)
+    cli_module.run_noninteractive_view._re_gpt_validated = True  # type: ignore[attr-defined]
