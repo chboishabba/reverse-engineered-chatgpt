@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any, TextIO
 
-from .read_plane import install_validated_sync_read_plane
+from .read_plane import fetch_validated_conversation, install_validated_sync_read_plane
 
 # The supported executable always installs the validated sync read compatibility
 # layer before delegating to the legacy CLI surface.
@@ -64,7 +64,7 @@ def reconcile_conversation(
         default_model=default_model,
         user_agent=user_agent,
     ) as chatgpt:
-        chat = chatgpt.fetch_conversation(conversation_id)
+        chat = fetch_validated_conversation(chatgpt, conversation_id)
         messages = extract_ordered_messages(chat)
         asset_fetcher = None
         if hasattr(chatgpt, "download_asset"):
