@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from chatgpt_dom_relay import BrowserAPIResponseError
 from re_gpt.accessibility_browser import api_failure_allows_dom_fallback
 
 
 def test_explicit_browser_api_rejection_allows_dom_fallback() -> None:
-    error = BrowserAPIResponseError(
-        stage="sentinel",
-        status=429,
-        body="Too many requests",
+    error = RuntimeError("API sentinel failed with HTTP 429: Too many requests")
+    assert api_failure_allows_dom_fallback(error) is True
+
+
+def test_explicit_conversation_post_rejection_allows_dom_fallback() -> None:
+    error = RuntimeError(
+        "API conversation-post failed with HTTP 403: request rejected"
     )
     assert api_failure_allows_dom_fallback(error) is True
 
