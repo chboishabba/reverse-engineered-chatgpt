@@ -31,13 +31,22 @@ def is_conversation_uuid(value: str) -> bool:
     return str(parsed).lower() == value.lower()
 
 
-def _populate_legacy_conversation_state(
-    conversation: SyncConversation, chat: dict[str, Any]
-) -> None:
+def fetch_validated_conversation(chatgpt, conversation_id: str) -> dict[str, Any]:
+    """Fetch one conversation through the proven sync path and validate its graph."""
+
+    chat = chatgpt.fetch_conversation(conversation_id)
+    if not isinstance(chat, dict):
+        raise ValueError("conversation response is not a JSON object")
     mapping = chat.get("mapping")
     if not isinstance(mapping, dict) or not mapping:
         raise ValueError("conversation response has no non-empty mapping")
+    return chat
 
+
+def _populate_legacy_conversation_state(
+    conversation: SyncConversation, chat: dict[str, Any]
+) -> None:
+    mapping = chat["mapping"]
     conversation.parent_id = chat.get("current_node") or next(reversed(mapping))
     conversation.title = chat.get("title")
     model_slug = get_model_slug(chat)
@@ -52,7 +61,9 @@ def validated_fetch_chat(conversation: SyncConversation) -> dict[str, Any]:
 
     if not conversation.conversation_id:
         return {}
-    chat = conversation.chatgpt.fetch_conversation(conversation.conversation_id)
+    chat = fetch_validated_conversation(
+        conversation.chatgpt, conversation.conversation_id
+    )
     _populate_legacy_conversation_state(conversation, chat)
     return chat
 
@@ -77,7 +88,7 @@ def _install_uuid_view_handler(cli_module) -> None:
 
         conversation_id = normalize_conversation_selector(target)
         try:
-            chat = chatgpt.fetch_conversation(conversation_id)
+            chat = fetch_validated_conversation(chatgpt, conversation_id)
         except Exception as exc:  # noqa: BLE001 - preserve the validated fetch error.
             print(f"Failed to fetch conversation {conversation_id}: {exc}")
             return
@@ -159,7 +170,7 @@ def _install_uuid_download_handler(cli_module) -> None:
                 return
 
         try:
-            chat = chatgpt.fetch_conversation(conversation_id)
+            chat = fetch_validated_conversation(chatgpt, conversation_id)
         except Exception as exc:  # noqa: BLE001 - report the exact validated-read failure.
             print(f"Failed to fetch conversation {conversation_id}: {exc}")
             return
