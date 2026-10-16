@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from re_gpt import cli, entrypoint
+from re_gpt.read_plane import fetch_validated_conversation
 from re_gpt.sync_chatgpt import SyncConversation
 
 
@@ -61,6 +62,15 @@ def test_syncconversation_fetch_chat_delegates_to_validated_parent_fetcher() -> 
     assert client.fetch_calls == [(CID, {})]
     assert conversation.parent_id == "assistant-node"
     assert conversation.title == "Demo"
+
+
+def test_validated_fetch_rejects_200_non_conversation_shape() -> None:
+    client = DummySyncClient(payload={"detail": "unexpected payload"})
+
+    with pytest.raises(ValueError, match="non-empty mapping"):
+        fetch_validated_conversation(client, CID)
+
+    assert client.fetch_calls == [(CID, {})]
 
 
 def test_uuid_view_uses_one_validated_fetch_and_never_catalog_fallback(capsys) -> None:
