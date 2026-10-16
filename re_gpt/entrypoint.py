@@ -5,10 +5,12 @@ from __future__ import annotations
 import argparse
 import functools
 import sys
+import time
 from pathlib import Path
 from typing import Any, TextIO
 
 from .read_plane import fetch_validated_conversation, install_validated_sync_read_plane
+from .mutation_receipt import classify_prompt_mutation
 
 # The supported executable always installs the validated sync read compatibility
 # layer before delegating to the legacy CLI surface.
@@ -52,8 +54,10 @@ def reconcile_conversation(
     key: str | None = None,
     model: str | None = None,
     export_json: bool = False,
+    expected_prompt: str | None = None,
+    not_before: float | None = None,
 ) -> dict[str, Any]:
-    """Re-pull a successfully mutated thread into the canonical local archive."""
+    """Re-pull a mutated thread and optionally certify its new user node."""
 
     token = key or get_session_token()
     default_model = model or get_default_model()
@@ -78,6 +82,15 @@ def reconcile_conversation(
             messages,
             asset_fetcher=asset_fetcher,
         )
+
+        mutation_receipt = None
+        if expected_prompt is not None:
+            mutation_receipt = classify_prompt_mutation(
+                chat,
+                expected_prompt,
+                not_before=float(not_before or 0.0),
+            )
+
         return {
             "conversation_id": conversation_id,
             "new_messages": result.new_messages,
@@ -85,6 +98,15 @@ def reconcile_conversation(
             "json_path": str(result.json_path) if result.json_path else None,
             "asset_count": len(result.asset_paths),
             "asset_errors": len(result.asset_errors),
+            "mutation_prompt_present": (
+                mutation_receipt.prompt_committed if mutation_receipt is not None else None
+            ),
+            "mutation_prompt_nodes": (
+                list(mutation_receipt.user_node_ids) if mutation_receipt is not None else []
+            ),
+            "mutation_assistant": (
+                mutation_receipt.assistant_text if mutation_receipt is not None else None
+            ),
         }
 
 
@@ -155,6 +177,7 @@ def write_main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         prompt = resolve_prompt(args.prompt, args.prompt_file, stdin=sys.stdin)
+        mutation_started_at = time.time()
         mutation = submit_prompt(
             args.send,
             prompt,
@@ -182,12 +205,49 @@ def write_main(argv: list[str] | None = None) -> int:
             key=args.key,
             model=args.model,
             export_json=args.export_json,
+            expected_prompt=prompt,
+            # Allow a small clock-skew / page-dispatch margin without letting an
+            # old identical probe certify this operation.
+            not_before=mutation_started_at - 5.0,
         )
     except Exception as exc:  # noqa: BLE001 - mutation may already be committed remotely.
         print(
             f"error: mutation succeeded via {mutation.get('transport', 'browser')} but "
             f"archive reconciliation failed for {conversation_id}: {exc}. "
             "Do not resend the prompt; re-run the pull/reconciliation only.",
+            file=sys.stderr,
+        )
+        return 2
+
+    mutation_state = str(mutation.get("mutation_state") or "")
+    prompt_present = reconciled.get("mutation_prompt_present")
+    reconciled_assistant = str(reconciled.get("mutation_assistant") or "").strip()
+
+    if mutation_state == "submitted_unconfirmed":
+        if prompt_present is False:
+            print(
+                "error: browser submission was observed locally but the new user prompt "
+                "was not found in the canonical graph after reconciliation.",
+                file=sys.stderr,
+            )
+            return 1
+        if prompt_present is True and not reconciled_assistant:
+            print(
+                "error: canonical graph confirms the user prompt committed, but no "
+                "assistant child is present yet. Do not resend; pull/reconcile later.",
+                file=sys.stderr,
+            )
+            return 2
+        if reconciled_assistant and not latest:
+            print(reconciled_assistant)
+
+    # Even when the browser observed an assistant, a missing canonical user node
+    # is an exactly-once ambiguity: archive state is authoritative, so do not
+    # silently report success or resend.
+    if prompt_present is False:
+        print(
+            "error: browser reported mutation progress but reconciliation did not "
+            "find the new user node. Do not resend automatically; inspect/pull again.",
             file=sys.stderr,
         )
         return 2
