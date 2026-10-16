@@ -1,9 +1,9 @@
 """Accessibility-first browser-owned ChatGPT transport.
 
 The relay can either launch a browser or attach to an already-running
-Chromium/Chrome instance over CDP.  Launch mode supports normal Chrome on
+Chromium/Chrome instance over CDP. Launch mode supports normal Chrome on
 Chromium's displayless Ozone backend, Playwright unified Chromium headless,
-and a conventional headed Chrome fallback.  Attach mode reuses an existing
+and a conventional headed Chrome fallback. Attach mode reuses an existing
 browser-owned authenticated session and never closes that browser or its
 contexts when the relay exits.
 """
@@ -104,27 +104,36 @@ class AccessibilityBrowserRelay(ChatGPTDomRelay):
 
         if self.cdp_endpoint:
             self._log(f"attaching to existing browser at {self.cdp_endpoint}")
-            self._attached_browser = await self._playwright.chromium.connect_over_cdp(
-                self.cdp_endpoint,
-                timeout=self.timeout_ms,
-            )
-            contexts = self._attached_browser.contexts
-            if not contexts:
-                raise RuntimeError(
-                    "CDP browser has no browser context; open Chrome with a normal profile first."
+            try:
+                self._attached_browser = await self._playwright.chromium.connect_over_cdp(
+                    self.cdp_endpoint,
+                    timeout=self.timeout_ms,
                 )
-            self._context = contexts[0]
-            chatgpt_pages = [
-                page
-                for context in contexts
-                for page in context.pages
-                if "chatgpt.com" in (page.url or "")
-            ]
-            if chatgpt_pages:
-                self._page = chatgpt_pages[0]
-            else:
-                self._page = await self._context.new_page()
-            return self
+                contexts = self._attached_browser.contexts
+                if not contexts:
+                    raise RuntimeError(
+                        "CDP browser has no browser context; open Chrome with a normal profile first."
+                    )
+
+                selected_context = contexts[0]
+                selected_page = None
+                for context in contexts:
+                    for page in context.pages:
+                        if "chatgpt.com" in (page.url or ""):
+                            selected_context = context
+                            selected_page = page
+                            break
+                    if selected_page is not None:
+                        break
+
+                self._context = selected_context
+                self._page = selected_page or await selected_context.new_page()
+                return self
+            except Exception:
+                if self._playwright is not None:
+                    with contextlib.suppress(Exception):
+                        await self._playwright.stop()
+                raise
 
         self.profile_dir.mkdir(parents=True, exist_ok=True)
         clear_stale_profile_locks(self.profile_dir)
