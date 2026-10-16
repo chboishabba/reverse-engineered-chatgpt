@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from chatgpt_dom_relay import (
+from re_gpt.dom_commit import (
     DomSubmissionReceipt,
     is_conversation_mutation_request,
     should_retry_dom_with_enter,
