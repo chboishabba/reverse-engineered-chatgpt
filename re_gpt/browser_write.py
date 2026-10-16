@@ -19,13 +19,13 @@ def submit_prompt(
     *,
     profile_dir: Path | str | None = None,
     browser_mode: str = "displayless",
+    cdp_endpoint: str | None = None,
     timeout: int = 900,
 ) -> dict[str, Any]:
     """Submit *prompt* through the accessibility browser transport.
 
-    The child command owns browser lifecycle and performs API-first/DOM-fallback
-    mutation.  This adapter exists so the normal ``re-gpt`` CLI can use that
-    transport without duplicating browser code.
+    The child command either attaches to an existing browser over CDP or owns
+    browser lifecycle itself.  Mutation remains API-first with DOM fallback.
     """
 
     selector = selector.strip()
@@ -48,7 +48,9 @@ def submit_prompt(
         str(timeout),
         "--json",
     ]
-    if profile_dir is not None:
+    if cdp_endpoint:
+        command.extend(["--cdp-endpoint", cdp_endpoint])
+    elif profile_dir is not None:
         command.extend(["--profile-dir", str(profile_dir)])
 
     completed = subprocess.run(
