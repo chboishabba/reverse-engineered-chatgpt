@@ -14,6 +14,7 @@ import argparse
 import asyncio
 import contextlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,28 @@ from chatgpt_dom_relay import (
 )
 
 BROWSER_MODES = ("displayless", "headless", "headed")
+_EXPLICIT_API_FAILURE_RE = re.compile(
+    r"^API (auth-session|conversation-get|sentinel|conversation-post) "
+    r"failed with HTTP \d+:"
+)
+
+
+def api_failure_allows_dom_fallback(exc: BaseException) -> bool:
+    """Return whether an API submission failure is explicit enough to retry via DOM.
+
+    ``send_api_prompt`` reports server-declared non-success responses with a
+    stable ``API <stage> failed with HTTP ...`` message. Those responses prove
+    the browser received a rejection. By contrast, a Playwright/CDP timeout,
+    page close, transport reset, or evaluation failure can happen after the
+    conversation POST was accepted; its mutation outcome is ambiguous and a
+    second DOM submission would risk duplicating the user's prompt.
+    """
+
+    return bool(_EXPLICIT_API_FAILURE_RE.match(str(exc)))
+
+
+class AmbiguousBrowserMutationError(RuntimeError):
+    """Raised when a browser API mutation may have committed remotely."""
 
 
 class AccessibilityBrowserRelay(ChatGPTDomRelay):
@@ -215,7 +238,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="auto",
         help=(
             "Mutation transport. auto tries browser same-origin API first and then "
-            "the composer DOM (default: %(default)s)."
+            "the composer DOM only after an explicit API rejection (default: %(default)s)."
         ),
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of reply text.")
@@ -261,25 +284,51 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
         timeout_ms=args.timeout * 1000,
         idle_ms=args.idle_ms,
     ) as relay:
-        transports = ("api", "dom") if args.transport == "auto" else (args.transport,)
-        for transport in transports:
+        if args.transport in {"api", "auto"}:
             try:
-                if transport == "api":
-                    await relay.open_api_context()
+                await relay.open_api_context()
+            except Exception as exc:  # No mutation has been attempted yet.
+                failures.append(("api-context", str(exc)))
+                if args.transport == "api":
+                    raise
+            else:
+                try:
                     result = await relay.send_api_prompt(prompt, thread_id)
+                except Exception as exc:  # noqa: BLE001
+                    failures.append(("api", str(exc)))
+                    if args.transport == "api":
+                        raise
+                    if not api_failure_allows_dom_fallback(exc):
+                        raise AmbiguousBrowserMutationError(
+                            "browser API submission outcome is ambiguous; refusing DOM "
+                            "fallback to avoid a duplicate prompt. Reconcile/pull the "
+                            "conversation before deciding whether to retry."
+                        ) from exc
                 else:
-                    await relay.open_thread(thread_id)
-                    result = await relay.send_prompt(prompt)
-            except Exception as exc:  # noqa: BLE001 - fallback is intentional.
-                failures.append((transport, str(exc)))
-                continue
+                    result["transport"] = "api"
+                    result["browser_mode"] = (
+                        "attached" if args.cdp_endpoint else browser_mode
+                    )
+                    result["resolved_thread_id"] = thread_id
+                    if failures:
+                        result["fallback_from"] = failures[-1][0]
+                    return result
 
-            result["transport"] = transport
-            result["browser_mode"] = "attached" if args.cdp_endpoint else browser_mode
-            result["resolved_thread_id"] = thread_id
-            if failures:
-                result["fallback_from"] = failures[-1][0]
-            return result
+        if args.transport in {"dom", "auto"}:
+            try:
+                await relay.open_thread(thread_id)
+                result = await relay.send_prompt(prompt)
+            except Exception as exc:  # noqa: BLE001
+                failures.append(("dom", str(exc)))
+            else:
+                result["transport"] = "dom"
+                result["browser_mode"] = (
+                    "attached" if args.cdp_endpoint else browser_mode
+                )
+                result["resolved_thread_id"] = thread_id
+                if failures:
+                    result["fallback_from"] = failures[-1][0]
+                return result
 
     details = "; ".join(f"{transport}: {detail}" for transport, detail in failures)
     raise RuntimeError(f"all requested browser transports failed ({details})")
