@@ -9,6 +9,8 @@ The current product architecture is API-first. Direct async `curl_cffi` owns nor
 - [Read plane](read-plane.md) — exact-graph acquisition and adapter ordering.
 - [Session/protocol resilience](session-protocol-resilience.md) — first-class session status/bootstrap/refresh/doctor plus redacted protocol compatibility fingerprints.
 - [Adapter/attachment resilience](adapter-attachment-resilience.md) — D2 read-adapter backoff/latency telemetry and live attachment robustness matrix.
+- [Stream-first follow/global queue](stream-follow-global-queue.md) — no-poll SSE follow, cross-process backend pacing, 429 backoff and per-profile browser launch isolation.
+- [Agent delegation guide](agent-delegation.md) — pair programming with remote ChatGPT reasoning models and GitHub connector workflows.
 - [Interface contract](interfaces.md) — public product/data surfaces.
 
 ## Accessibility / browser tooling
@@ -34,4 +36,4 @@ regenerate from exact user node
 edit-and-branch from exact user node
 ```
 
-All of those converge on `MutationService -> GraphBroker -> canonical SQLite persistence`. Milestone D1 adds explicit session lifecycle diagnosis and protocol-drift classification. Milestone D2 hardens read-adapter health/backoff and attachment matching while leaving mutation exactly-once semantics unchanged. Remaining roadmap work is primarily archive provenance and eventual removal of obsolete compatibility internals.
+All of those converge on `MutationService -> GraphBroker -> canonical SQLite persistence`. Milestone D1 adds explicit session lifecycle diagnosis and protocol-drift classification. Milestone D2 hardens read-adapter health/backoff and attachment matching. Milestone E changes `follow=True` to consume the live SSE/DOM completion boundary and perform one terminal canonical reconciliation instead of repeated full-graph polling, while globally pacing backend requests across processes. Remaining roadmap work is primarily archive provenance and eventual removal of obsolete compatibility internals.

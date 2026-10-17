@@ -22,10 +22,14 @@
 
 - [x] Run the full local pytest suite on the graph-mutation branch and record the exact pass/skip receipt (221 passed, 1 skipped).
 - [x] Run `scripts/accept_graph_mutations_v1.py` against a sacrificial account thread and retain canonical complete receipts for all four graph operations.
-- [ ] Expand the attachment acceptance matrix: multiple files, duplicate basenames, larger files and non-text MIME types.
+- [ ] Expand the attachment acceptance matrix: multiple files, duplicate basenames, larger files and non-text MIME types (implemented in PR #46; live attachment receipt still pending here).
 - [x] Add explicit session-bootstrap / refresh lifecycle commands and expiry diagnostics (PR #45 merged).
 - [x] Add protocol-drift detection against redacted browser-oracle captures (PR #45 merged).
-- [ ] Add adapter health/backoff and empirical latency telemetry without weakening exactly-once semantics.
+- [ ] Add adapter health/backoff and empirical latency telemetry without weakening exactly-once semantics (implemented and locally verified in PR #46; pending merge).
+- [x] Implement stream-first `follow=True`: consume active conversation SSE/DOM completion and perform one terminal canonical reconciliation with zero full-graph follow polls (Milestone E branch).
+- [x] Add a cross-process SQLite `/backend-api/` pacing queue with 1.5s default exact-read spacing and exponential global 429 backoff (Milestone E branch).
+- [x] Add canonical per-profile browser launch leases so same-profile operations serialize without blocking distinct profile directories (Milestone E branch).
+- [ ] Run `scripts/accept_stream_follow_v1.py` and retain the real-time progress + zero-poll terminal reconciliation receipt before merging Milestone E.
 - [ ] Improve arbitrary uploaded-file archive download/provenance beyond current canonical attachment binding.
 - [ ] Remove/deprecate obsolete low-level mutation implementations once downstream compatibility consumers no longer call them directly.
 

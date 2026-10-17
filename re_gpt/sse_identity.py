@@ -29,9 +29,15 @@ def extract_graph_sse_identity(chunks: Sequence[bytes | str]) -> dict[str, str |
             continue
         if not isinstance(event, Mapping):
             continue
-        if event.get("conversation_id"):
-            conversation_id = str(event["conversation_id"])
+        v = event.get("v")
+        cid = event.get("conversation_id")
+        if not cid and isinstance(v, Mapping):
+            cid = v.get("conversation_id")
+        if cid:
+            conversation_id = str(cid)
         message = event.get("message")
+        if not isinstance(message, Mapping) and isinstance(v, Mapping):
+            message = v.get("message")
         if not isinstance(message, Mapping) or not message.get("id"):
             continue
         author = message.get("author")
