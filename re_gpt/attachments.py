@@ -299,20 +299,33 @@ def iter_canonical_attachments(chat: Mapping[str, Any]) -> list[CanonicalAttachm
 
 
 def match_expected_attachments(chat: Mapping[str, Any], user_node_id: str, expected: Sequence[LocalAttachment]) -> tuple[bool, list[CanonicalAttachment]]:
+    """Match each local attachment to one unique canonical remote attachment.
+
+    Filename is required. MIME and size are enforced whenever the graph exposes
+    them, preventing duplicate basenames from being silently cross-bound. A
+    remote file identity can satisfy at most one local ordinal.
+    """
     actual = canonical_attachments_for_user_node(chat, user_node_id)
     matched: list[CanonicalAttachment] = []
-    used: set[tuple[str, str, str | None]] = set()
+    used_remote: set[tuple[str, str | None]] = set()
     for item in expected:
-        candidates = [
-            entry for entry in actual
-            if entry.filename == item.filename
-            and (entry.file_id, entry.filename, entry.pointer) not in used
-        ]
-        if item.mime_type:
-            candidates = [entry for entry in candidates if not entry.mime_type or entry.mime_type == item.mime_type]
-        candidates = [entry for entry in candidates if bool(entry.file_id or entry.pointer)]
-        if not candidates: return False, matched
-        selected = candidates[-1]
+        candidates = []
+        for entry in actual:
+            identity = (entry.file_id, entry.pointer)
+            if identity in used_remote:
+                continue
+            if entry.filename != item.filename:
+                continue
+            if item.mime_type and entry.mime_type and entry.mime_type != item.mime_type:
+                continue
+            if entry.size is not None and int(entry.size) != int(item.size):
+                continue
+            if not (entry.file_id or entry.pointer):
+                continue
+            candidates.append(entry)
+        if not candidates:
+            return False, matched
+        selected = candidates[0]
         matched.append(selected)
-        used.add((selected.file_id, selected.filename, selected.pointer))
+        used_remote.add((selected.file_id, selected.pointer))
     return True, matched
