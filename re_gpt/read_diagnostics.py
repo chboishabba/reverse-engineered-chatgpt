@@ -89,7 +89,7 @@ def _validate_graph(chat: Any) -> None:
         raise ValueError("conversation response has no non-empty mapping")
 
 
-def _sync_probe(conversation_id: str, *, token: str, model: str | None, user_agent: str) -> dict[str, Any]:
+def _sync_probe(conversation_id: str, *, token: str | None, model: str | None, user_agent: str) -> dict[str, Any]:
     started = time.perf_counter()
     route = "/backend-api/conversation/<id>"
     headers: Mapping[str, Any] = {}
@@ -126,7 +126,7 @@ def _sync_probe(conversation_id: str, *, token: str, model: str | None, user_age
     )
 
 
-async def _async_probe(conversation_id: str, *, token: str, model: str | None, user_agent: str) -> dict[str, Any]:
+async def _async_probe(conversation_id: str, *, token: str | None, model: str | None, user_agent: str) -> dict[str, Any]:
     started = time.perf_counter()
     route = "/backend-api/conversation/<id>"
     headers: Mapping[str, Any] = {}
@@ -173,7 +173,10 @@ def diagnose_reads(
 ) -> list[dict[str, Any]]:
     """Probe sync, async and browser reads and return only redacted receipts."""
 
-    token = get_session_token()
+    try:
+        token = get_session_token()
+    except Exception:  # noqa: BLE001 - probe constructors will report the missing direct context.
+        token = None
     model = get_default_model()
     user_agent = get_default_user_agent()
     receipts = [_sync_probe(conversation_id, token=token, model=model, user_agent=user_agent)]
