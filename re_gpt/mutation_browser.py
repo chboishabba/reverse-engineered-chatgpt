@@ -57,7 +57,7 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
         async with BrowserProtocolRecorder(
             relay.page,
             operation="continue",
-            profile_dir=args.profile_dir,
+            save_session_snapshot=False,
         ) as recorder:
             readiness = await open_ready_thread(relay, thread_id)
             stage_times["authenticated"] = time.time()
