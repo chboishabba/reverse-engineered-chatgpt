@@ -25,6 +25,7 @@ setup(
             "re-gpt-browser = re_gpt.accessibility_browser:main",
             "re-gpt-mutate = re_gpt.mutation_browser:main",
             "re-gpt-mcp = re_gpt.mcp_server:main",
+            "re-gpt-metrics = re_gpt.mutation_metrics:main",
         ],
     },
 )
