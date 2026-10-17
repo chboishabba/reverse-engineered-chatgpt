@@ -103,7 +103,7 @@ async def _dom_status(relay: AccessibilityBrowserRelay, conversation_id: str) ->
               if (!el) return false;
               const style = window.getComputedStyle(el);
               const rect = el.getBoundingClientRect();
-              return style.display !== 'none' && style.visibility !== 'hidden' && rect.width >= 0 && rect.height >= 0;
+              return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
             };
             const anyVisible = (selector) => Array.from(document.querySelectorAll(selector)).some(visible);
             const region = document.querySelector('div[role="region"][aria-label="Conversation"]');
@@ -120,8 +120,8 @@ async def _dom_status(relay: AccessibilityBrowserRelay, conversation_id: str) ->
               url: window.location.href,
               loaded: Boolean(region) || copyOrEdit,
               generating: stopVisible,
-              thinking: lowerTertiary.includes('thinking'),
-              tool_activity: tertiary.length > 0 && !lowerTertiary.includes('connection interrupted'),
+              thinking: stopVisible && lowerTertiary.includes('thinking'),
+              tool_activity: stopVisible && tertiary.length > 0 && !lowerTertiary.includes('connection interrupted'),
               connection_interrupted: text.includes('Connection interrupted') || text.includes('Waiting for the complete answer'),
               conversation_load_error: text.includes('Could not load this ChatGPT conversation'),
               history_load_error: text.includes('Unable to load history'),
