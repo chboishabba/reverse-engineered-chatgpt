@@ -21,6 +21,23 @@ from .dom_commit import (
     should_retry_dom_with_enter,
 )
 
+FLOATING_NEW_CHAT_DIALOG = 'section[role="dialog"][aria-label="New chat"]'
+FLOATING_NEW_CHAT_MINIMIZE = 'button[aria-label="Minimize chat"]'
+
+
+async def dismiss_floating_new_chat(page) -> bool:
+    """Minimize ChatGPT's known floating New chat overlay if it is open."""
+
+    dialog = page.locator(f"{FLOATING_NEW_CHAT_DIALOG}:visible").first
+    if not await dialog.count():
+        return False
+    minimize = dialog.locator(f"{FLOATING_NEW_CHAT_MINIMIZE}:visible").first
+    if not await minimize.count():
+        return False
+    await minimize.click()
+    await page.wait_for_timeout(100)
+    return True
+
 
 async def submit_prompt_once(relay, prompt: str) -> dict[str, Any]:
     """Insert and trigger a prompt once, returning after browser submission evidence."""
@@ -29,6 +46,7 @@ async def submit_prompt_once(relay, prompt: str) -> dict[str, Any]:
     if not prompt:
         raise ValueError("prompt is empty")
 
+    await dismiss_floating_new_chat(relay.page)
     composer = await relay._locate_visible(EDITOR_TEXT_SELECTORS)
     await composer.click()
     await relay.page.keyboard.insert_text(prompt)
