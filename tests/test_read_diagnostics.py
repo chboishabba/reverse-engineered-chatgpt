@@ -100,7 +100,7 @@ def test_diagnose_reads_still_runs_browser_without_direct_token(monkeypatch) -> 
         ),
     )
     receipts = read_diagnostics.diagnose_reads("abc")
-    assert [row["adapter"] for row in receipts] == ["sync", "async", "browser"]
+    assert [row["adapter"] for row in receipts] == ["async", "sync", "browser"]
     assert receipts[0]["token"] is None
     assert receipts[1]["token"] is None
     assert receipts[2]["status"] == 200
