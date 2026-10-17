@@ -2,6 +2,7 @@
 
 The MCP server calls :class:`MutationService` directly; it never shells out to
 the human CLI. Durable operation status comes from the shared SQLite archive.
+DOM live status is explicitly provisional browser observation.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from .browser_observer import observe_live_status
 from .mutation_service import MutationService
 from .storage import DEFAULT_DB_PATH
 
@@ -53,10 +55,40 @@ def chatgpt_reconcile(
     operation_id: str,
     prompt: str,
     not_before: float = 0.0,
+    profile_dir: str | None = None,
+    browser_mode: str = "displayless",
+    cdp_endpoint: str | None = None,
+    browser_timeout: int = 60,
     db_path: str | None = None,
 ) -> dict[str, Any]:
-    """Re-pull the canonical graph for a previously submitted operation; never resubmits it."""
-    return _service(db_path).reconcile(operation_id, prompt=prompt, not_before=not_before)
+    """Re-pull a submitted operation; sync first, browser GET fallback, never resubmit."""
+    return _service(db_path).reconcile(
+        operation_id,
+        prompt=prompt,
+        not_before=not_before,
+        profile_dir=profile_dir,
+        browser_mode=browser_mode,
+        cdp_endpoint=cdp_endpoint,
+        browser_timeout=browser_timeout,
+    )
+
+
+@mcp.tool()
+def chatgpt_live_status(
+    conversation_id: str,
+    profile_dir: str | None = None,
+    browser_mode: str = "displayless",
+    cdp_endpoint: str | None = None,
+    timeout: int = 60,
+) -> dict[str, Any]:
+    """Observe current rendered thread state; this is provisional, not archive truth."""
+    return observe_live_status(
+        conversation_id,
+        profile_dir=profile_dir,
+        browser_mode=browser_mode,
+        cdp_endpoint=cdp_endpoint,
+        timeout=timeout,
+    )
 
 
 @mcp.tool()
