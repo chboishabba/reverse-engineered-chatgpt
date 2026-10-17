@@ -22,10 +22,12 @@ class ProfileDirectoryLease:
         *,
         timeout_seconds: float = 60.0,
         poll_interval: float = 0.1,
+        unparseable_grace_seconds: float = 5.0,
     ) -> None:
         self.profile_dir = canonical_profile_dir(profile_dir)
         self.timeout_seconds = max(0.0, float(timeout_seconds))
         self.poll_interval = max(0.01, float(poll_interval))
+        self.unparseable_grace_seconds = max(0.0, float(unparseable_grace_seconds))
         self.lease_path = self.profile_dir / ".re_gpt_profile_lease"
         self._owned = False
 
@@ -52,8 +54,16 @@ class ProfileDirectoryLease:
             pid = int(owner.get("pid"))
         except (TypeError, ValueError):
             pid = 0
-        if pid > 0 and self._pid_alive(pid):
-            return False
+        if pid > 0:
+            if self._pid_alive(pid):
+                return False
+        else:
+            try:
+                age = max(0.0, time.time() - self.lease_path.stat().st_mtime)
+            except OSError:
+                age = self.unparseable_grace_seconds + 1.0
+            if age <= self.unparseable_grace_seconds:
+                return False
         try:
             self.lease_path.unlink()
             return True
