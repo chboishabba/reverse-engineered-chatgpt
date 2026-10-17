@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 import time
 from pathlib import Path
@@ -96,6 +97,18 @@ def test_snapshot_save_load_and_consume_roundtrip(tmp_path: Path) -> None:
     after_consume = load_browser_session_snapshot(profile_dir=tmp_path)
     assert after_consume is not None
     assert after_consume.has_fresh_sentinel() is False
+
+
+def test_snapshot_writer_ignores_stale_permissive_fixed_temp_file(tmp_path: Path) -> None:
+    stale = tmp_path / ".re_gpt_session_snapshot.tmp"
+    stale.write_text("stale", encoding="utf-8")
+    os.chmod(stale, 0o644)
+
+    saved_path = save_browser_session_snapshot(_sample_snapshot(), profile_dir=tmp_path)
+
+    assert saved_path.is_file()
+    assert stat.S_IMODE(saved_path.stat().st_mode) == 0o600
+    assert stale.read_text(encoding="utf-8") == "stale"
 
 
 def test_apply_browser_session_to_async_and_sync_clients() -> None:
