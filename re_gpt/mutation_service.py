@@ -105,6 +105,7 @@ class MutationService:
         asset_fetcher=None,
         read_adapter: str,
         read_diagnostic: dict[str, Any] | None = None,
+        direct_client_rejected: bool = False,
     ) -> dict[str, Any]:
         messages = extract_ordered_messages(chat)
         with ConversationStorage(db_path=self.db_path, write_json=self.export_json) as storage:
@@ -126,6 +127,7 @@ class MutationService:
             "canonical_attachment_count": canonical_attachment_count,
             "read_adapter": read_adapter,
             "read_diagnostic": read_diagnostic or {},
+            "direct_client_rejected": direct_client_rejected,
         }
 
     def _pull_sync_and_persist(self, conversation_id: str) -> dict[str, Any]:
@@ -146,6 +148,7 @@ class MutationService:
                 chat,
                 asset_fetcher=asset_fetcher,
                 read_adapter="sync",
+                direct_client_rejected=False,
             )
 
     def _pull_browser_and_persist(
@@ -156,6 +159,7 @@ class MutationService:
         browser_mode: str = "displayless",
         cdp_endpoint: str | None = None,
         browser_timeout: int = 60,
+        direct_client_rejected: bool = False,
     ) -> dict[str, Any]:
         result = fetch_conversation_same_origin(
             conversation_id,
@@ -169,6 +173,7 @@ class MutationService:
             result.chat,
             read_adapter="browser",
             read_diagnostic=result.diagnostic,
+            direct_client_rejected=direct_client_rejected,
         )
 
     def _pull_and_persist(
@@ -176,11 +181,27 @@ class MutationService:
         conversation_id: str,
         *,
         browser_fallback: bool = True,
+        direct_allowed: bool = True,
         profile_dir: Path | str | None = None,
         browser_mode: str = "displayless",
         cdp_endpoint: str | None = None,
         browser_timeout: int = 60,
     ) -> dict[str, Any]:
+        if not direct_allowed:
+            try:
+                return self._pull_browser_and_persist(
+                    conversation_id,
+                    profile_dir=profile_dir,
+                    browser_mode=browser_mode,
+                    cdp_endpoint=cdp_endpoint,
+                    browser_timeout=browser_timeout,
+                    direct_client_rejected=True,
+                )
+            except Exception as browser_exc:  # noqa: BLE001 - preserve the sticky rejection boundary.
+                raise DirectClientRejected(
+                    f"direct exact-thread client was already rejected; browser fallback failed ({browser_exc})"
+                ) from browser_exc
+
         try:
             return self._pull_sync_and_persist(conversation_id)
         except Exception as sync_exc:
@@ -193,6 +214,7 @@ class MutationService:
                     browser_mode=browser_mode,
                     cdp_endpoint=cdp_endpoint,
                     browser_timeout=browser_timeout,
+                    direct_client_rejected=True,
                 )
             except Exception as browser_exc:  # noqa: BLE001 - preserve both transport failures.
                 raise DirectClientRejected(
@@ -207,6 +229,7 @@ class MutationService:
         not_before: float,
         expected_attachments: Sequence[LocalAttachment] | None = None,
         browser_fallback: bool = True,
+        direct_allowed: bool = True,
         profile_dir: Path | str | None = None,
         browser_mode: str = "displayless",
         cdp_endpoint: str | None = None,
@@ -224,17 +247,20 @@ class MutationService:
             pulled = self._pull_and_persist(
                 conversation_id,
                 browser_fallback=browser_fallback,
+                direct_allowed=direct_allowed,
                 profile_dir=profile_dir,
                 browser_mode=browser_mode,
                 cdp_endpoint=cdp_endpoint,
                 browser_timeout=browser_timeout,
             )
+            read_bits = {
+                "read_adapter": pulled.get("read_adapter"),
+                "read_diagnostic": pulled.get("read_diagnostic", {}),
+                "direct_client_rejected": bool(pulled.get("direct_client_rejected")),
+            }
             receipt = classify_prompt_mutation(pulled["chat"], prompt, not_before=not_before)
             if not receipt.prompt_committed:
-                return operations.update(operation_id, state="commit_unknown") | {
-                    "read_adapter": pulled.get("read_adapter"),
-                    "read_diagnostic": pulled.get("read_diagnostic", {}),
-                }
+                return operations.update(operation_id, state="commit_unknown") | read_bits
 
             user_node_id = receipt.user_node_ids[-1]
             committed_at = op.get("committed_at") or time.time()
@@ -249,11 +275,7 @@ class MutationService:
                         state="committed_pending",
                         committed_at=committed_at,
                         user_node_id=user_node_id,
-                    ) | {
-                        "attachment_ids": [],
-                        "read_adapter": pulled.get("read_adapter"),
-                        "read_diagnostic": pulled.get("read_diagnostic", {}),
-                    }
+                    ) | {"attachment_ids": []} | read_bits
                 operations.record_canonical_attachments(operation_id, canonical)
                 attachment_ids = [entry.file_id for entry in canonical if entry.file_id]
                 with AttachmentArchive(self.db_path) as archive:
@@ -283,9 +305,7 @@ class MutationService:
                 "attachment_ids": attachment_ids,
                 "new_messages": pulled["new_messages"],
                 "total_messages": pulled["total_messages"],
-                "read_adapter": pulled.get("read_adapter"),
-                "read_diagnostic": pulled.get("read_diagnostic", {}),
-            }
+            } | read_bits
 
     def continue_thread(
         self,
@@ -344,7 +364,8 @@ class MutationService:
             )
 
         last: dict[str, Any] | None = None
-        direct_rejected = False
+        direct_context_rejected = False
+        terminal_read_rejection = False
         for attempt in range(max(1, reconcile_attempts)):
             try:
                 last = self.reconcile(
@@ -352,18 +373,24 @@ class MutationService:
                     prompt=prompt,
                     not_before=started_at - 5.0,
                     expected_attachments=local_attachments,
+                    direct_allowed=not direct_context_rejected,
                     profile_dir=profile_dir,
                     browser_mode=browser_mode,
                     cdp_endpoint=cdp_endpoint,
                     browser_timeout=browser_timeout,
                 )
+                direct_context_rejected = (
+                    direct_context_rejected or bool(last.get("direct_client_rejected"))
+                )
             except Exception as exc:
-                direct_rejected = _is_direct_client_rejection(exc)
+                rejected = _is_direct_client_rejection(exc)
+                direct_context_rejected = direct_context_rejected or rejected
+                terminal_read_rejection = rejected
                 with MutationOperationStore(self.db_path) as operations:
                     last = operations.update(
                         operation_id,
                         state="commit_unknown",
-                        error_class="DirectClientRejected" if direct_rejected else exc.__class__.__name__,
+                        error_class="DirectClientRejected" if rejected else exc.__class__.__name__,
                         error_detail=str(exc),
                     )
                 break
@@ -377,7 +404,7 @@ class MutationService:
 
         if (
             follow
-            and not direct_rejected
+            and not terminal_read_rejection
             and last.get("error_class") != "DirectClientRejected"
             and last.get("state") in {"committed", "committed_pending", "commit_unknown"}
         ):
@@ -393,13 +420,18 @@ class MutationService:
                         prompt=prompt,
                         not_before=started_at - 5.0,
                         expected_attachments=local_attachments,
+                        direct_allowed=not direct_context_rejected,
                         profile_dir=profile_dir,
                         browser_mode=browser_mode,
                         cdp_endpoint=cdp_endpoint,
                         browser_timeout=browser_timeout,
                     )
+                    direct_context_rejected = (
+                        direct_context_rejected or bool(last.get("direct_client_rejected"))
+                    )
                 except Exception as exc:
                     rejected = _is_direct_client_rejection(exc)
+                    direct_context_rejected = direct_context_rejected or rejected
                     with MutationOperationStore(self.db_path) as operations:
                         last = operations.update(
                             operation_id,
