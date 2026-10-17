@@ -92,24 +92,16 @@ def _validate_graph(chat: Any) -> None:
 def _sync_probe(conversation_id: str, *, token: str, model: str | None, user_agent: str) -> dict[str, Any]:
     started = time.perf_counter()
     route = "/backend-api/conversation/<id>"
-    with SyncChatGPT(session_token=token, default_model=model, user_agent=user_agent) as client:
-        headers = client.build_request_headers()
-        cookie_names, cookie_domains = _cookie_metadata(client.session)
-        try:
+    headers: Mapping[str, Any] = {}
+    cookie_names: list[str] = []
+    cookie_domains: list[str] = []
+    try:
+        with SyncChatGPT(session_token=token, default_model=model, user_agent=user_agent) as client:
+            headers = client.build_request_headers()
+            cookie_names, cookie_domains = _cookie_metadata(client.session)
             chat = client.fetch_conversation(conversation_id)
             _validate_graph(chat)
-        except Exception as exc:  # noqa: BLE001 - diagnostics must preserve adapter failure class.
-            return redacted_request_shape(
-                adapter="sync",
-                method="GET",
-                route=route,
-                headers=headers,
-                cookie_names=cookie_names,
-                cookie_domains=cookie_domains,
-                status=_status_from_error(exc),
-                elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
-                response_class=exc.__class__.__name__,
-            )
+    except Exception as exc:  # noqa: BLE001 - diagnostics must preserve adapter failure class.
         return redacted_request_shape(
             adapter="sync",
             method="GET",
@@ -117,33 +109,36 @@ def _sync_probe(conversation_id: str, *, token: str, model: str | None, user_age
             headers=headers,
             cookie_names=cookie_names,
             cookie_domains=cookie_domains,
-            status=200,
+            status=_status_from_error(exc),
             elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
-            response_class="ok",
+            response_class=exc.__class__.__name__,
         )
+    return redacted_request_shape(
+        adapter="sync",
+        method="GET",
+        route=route,
+        headers=headers,
+        cookie_names=cookie_names,
+        cookie_domains=cookie_domains,
+        status=200,
+        elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
+        response_class="ok",
+    )
 
 
 async def _async_probe(conversation_id: str, *, token: str, model: str | None, user_agent: str) -> dict[str, Any]:
     started = time.perf_counter()
     route = "/backend-api/conversation/<id>"
-    async with AsyncChatGPT(session_token=token, default_model=model, user_agent=user_agent) as client:
-        headers = client.build_request_headers()
-        cookie_names, cookie_domains = _cookie_metadata(client.session)
-        try:
+    headers: Mapping[str, Any] = {}
+    cookie_names: list[str] = []
+    cookie_domains: list[str] = []
+    try:
+        async with AsyncChatGPT(session_token=token, default_model=model, user_agent=user_agent) as client:
+            headers = client.build_request_headers()
+            cookie_names, cookie_domains = _cookie_metadata(client.session)
             chat = await client.fetch_conversation(conversation_id)
             _validate_graph(chat)
-        except Exception as exc:  # noqa: BLE001
-            return redacted_request_shape(
-                adapter="async",
-                method="GET",
-                route=route,
-                headers=headers,
-                cookie_names=cookie_names,
-                cookie_domains=cookie_domains,
-                status=_status_from_error(exc),
-                elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
-                response_class=exc.__class__.__name__,
-            )
+    except Exception as exc:  # noqa: BLE001
         return redacted_request_shape(
             adapter="async",
             method="GET",
@@ -151,10 +146,21 @@ async def _async_probe(conversation_id: str, *, token: str, model: str | None, u
             headers=headers,
             cookie_names=cookie_names,
             cookie_domains=cookie_domains,
-            status=200,
+            status=_status_from_error(exc),
             elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
-            response_class="ok",
+            response_class=exc.__class__.__name__,
         )
+    return redacted_request_shape(
+        adapter="async",
+        method="GET",
+        route=route,
+        headers=headers,
+        cookie_names=cookie_names,
+        cookie_domains=cookie_domains,
+        status=200,
+        elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
+        response_class="ok",
+    )
 
 
 def diagnose_reads(
