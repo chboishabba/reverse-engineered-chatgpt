@@ -153,7 +153,7 @@ class BrowserProtocolRecorder:
             if bearer:
                 self._captured_access_token = bearer
             lower_headers = {str(k).lower(): str(v) for k, v in req_headers.items() if v is not None}
-            if method == "POST" and "/conversation" in url and not url.endswith(("/init", "/prepare")):
+            if _infer_bootstrap_stage(url, method) == "conversation_post":
                 req_tok = lower_headers.get("openai-sentinel-chat-requirements-token")
                 if req_tok and self._captured_sentinel.get("chat_requirements_token") == req_tok:
                     self._captured_sentinel["consumed"] = True
