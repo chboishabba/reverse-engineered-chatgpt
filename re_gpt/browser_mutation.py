@@ -8,7 +8,6 @@ only makes a second trigger unsafe.
 from __future__ import annotations
 
 import contextlib
-import time
 from dataclasses import asdict
 from typing import Any
 
@@ -22,45 +21,6 @@ from .dom_commit import (
     should_retry_dom_with_enter,
 )
 
-FLOATING_NEW_CHAT_DIALOG = 'section[role="dialog"][aria-label="New chat"]'
-FLOATING_NEW_CHAT_OVERLAY = '.codex-dialog-overlay[data-state="open"]'
-FLOATING_NEW_CHAT_MINIMIZE = 'button[aria-label="Minimize chat"]'
-
-
-async def dismiss_floating_new_chat(page, *, settle_ms: int = 0) -> bool:
-    """Minimize ChatGPT's known floating New chat overlay if it appears."""
-
-    deadline = time.monotonic() + max(0, settle_ms) / 1000.0
-    while True:
-        dialog = page.locator(f"{FLOATING_NEW_CHAT_DIALOG}:visible").first
-        overlay = page.locator(f"{FLOATING_NEW_CHAT_OVERLAY}:visible").first
-        if await dialog.count():
-            minimize = dialog.locator(f"{FLOATING_NEW_CHAT_MINIMIZE}:visible").first
-        elif await overlay.count():
-            minimize = page.locator(f"{FLOATING_NEW_CHAT_MINIMIZE}:visible").first
-        else:
-            minimize = None
-        if minimize is not None and await minimize.count():
-            await minimize.click()
-            await page.wait_for_timeout(100)
-            return True
-        if time.monotonic() >= deadline:
-            return False
-        await page.wait_for_timeout(100)
-
-
-async def focus_composer(relay, composer) -> None:
-    """Focus the composer, retrying once only after the known overlay appears."""
-
-    await dismiss_floating_new_chat(relay.page, settle_ms=750)
-    try:
-        await composer.click(timeout=min(2_000, relay.timeout_ms))
-    except Exception:
-        if not await dismiss_floating_new_chat(relay.page, settle_ms=750):
-            raise
-        await composer.click()
-
-
 async def submit_prompt_once(relay, prompt: str) -> dict[str, Any]:
     """Insert and trigger a prompt once, returning after browser submission evidence."""
 
@@ -69,7 +29,7 @@ async def submit_prompt_once(relay, prompt: str) -> dict[str, Any]:
         raise ValueError("prompt is empty")
 
     composer = await relay._locate_visible(EDITOR_TEXT_SELECTORS)
-    await focus_composer(relay, composer)
+    await composer.click()
     await relay.page.keyboard.insert_text(prompt)
 
     # Readiness is rechecked after insertion by requiring a usable send control.
