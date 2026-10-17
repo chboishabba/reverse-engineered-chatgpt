@@ -30,16 +30,18 @@ def chatgpt_continue(
     prompt: str,
     attachments: list[str] | None = None,
     follow: bool = False,
-    write_transport: str = "dom",
+    write_transport: str = "async",
+    dom_fallback: bool = True,
     db_path: str | None = None,
 ) -> dict[str, Any]:
-    """Continue an existing thread; canonical reconciliation uses the exact-read broker."""
+    """Continue an existing thread; defaults to direct async CFFI with pre-commit DOM fallback."""
     return _service(db_path).continue_thread(
         conversation_id,
         prompt,
         attachments=attachments or (),
         follow=follow,
         write_transport=write_transport,
+        dom_fallback=dom_fallback,
     )
 
 

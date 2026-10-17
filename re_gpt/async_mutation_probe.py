@@ -18,10 +18,11 @@ from pathlib import Path
 import sys
 import time
 import uuid
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from .async_bridge import run_async_sync
 from .async_chatgpt import AsyncChatGPT, CHATGPT_API
+from .attachments import LocalAttachment
 from .browser_session_replay import (
     BrowserSessionSnapshot,
     apply_browser_session_to_client,
@@ -79,6 +80,7 @@ class AsyncMutationProbeResult:
     parent_message_id: str | None
     user_message_id: str | None
     assistant_preview_observed: bool
+    attachment_ids: tuple[str, ...] = field(default_factory=tuple)
     observations: tuple[ProtocolObservation, ...] = field(default_factory=tuple)
     stage_times: dict[str, float] = field(default_factory=dict)
 
@@ -92,6 +94,7 @@ class AsyncMutationProbeResult:
             "parent_message_id": self.parent_message_id,
             "user_message_id": self.user_message_id,
             "assistant_preview_observed": self.assistant_preview_observed,
+            "attachment_ids": list(self.attachment_ids),
             "protocol_observations": [obs.to_dict() for obs in self.observations],
             "stage_times": dict(self.stage_times),
         }
@@ -101,12 +104,81 @@ def _session_cookies(session: Any) -> Any:
     return getattr(session, "cookies", None)
 
 
+def _coerce_local_attachments(
+    attachments: Sequence[LocalAttachment | Path | str] = (),
+) -> list[LocalAttachment]:
+    result: list[LocalAttachment] = []
+    for item in attachments:
+        if isinstance(item, LocalAttachment):
+            result.append(item)
+        else:
+            result.append(LocalAttachment.from_path(item))
+    return result
+
+
+def _parse_process_upload_stream(
+    chunks: Sequence[bytes | str],
+    fallback_text: str | None = None,
+) -> tuple[bool, dict[str, Any]]:
+    raw_items: list[bytes | str] = list(chunks)
+    if not raw_items and fallback_text:
+        raw_items.append(fallback_text)
+    ready = False
+    extra: dict[str, Any] = {}
+    for chunk in raw_items:
+        text = chunk.decode("utf-8", errors="ignore") if isinstance(chunk, (bytes, bytearray)) else str(chunk)
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if line.startswith("data:"):
+                line = line[5:].strip()
+            if not line or line == "[DONE]":
+                continue
+            try:
+                parsed = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(parsed, Mapping):
+                continue
+            event = str(parsed.get("event") or "").strip()
+            status = str(parsed.get("status") or "").strip().lower()
+            if event == "file.processing.failed" or status == "error" or parsed.get("error"):
+                return False, {}
+            if (
+                event in {"file.processing.completed", "file.processing.file_ready"}
+                or status in {"success", "completed", "ready"}
+            ):
+                ready = True
+                raw_extra = parsed.get("extra")
+                if isinstance(raw_extra, Mapping):
+                    extra.update(raw_extra)
+    return ready, extra
+
+
+def _attach_metadata_to_payload(
+    payload: dict[str, Any],
+    attachment_metadata: Sequence[Mapping[str, Any]],
+) -> None:
+    if not attachment_metadata:
+        return
+    messages = payload.get("messages")
+    if not isinstance(messages, list) or not messages or not isinstance(messages[0], Mapping):
+        return
+    first_msg = dict(messages[0])
+    meta = dict(first_msg.get("metadata") or {}) if isinstance(first_msg.get("metadata"), Mapping) else {}
+    meta["attachments"] = [dict(item) for item in attachment_metadata]
+    first_msg["metadata"] = meta
+    messages[0] = first_msg
+
+
 def _upgrade_payload_for_web_frontend(
     base_payload: Mapping[str, Any],
     *,
     conversation_id: str,
     prompt: str,
     snapshot: BrowserSessionSnapshot,
+    attachment_metadata: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     raw_messages = base_payload.get("messages")
     first_msg = dict(raw_messages[0]) if isinstance(raw_messages, list) and raw_messages and isinstance(raw_messages[0], Mapping) else {}
@@ -114,6 +186,9 @@ def _upgrade_payload_for_web_frontend(
     now = float(first_msg.get("create_time") or time.time())
     parent_id = str(base_payload.get("parent_message_id") or uuid.uuid4())
     model_slug = str(base_payload.get("model") or "gpt-6-thinking")
+    msg_metadata: dict[str, Any] = {}
+    if attachment_metadata:
+        msg_metadata["attachments"] = [dict(item) for item in attachment_metadata]
     return {
         "action": str(base_payload.get("action") or "next"),
         "client_contextual_info": snapshot.client_contextual_info(),
@@ -132,7 +207,7 @@ def _upgrade_payload_for_web_frontend(
                 "status": "finished_successfully",
                 "end_turn": True,
                 "weight": 1.0,
-                "metadata": {},
+                "metadata": msg_metadata,
                 "recipient": "all",
                 "channel": None,
             }
@@ -146,10 +221,268 @@ def _upgrade_payload_for_web_frontend(
     }
 
 
+async def _stage_attachments_async(
+    client: Any,
+    local_attachments: Sequence[LocalAttachment],
+    *,
+    conversation_id: str,
+    snapshot: BrowserSessionSnapshot | None,
+    observations: list[ProtocolObservation],
+    seq_start: int,
+) -> tuple[list[dict[str, Any]], list[str], int]:
+    staged_metadata: list[dict[str, Any]] = []
+    staged_file_ids: list[str] = []
+    seq = seq_start
+    tz_offset = snapshot.timezone_offset_min() if snapshot is not None else 0
+
+    for att in local_attachments:
+        mime_type = att.mime_type or "application/octet-stream"
+        api_headers = dict(client.build_request_headers())
+        api_headers["Referer"] = f"https://chatgpt.com/c/{conversation_id}"
+        create_payload = {
+            "file_name": att.filename,
+            "file_size": att.size,
+            "use_case": "my_files",
+            "mime_type": mime_type,
+            "client_resolved_mime_type": mime_type,
+            "mime_resolution_source": "browser",
+            "entry_surface": "composer",
+            "library_persistence_mode": "opportunistic",
+            "reset_rate_limits": False,
+            "store_in_library": True,
+            "supports_direct_azure_multipart": True,
+            "timezone_offset_min": tz_offset,
+        }
+
+        seq += 1
+        create_started = time.perf_counter()
+        try:
+            create_resp = await client.session.post(
+                url=CHATGPT_API.format("files"),
+                headers=api_headers,
+                json=create_payload,
+            )
+        except Exception as exc:
+            obs = observation_from_exception(
+                exc,
+                transport="async",
+                operation="continue",
+                method="POST",
+                path="/backend-api/files",
+                headers=api_headers,
+                cookies=_session_cookies(client.session),
+                payload=create_payload,
+                sequence_index=seq,
+                elapsed_ms=(time.perf_counter() - create_started) * 1000.0,
+                bootstrap_stage="attachment_staging",
+            )
+            observations.append(obs)
+            raise ExplicitAsyncWriteRejection(
+                f"async attachment staging failed: {exc.__class__.__name__}",
+                stage="attachment_staging",
+                status=obs.status,
+                observations=tuple(observations),
+            ) from exc
+
+        create_status = int(getattr(create_resp, "status_code", 200) or 200)
+        observations.append(
+            build_protocol_observation(
+                transport="async",
+                operation="continue",
+                method="POST",
+                path="/backend-api/files",
+                status=create_status,
+                response_class="json_ok" if create_status == 200 else f"http_{create_status}",
+                headers=api_headers,
+                cookies=_session_cookies(client.session),
+                payload=create_payload,
+                sequence_index=seq,
+                elapsed_ms=(time.perf_counter() - create_started) * 1000.0,
+                bootstrap_stage="attachment_staging",
+            )
+        )
+        if create_status != 200:
+            raise ExplicitAsyncWriteRejection(
+                f"async attachment staging rejected with HTTP {create_status}",
+                stage="attachment_staging",
+                status=create_status,
+                observations=tuple(observations),
+            )
+
+        try:
+            create_data = create_resp.json() if callable(getattr(create_resp, "json", None)) else {}
+        except Exception as exc:
+            raise ExplicitAsyncWriteRejection(
+                "async attachment staging returned invalid JSON",
+                stage="attachment_staging",
+                status=create_status,
+                observations=tuple(observations),
+            ) from exc
+
+        file_id = str(create_data.get("file_id") or "").strip() if isinstance(create_data, Mapping) else ""
+        upload_url = str(create_data.get("upload_url") or "").strip() if isinstance(create_data, Mapping) else ""
+        if not file_id or not upload_url:
+            raise ExplicitAsyncWriteRejection(
+                "async attachment staging missing file_id or upload_url",
+                stage="attachment_staging",
+                status=create_status,
+                observations=tuple(observations),
+            )
+
+        seq += 1
+        put_started = time.perf_counter()
+        raw_bytes = att.path.read_bytes()
+        put_headers = {
+            "x-ms-blob-type": "BlockBlob",
+            "x-ms-version": "2020-04-08",
+            "Content-Type": mime_type,
+            "Origin": "https://chatgpt.com",
+            "Referer": "https://chatgpt.com/",
+        }
+        try:
+            put_resp = await client.session.put(
+                url=upload_url,
+                headers=put_headers,
+                data=raw_bytes,
+            )
+        except Exception as exc:
+            obs = observation_from_exception(
+                exc,
+                transport="async",
+                operation="continue",
+                method="PUT",
+                path="/files/upload",
+                headers=put_headers,
+                sequence_index=seq,
+                elapsed_ms=(time.perf_counter() - put_started) * 1000.0,
+                bootstrap_stage="attachment_upload",
+            )
+            observations.append(obs)
+            raise ExplicitAsyncWriteRejection(
+                f"async attachment blob upload failed: {exc.__class__.__name__}",
+                stage="attachment_upload",
+                status=obs.status,
+                observations=tuple(observations),
+            ) from exc
+
+        put_status = int(getattr(put_resp, "status_code", 200) or 200)
+        observations.append(
+            build_protocol_observation(
+                transport="async",
+                operation="continue",
+                method="PUT",
+                path="/files/upload",
+                status=put_status,
+                response_class="blob_uploaded" if 200 <= put_status < 300 else f"http_{put_status}",
+                headers=put_headers,
+                sequence_index=seq,
+                elapsed_ms=(time.perf_counter() - put_started) * 1000.0,
+                bootstrap_stage="attachment_upload",
+            )
+        )
+        if not (200 <= put_status < 300):
+            raise ExplicitAsyncWriteRejection(
+                f"async attachment blob upload rejected with HTTP {put_status}",
+                stage="attachment_upload",
+                status=put_status,
+                observations=tuple(observations),
+            )
+
+        seq += 1
+        proc_started = time.perf_counter()
+        process_payload = {
+            "file_id": file_id,
+            "use_case": "my_files",
+            "index_for_retrieval": False,
+            "file_name": att.filename,
+            "mime_type": mime_type,
+            "entry_surface": "composer",
+            "library_persistence_mode": "opportunistic",
+            "metadata": None,
+        }
+        proc_chunks: list[bytes | str] = []
+
+        def proc_callback(chunk: bytes | str) -> None:
+            proc_chunks.append(chunk)
+
+        try:
+            proc_resp = await client.session.post(
+                url=CHATGPT_API.format("files/process_upload_stream"),
+                headers=api_headers,
+                json=process_payload,
+                content_callback=proc_callback,
+            )
+        except Exception as exc:
+            obs = observation_from_exception(
+                exc,
+                transport="async",
+                operation="continue",
+                method="POST",
+                path="/backend-api/files/process_upload_stream",
+                headers=api_headers,
+                cookies=_session_cookies(client.session),
+                payload=process_payload,
+                sequence_index=seq,
+                elapsed_ms=(time.perf_counter() - proc_started) * 1000.0,
+                bootstrap_stage="attachment_process",
+            )
+            observations.append(obs)
+            raise ExplicitAsyncWriteRejection(
+                f"async attachment processing failed: {exc.__class__.__name__}",
+                stage="attachment_process",
+                status=obs.status,
+                observations=tuple(observations),
+            ) from exc
+
+        proc_status = int(getattr(proc_resp, "status_code", 200) or 200)
+        ready, extra = _parse_process_upload_stream(
+            proc_chunks,
+            getattr(proc_resp, "text", None),
+        )
+        observations.append(
+            build_protocol_observation(
+                transport="async",
+                operation="continue",
+                method="POST",
+                path="/backend-api/files/process_upload_stream",
+                status=proc_status,
+                response_class="sse_stream" if proc_status == 200 and ready else f"http_{proc_status}",
+                headers=api_headers,
+                cookies=_session_cookies(client.session),
+                payload=process_payload,
+                sequence_index=seq,
+                elapsed_ms=(time.perf_counter() - proc_started) * 1000.0,
+                bootstrap_stage="attachment_process",
+            )
+        )
+        if proc_status != 200 or not ready:
+            raise ExplicitAsyncWriteRejection(
+                f"async attachment processing rejected (HTTP {proc_status}, ready={ready})",
+                stage="attachment_process",
+                status=proc_status,
+                observations=tuple(observations),
+            )
+
+        att_meta: dict[str, Any] = {
+            "id": file_id,
+            "name": att.filename,
+            "size": att.size,
+            "mime_type": mime_type,
+        }
+        for extra_key in ("library_persistence_result", "library_persistence_reason"):
+            if extra.get(extra_key) is not None:
+                att_meta[extra_key] = extra[extra_key]
+        staged_metadata.append(att_meta)
+        staged_file_ids.append(file_id)
+
+    return staged_metadata, staged_file_ids, seq
+
+
 async def probe_async_continue_once(
     conversation_id: str,
     prompt: str,
     *,
+    attachments: Sequence[LocalAttachment | Path | str] = (),
     session_token: str | None = None,
     model: str | None = None,
     user_agent: str | None = None,
@@ -168,6 +501,7 @@ async def probe_async_continue_once(
         raise ValueError("conversation_id must be provided")
     if not prompt:
         raise ValueError("prompt is empty")
+    local_attachments = _coerce_local_attachments(attachments)
 
     token = session_token
     if token is None:
@@ -272,6 +606,19 @@ async def probe_async_continue_once(
                 )
             )
 
+            staged_metadata: list[dict[str, Any]] = []
+            staged_file_ids: list[str] = []
+            if local_attachments:
+                staged_metadata, staged_file_ids, seq = await _stage_attachments_async(
+                    client,
+                    local_attachments,
+                    conversation_id=conversation_id,
+                    snapshot=snapshot,
+                    observations=observations,
+                    seq_start=seq,
+                )
+                stage_times["attachment_ready"] = time.time()
+
             seq += 1
             sentinel_started = time.perf_counter()
             headers = dict(client.build_request_headers())
@@ -283,6 +630,7 @@ async def probe_async_continue_once(
                     conversation_id=conversation_id,
                     prompt=prompt,
                     snapshot=snapshot,
+                    attachment_metadata=staged_metadata,
                 )
                 headers["Referer"] = f"https://chatgpt.com/c/{conversation_id}"
                 headers["x-oai-mcp-form-version"] = "2"
@@ -306,6 +654,8 @@ async def probe_async_continue_once(
                 mark_sentinel_consumed(snapshot, profile_dir=profile_dir)
                 url = CHATGPT_API.format("f/conversation")
             else:
+                if staged_metadata and isinstance(payload, dict):
+                    _attach_metadata_to_payload(payload, staged_metadata)
                 try:
                     sentinel_token = await client.create_chat_requirements_token()
                 except Exception as exc:
@@ -444,6 +794,7 @@ async def probe_async_continue_once(
                 parent_message_id=parent_message_id,
                 user_message_id=user_message_id,
                 assistant_preview_observed=bool(sse_shape.get("assistant_message_events") or sse_shape.get("done_seen")),
+                attachment_ids=tuple(staged_file_ids),
                 observations=tuple(observations),
                 stage_times=stage_times,
             )
@@ -478,6 +829,7 @@ def submit_async_prompt_once(
     conversation_id: str,
     prompt: str,
     *,
+    attachments: Sequence[LocalAttachment | Path | str] = (),
     session_token: str | None = None,
     model: str | None = None,
     user_agent: str | None = None,
@@ -495,6 +847,7 @@ def submit_async_prompt_once(
         lambda: probe_async_continue_once(
             conversation_id,
             prompt,
+            attachments=attachments,
             session_token=session_token,
             model=model,
             user_agent=user_agent,
@@ -520,6 +873,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("conversation_id")
     parser.add_argument("--prompt", required=True)
     parser.add_argument(
+        "--attach",
+        action="append",
+        type=Path,
+        default=[],
+        help="Attach a file via direct HTTP staging; repeat for multiple files",
+    )
+    parser.add_argument(
         "--sacrificial",
         action="store_true",
         required=True,
@@ -541,6 +901,7 @@ def main() -> int:
         result = submit_async_prompt_once(
             args.conversation_id,
             args.prompt,
+            attachments=args.attach,
             session_token=args.key,
             model=args.model,
             profile_dir=args.profile_dir,

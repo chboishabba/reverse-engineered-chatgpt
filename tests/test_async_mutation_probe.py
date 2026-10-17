@@ -202,3 +202,128 @@ def test_async_probe_exit_failure_after_post_is_ambiguous() -> None:
         )
 
     assert session.post_calls == 1
+
+
+class FakeAttachmentSession(FakeSession):
+    def __init__(
+        self,
+        *,
+        create_status: int = 200,
+        put_status: int = 201,
+        process_status: int = 200,
+        process_chunks: list[str] | None = None,
+    ) -> None:
+        super().__init__(post_status=200)
+        self.create_status = create_status
+        self.put_status = put_status
+        self.process_status = process_status
+        self.process_chunks = process_chunks if process_chunks is not None else [
+            '{"file_id":"file_test_123","event":"file.processing.started","progress":0.0,"extra":null}\n',
+            '{"file_id":"file_test_123","event":"file.processing.completed","progress":100.0,"extra":{"library_persistence_result":"temporary","library_persistence_reason":"library_storage_limit_exceeded"}}\n',
+        ]
+        self.put_calls: list[dict] = []
+        self.posted_payloads: list[tuple[str, dict]] = []
+
+    async def post(self, *, url: str, headers: dict, json: dict, content_callback=None):
+        self.posted_payloads.append((url, json))
+        if url.endswith("/backend-api/files"):
+            return SimpleNamespace(
+                status_code=self.create_status,
+                json=lambda: {
+                    "status": "success",
+                    "file_id": "file_test_123",
+                    "upload_url": "https://sdmntpr.oaiusercontent.com/files/raw?sv=SECRET_SAS_SIG",
+                },
+                text="SECRET_FILES_ERROR",
+            )
+        if url.endswith("/backend-api/files/process_upload_stream"):
+            if content_callback is not None:
+                for chunk in self.process_chunks:
+                    content_callback(chunk.encode("utf-8"))
+            return SimpleNamespace(status_code=self.process_status, text="")
+        return await super().post(
+            url=url,
+            headers=headers,
+            json=json,
+            content_callback=content_callback,
+        )
+
+    async def put(self, *, url: str, headers: dict, data: bytes):
+        self.put_calls.append({"url": url, "headers": headers, "size": len(data)})
+        return SimpleNamespace(status_code=self.put_status, text="SECRET_PUT_ERROR")
+
+
+def test_async_probe_stages_attachment_and_attaches_metadata_without_leaking_sas_url(tmp_path) -> None:
+    att_file = tmp_path / "probe.txt"
+    att_file.write_text("SECRET_FILE_BODY_DO_NOT_LEAK\n", encoding="utf-8")
+    session = FakeAttachmentSession()
+    conv = FakeConversation()
+
+    result = submit_async_prompt_once(
+        "conv-1",
+        "SECRET_PROMPT_TEXT",
+        attachments=[att_file],
+        session_token="SECRET_TOKEN",
+        client_factory=lambda **kwargs: FakeAsyncClient(session=session, conv=conv),
+    )
+
+    assert result["state"] == "submission_observed"
+    assert result["attachment_ids"] == ["file_test_123"]
+    assert "attachment_ready" in result["stage_times"]
+    assert len(session.put_calls) == 1
+    assert session.put_calls[0]["headers"]["x-ms-blob-type"] == "BlockBlob"
+
+    conv_url, conv_payload = session.posted_payloads[-1]
+    assert conv_url.endswith("/conversation")
+    attachments_meta = conv_payload["messages"][0]["metadata"]["attachments"]
+    assert attachments_meta == [
+        {
+            "id": "file_test_123",
+            "name": "probe.txt",
+            "size": att_file.stat().st_size,
+            "mime_type": "text/plain",
+            "library_persistence_result": "temporary",
+            "library_persistence_reason": "library_storage_limit_exceeded",
+        }
+    ]
+
+    stages = [obs["bootstrap_stage"] for obs in result["protocol_observations"]]
+    assert stages == [
+        "conversation_get",
+        "attachment_staging",
+        "attachment_upload",
+        "attachment_process",
+        "sentinel_requirements",
+        "conversation_post",
+    ]
+
+    serialized = json.dumps(result, sort_keys=True)
+    for secret in (
+        "SECRET_SAS_SIG",
+        "sdmntpr.oaiusercontent.com",
+        "SECRET_FILE_BODY_DO_NOT_LEAK",
+        "SECRET_PROMPT_TEXT",
+        "SECRET_TOKEN",
+    ):
+        assert secret not in serialized
+
+
+def test_async_probe_attachment_upload_failure_is_precommit_rejection(tmp_path) -> None:
+    att_file = tmp_path / "probe.txt"
+    att_file.write_text("hello\n", encoding="utf-8")
+    session = FakeAttachmentSession(put_status=403)
+    conv = FakeConversation()
+
+    with pytest.raises(ExplicitAsyncWriteRejection) as excinfo:
+        submit_async_prompt_once(
+            "conv-1",
+            "hello",
+            attachments=[att_file],
+            session_token="SECRET_TOKEN",
+            client_factory=lambda **kwargs: FakeAsyncClient(session=session, conv=conv),
+        )
+
+    assert excinfo.value.stage == "attachment_upload"
+    assert excinfo.value.status == 403
+    assert session.post_calls == 0
+
