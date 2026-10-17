@@ -81,6 +81,20 @@ def test_bootstrap_and_refresh_use_capture_and_return_redacted_status() -> None:
     assert calls[1]["save"] is True
 
 
+def test_bootstrap_without_save_builds_status_from_captured_snapshot() -> None:
+    now = time.time()
+    snapshot = BrowserSessionSnapshot(captured_at=now, access_token=_jwt(now + 600))
+
+    async def capture(**_):
+        return snapshot
+
+    # snapshot_loader returns None simulating no disk snapshot saved yet
+    lifecycle = SessionLifecycle(snapshot_loader=lambda **_: None, capture=capture, now=lambda: now)
+    boot = lifecycle.bootstrap(profile_dir="/tmp/p", browser_mode="displayless", save=False)
+    assert boot["state"] == "ready"
+    assert boot["access_token"]["state"] == "fresh"
+
+
 def test_doctor_returns_machine_distinct_session_diagnosis() -> None:
     now = time.time()
     snapshot = BrowserSessionSnapshot(captured_at=now, access_token=_jwt(now + 60), sentinel={"consumed": True})

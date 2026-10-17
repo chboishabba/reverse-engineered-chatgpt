@@ -55,7 +55,7 @@ Classification:
 
 - `compatible`: no structural delta;
 - `drift_suspected`: additive/non-breaking structural change such as an extra header, route, body key, or SSE signature;
-- `incompatible`: a baseline route, body key/schema, or attachment stage disappeared.
+- `incompatible`: a baseline route, body key/schema, critical header, SSE event-key signature, or attachment stage disappeared.
 
 ### CLI
 

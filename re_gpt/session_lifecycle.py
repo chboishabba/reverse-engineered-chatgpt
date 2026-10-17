@@ -83,13 +83,10 @@ class SessionLifecycle:
     now: Callable[[], float] = time.time
     expiry_skew_seconds: float = DEFAULT_EXPIRY_SKEW_SECONDS
 
-    def status(
+    def status_from_snapshot(
         self,
-        *,
-        profile_dir: Path | str | None = None,
-        snapshot_path: Path | str | None = None,
+        snapshot: BrowserSessionSnapshot | None,
     ) -> dict[str, Any]:
-        snapshot = self.snapshot_loader(profile_dir=profile_dir, snapshot_path=snapshot_path)
         current = float(self.now())
         if snapshot is None:
             return {
@@ -141,6 +138,15 @@ class SessionLifecycle:
             "timezone": snapshot.timezone(),
         }
 
+    def status(
+        self,
+        *,
+        profile_dir: Path | str | None = None,
+        snapshot_path: Path | str | None = None,
+    ) -> dict[str, Any]:
+        snapshot = self.snapshot_loader(profile_dir=profile_dir, snapshot_path=snapshot_path)
+        return self.status_from_snapshot(snapshot)
+
     def assert_precommit_ready(
         self,
         *,
@@ -164,7 +170,7 @@ class SessionLifecycle:
         timeout: int = 30,
         save: bool = True,
     ) -> dict[str, Any]:
-        run_async_sync(lambda: self.capture(
+        snapshot = run_async_sync(lambda: self.capture(
             profile_dir=profile_dir,
             snapshot_path=snapshot_path,
             browser_mode=browser_mode,
@@ -172,6 +178,8 @@ class SessionLifecycle:
             timeout=timeout,
             save=save,
         ))
+        if not save and snapshot is not None:
+            return self.status_from_snapshot(snapshot)
         return self.status(profile_dir=profile_dir, snapshot_path=snapshot_path)
 
     def refresh(self, **kwargs: Any) -> dict[str, Any]:
