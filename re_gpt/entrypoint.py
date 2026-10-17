@@ -16,6 +16,7 @@ from .browser_write import BrowserWriteError
 from .cli import main as legacy_main
 from .mutation_service import MutationService
 from .revive import revive_thread
+from .fleet import FleetOrchestrator
 from .storage import ConversationStorage, DEFAULT_DB_PATH, extract_ordered_messages
 from .sync_chatgpt import SyncChatGPT
 from .utils import get_default_model, get_default_user_agent, get_session_token
@@ -81,6 +82,8 @@ def build_write_parser() -> argparse.ArgumentParser:
     mutation.add_argument("--send", metavar="CONVERSATION", help="Continue an existing conversation.")
     mutation.add_argument("--new", action="store_true", help="Create a new conversation directly and return its assigned ID.")
     mutation.add_argument("--revive", metavar="CONVERSATION", help="Revive a long conversation into a fresh thread with context attached.")
+    mutation.add_argument("--fleet", action="store_true", help="Display full fleet coordination matrix across all clusters.")
+    mutation.add_argument("--fleet-revive-fatigued", action="store_true", help="Automatically revive all fatigued lead threads across all clusters.")
     mutation.add_argument("--branch", metavar="CONVERSATION", help="Create a user branch from --parent-node.")
     mutation.add_argument("--regenerate", metavar="CONVERSATION", help="Regenerate from an exact --user-node.")
     mutation.add_argument("--edit-branch", metavar="CONVERSATION", help="Replace an exact --user-node and create a branch.")
@@ -172,7 +175,30 @@ def write_main(argv: list[str] | None = None) -> int:
             "follow": args.follow or streamed,
             "follow_timeout": args.follow_timeout,
         }
-        if args.send:
+        if args.fleet:
+            orchestrator = FleetOrchestrator(
+                db_path=getattr(service, "db_path", DEFAULT_DB_PATH),
+                profile_dir=args.browser_profile,
+                browser_mode=args.browser_mode,
+                session_token=args.key,
+                model=args.model,
+            )
+            print(orchestrator.render_matrix_markdown())
+            return 0
+        elif args.fleet_revive_fatigued:
+            orchestrator = FleetOrchestrator(
+                db_path=getattr(service, "db_path", DEFAULT_DB_PATH),
+                profile_dir=args.browser_profile,
+                browser_mode=args.browser_mode,
+                session_token=args.key,
+                model=args.model,
+            )
+            revivals = orchestrator.auto_revive_fatigued()
+            print(f"Revived {len(revivals)} fatigued worker threads:")
+            for r in revivals:
+                print(f"- [{r['cluster']}] {r['title']}: {r['parent_conversation_id'][:8]} -> {str(r['revived_conversation_id'])[:8]} ({r['prior_turn_count']} prior turns)")
+            return 0
+        elif args.send:
             result = service.continue_thread(
                 args.send,
                 prompt or "",
@@ -235,7 +261,7 @@ def write_main(argv: list[str] | None = None) -> int:
 
 
 def main() -> int:
-    graph_flags = ("--send", "--new", "--revive", "--branch", "--regenerate", "--edit-branch")
+    graph_flags = ("--send", "--new", "--revive", "--fleet", "--fleet-revive-fatigued", "--branch", "--regenerate", "--edit-branch")
     legacy_flags = (
         "--list", "--view", "--inspect", "--download", "--latest", "--since-last",
         "--nostore", "--browser-login", "--list-follow-out",
