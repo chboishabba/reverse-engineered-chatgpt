@@ -155,17 +155,23 @@ async def dismiss_blocking_dialogs(relay) -> bool:
 
 
 async def _clear_existing_staged_chips(relay, attachments: Sequence[LocalAttachment]) -> None:
-    """Remove leftover composer attachment chips from an earlier aborted pre-commit draft."""
+    """Remove only exact-filename leftover chips from an earlier pre-commit draft."""
     try:
         names = [item.filename.lower() for item in attachments]
         removed = await relay.page.evaluate(
-            """(targetNames) => {
+            r"""(targetNames) => {
               const editor = document.querySelector('.ProseMirror[contenteditable="true"]');
               const scope = (editor && (editor.closest('form') || editor.closest('[data-testid="composer-root"]'))) || document.body;
+              const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const exactFilename = (label, name) => {
+                const pattern = new RegExp(`(?:^|\\s)${escapeRegExp(name)}(?:$|\\s)`, 'i');
+                return pattern.test(label);
+              };
               let count = 0;
               for (const btn of Array.from(scope.querySelectorAll('button,[role="button"]'))) {
-                const label = ((btn.getAttribute('aria-label') || '') + ' ' + (btn.getAttribute('title') || '')).toLowerCase();
-                if ((label.includes('remove') || label.includes('delete')) && targetNames.some(n => label.includes(n))) {
+                const label = ((btn.getAttribute('aria-label') || '') + ' ' + (btn.getAttribute('title') || '')).toLowerCase().trim();
+                const isRemove = label.includes('remove') || label.includes('delete');
+                if (isRemove && targetNames.some(name => exactFilename(label, name))) {
                   btn.click();
                   count += 1;
                 }
