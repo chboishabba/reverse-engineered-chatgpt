@@ -154,7 +154,8 @@ def test_summarize_protocol_stages_preserves_order_without_values() -> None:
     assert summary[1]["stage"] == "conversation_post"
     rendered = json.dumps(summary)
     assert "session-token" not in rendered
-    assert "authorization" not in rendered
+    assert "content-type" not in rendered
+    assert "header_names" not in rendered
     assert "QUERY-SECRET-SHOULD-NOT-LEAK" not in rendered
 
 
