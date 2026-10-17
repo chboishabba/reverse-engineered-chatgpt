@@ -1,4 +1,4 @@
-"""Synchronous adapter for the accessibility browser-owned write transport."""
+"""Synchronous adapter for the production browser-owned mutation transport."""
 
 from __future__ import annotations
 
@@ -19,13 +19,17 @@ def submit_prompt(
     *,
     profile_dir: Path | str | None = None,
     browser_mode: str = "displayless",
-    timeout: int = 900,
+    cdp_endpoint: str | None = None,
+    timeout: int = 60,
+    follow: bool = False,
 ) -> dict[str, Any]:
-    """Submit *prompt* through the accessibility browser transport.
+    """Submit *prompt* through the authenticated real ChatGPT composer.
 
-    The child command owns browser lifecycle and performs API-first/DOM-fallback
-    mutation.  This adapter exists so the normal ``re-gpt`` CLI can use that
-    transport without duplicating browser code.
+    Production writes are DOM-only.  The historical handcrafted same-origin API
+    path remains available through ``re_gpt.accessibility_browser --transport
+    api`` for diagnostics, but normal mutation never waits on or falls back from
+    that protocol.  By default this function returns after browser submission
+    evidence; ``follow=True`` waits for a settled assistant response.
     """
 
     selector = selector.strip()
@@ -38,17 +42,19 @@ def submit_prompt(
     command = [
         sys.executable,
         "-m",
-        "re_gpt.accessibility_browser",
+        "re_gpt.mutation_browser",
         selector,
-        "--transport",
-        "auto",
         "--browser-mode",
         browser_mode,
         "--timeout",
         str(timeout),
         "--json",
     ]
-    if profile_dir is not None:
+    if follow:
+        command.append("--follow")
+    if cdp_endpoint:
+        command.extend(["--cdp-endpoint", cdp_endpoint])
+    elif profile_dir is not None:
         command.extend(["--profile-dir", str(profile_dir)])
 
     completed = subprocess.run(

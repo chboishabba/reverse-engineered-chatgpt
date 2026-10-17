@@ -13,14 +13,19 @@ setup(
     },
     packages=find_packages(),
     py_modules=["chatgpt_dom_relay"],
-    install_requires=["curl_cffi==0.5.9", "websockets==12.0"],
+    install_requires=["curl_cffi==0.14.0", "websockets==16.0"],
     extras_require={
         "browser": ["playwright>=1.47"],
+        "mcp": ["mcp>=1.0"],
+        "all": ["playwright>=1.47", "mcp>=1.0"],
     },
     entry_points={
         "console_scripts": [
             "re-gpt = re_gpt.entrypoint:main",
             "re-gpt-browser = re_gpt.accessibility_browser:main",
+            "re-gpt-mutate = re_gpt.mutation_browser:main",
+            "re-gpt-mcp = re_gpt.mcp_server:main",
+            "re-gpt-metrics = re_gpt.mutation_metrics:main",
         ],
     },
 )
