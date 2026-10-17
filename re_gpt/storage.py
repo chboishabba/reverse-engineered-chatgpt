@@ -1027,6 +1027,42 @@ class ConversationStorage:
         row = cursor.fetchone()
         return int(row[0]) if row else 0
 
+    def get_messages(
+        self,
+        conversation_id: str,
+        *,
+        limit: Optional[int] = None,
+        tail: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Return cached messages for a conversation ID or prefix."""
+        op = "=" if len(conversation_id) >= 32 else "LIKE"
+        val = conversation_id if op == "=" else f"{conversation_id}%"
+        order = "DESC" if tail else "ASC"
+        limit_clause = f"LIMIT {int(limit)}" if limit is not None else ""
+
+        cursor = self._connection.execute(
+            f"""
+            SELECT message_index, author, content, create_time
+            FROM messages
+            WHERE conversation_id {op} ?
+            ORDER BY message_index {order}
+            {limit_clause}
+            """,
+            (val,),
+        )
+        rows = cursor.fetchall()
+        if tail:
+            rows.reverse()
+        return [
+            {
+                "message_index": int(r[0]),
+                "author": r[1],
+                "content": r[2],
+                "create_time": _coerce_timestamp(r[3]),
+            }
+            for r in rows
+        ]
+
     def get_latest_message(self, author: Optional[str] = None) -> Optional[dict[str, Any]]:
         """Return the most recent cached message, optionally filtered by author."""
 

@@ -22,7 +22,7 @@ from typing import Any, Mapping, Sequence
 
 from .mutation_service import MutationService
 from .revive import revive_thread
-from .storage import DEFAULT_DB_PATH
+from .storage import ConversationStorage, DEFAULT_DB_PATH
 
 PR_RE = re.compile(r"#(\d+)")
 
@@ -345,3 +345,233 @@ class FleetOrchestrator:
                     results[key] = {"state": "error", "error": str(exc)}
 
         return results
+
+    def inspect_thread(self, conversation_id: str, n_turns: int = 3) -> str:
+        """Inspect a thread's title, total turns, and recent turn messages."""
+        with ConversationStorage(db_path=self.db_path) as storage:
+            summary = storage.get_conversation_summary(conversation_id) if len(conversation_id) >= 32 else None
+            messages = storage.get_messages(conversation_id, limit=n_turns, tail=True)
+            cnt = storage.count_messages(conversation_id)
+            title = summary.get("title") if summary else "(matched by prefix)"
+
+        lines = [
+            f"=== THREAD: {title} ({conversation_id}) ===",
+            f"Total cached messages: {cnt}",
+            "",
+        ]
+        for m in messages:
+            idx = m["message_index"]
+            author = m["author"].upper()
+            content = m["content"].strip()
+            lines.append(f"[{author} - Turn {idx}]:\n{content}\n---\n")
+        return "\n".join(lines)
+
+    def sync_unhydrated(
+        self,
+        limit: int = 50,
+        min_timestamp: float = 1791000000.0,
+        pause_seconds: float = 1.0,
+    ) -> list[dict[str, Any]]:
+        """Automatically detect and hydrate unpulled thread message graphs in SQLite."""
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT c.conversation_id, c.title
+                FROM conversations c
+                LEFT JOIN messages m ON c.conversation_id = m.conversation_id
+                WHERE CAST(c.remote_update_time AS REAL) >= ?
+                GROUP BY c.conversation_id
+                HAVING count(m.message_index) = 0
+                ORDER BY CAST(c.remote_update_time AS REAL) DESC
+                LIMIT ?
+            """, (min_timestamp, limit))
+            unpulled = cur.fetchall()
+
+        service = MutationService(
+            session_token=self.session_token,
+            model=self.model,
+            db_path=self.db_path,
+        )
+        results: list[dict[str, Any]] = []
+        for cid, title in unpulled:
+            try:
+                res = service._pull_and_persist(cid, profile_dir=self.profile_dir)
+                results.append({
+                    "conversation_id": cid,
+                    "title": title,
+                    "messages": res.get("total_messages", 0),
+                    "status": "success",
+                })
+            except Exception as exc:
+                results.append({
+                    "conversation_id": cid,
+                    "title": title,
+                    "error": str(exc),
+                    "status": "error",
+                })
+            if pause_seconds > 0:
+                time.sleep(pause_seconds)
+        return results
+
+    def find_high_alpha(
+        self,
+        limit: int = 200,
+        min_score: float = 25.0,
+    ) -> list[AlphaOpportunity]:
+        """Scan recent threads in SQLite for high-alpha mathematical and physical breakthroughs."""
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT conversation_id, title, CAST(remote_update_time AS REAL) as ts, cached_message_count
+                FROM conversations
+                ORDER BY ts DESC
+                LIMIT ?
+            """, (limit,))
+            rows = cur.fetchall()
+
+            opportunities: list[AlphaOpportunity] = []
+            for cid, title, ts, cached_cnt in rows:
+                t_clean = (title or "").strip()
+                t_lower = t_clean.lower()
+
+                cur.execute("SELECT count(*) FROM messages WHERE conversation_id = ?", (cid,))
+                msg_cnt = cur.fetchone()[0]
+                effective_cnt = max(msg_cnt, cached_cnt or 0)
+
+                cur.execute("SELECT author, content FROM messages WHERE conversation_id = ? ORDER BY message_index DESC LIMIT 5", (cid,))
+                recent_msgs = cur.fetchall()
+                recent_text = " ".join(r[1] for r in recent_msgs if r[1]).lower()
+                combined_text = f"{t_lower} {recent_text}"
+
+                cur.execute("SELECT content FROM messages WHERE conversation_id = ?", (cid,))
+                full_text = " ".join(r[0] for r in cur.fetchall() if r[0])
+                prs = sorted(set(int(p) for p in PR_RE.findall(full_text) if 10 < int(p) < 2000))
+
+                score = 0.0
+                detected_theorems: list[str] = []
+
+                for kw, (domain, kw_weight) in ALPHA_KEYWORDS.items():
+                    if re.search(r"\b" + re.escape(kw) + r"\b", combined_text):
+                        score += kw_weight
+                        if domain not in detected_theorems:
+                            detected_theorems.append(domain)
+
+                # PR boost
+                if prs:
+                    score += min(30.0, len(prs) * 10.0)
+
+                # Turn depth boost
+                if effective_cnt >= 1000:
+                    score += 20.0
+                elif effective_cnt >= 200:
+                    score += 15.0
+                elif effective_cnt >= 50:
+                    score += 10.0
+
+                if score >= min_score and detected_theorems:
+                    dt = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d") if ts else "n/a"
+
+                    # Extract formula or last conclusion snippet
+                    asst_msgs = [c for a, c in recent_msgs if a == "assistant"]
+                    last_asst = asst_msgs[0] if asst_msgs else ""
+                    
+                    formula_match = re.search(r"\\\[(.*?)\\\]", last_asst, re.DOTALL) or re.search(r"\$\$(.*?)\$\$", last_asst, re.DOTALL)
+                    formula_snippet = formula_match.group(1).replace("\n", " ").strip() if formula_match else ""
+
+                    clean_summary = last_asst[:250].replace("\n", " ").strip()
+                    rec_continuation = f"Advance {detected_theorems[0]} on {t_clean}"
+                    if prs:
+                        rec_continuation += f" (reconcile with PR #{prs[-1]})"
+
+                    opp = AlphaOpportunity(
+                        conversation_id=cid,
+                        title=t_clean,
+                        domain=detected_theorems[0],
+                        alpha_score=round(score, 1),
+                        turns=effective_cnt,
+                        updated_at=dt,
+                        target_prs=[f"#{p}" for p in prs],
+                        theorems=detected_theorems,
+                        frontier_summary=clean_summary,
+                        formula_snippet=formula_snippet[:100] if formula_snippet else None,
+                        recommended_continuation=rec_continuation,
+                    )
+                    opportunities.append(opp)
+
+            opportunities.sort(key=lambda o: o.alpha_score, reverse=True)
+            return opportunities
+
+    def render_alpha_matrix(self, limit: int = 200, min_score: float = 30.0) -> str:
+        """Render a formatted GitHub Markdown table of high-alpha continuations."""
+        opps = self.find_high_alpha(limit=limit, min_score=min_score)
+        lines: list[str] = [
+            f"# High-Alpha Mathematical & Foundational Continuations ({len(opps)} identified)",
+            "",
+            "| Score | ID | Turns | Domain / Theorem Frontier | Title | Target PRs | Recommended Action / Continuation |",
+            "| :---: | :--- | :---: | :--- | :--- | :---: | :--- |",
+        ]
+        for o in opps:
+            cid = o.conversation_id[:8]
+            prs_str = ", ".join(o.target_prs[:2]) if o.target_prs else "—"
+            lines.append(
+                f"| **{o.alpha_score}** | `{cid}` | {o.turns} | **{o.domain}** | {o.title[:32]} | {prs_str} | {o.recommended_continuation[:50]}... |"
+            )
+        lines.append("")
+        return "\n".join(lines)
+
+
+ALPHA_KEYWORDS: dict[str, tuple[str, float]] = {
+    # Clay / Millennium Problems
+    "clay": ("Clay Millennium", 50.0),
+    "yang-mills": ("Yang-Mills Mass Gap", 50.0),
+    "yangmills": ("Yang-Mills Mass Gap", 50.0),
+    "mass gap": ("Yang-Mills Mass Gap", 50.0),
+    "navier-stokes": ("Navier-Stokes Clay", 50.0),
+    "riemann hypothesis": ("Riemann Hypothesis", 50.0),
+    "rh": ("Riemann Hypothesis", 35.0),
+    "birch-swinnerton-dyer": ("BSD Conjecture", 50.0),
+    "bsd": ("BSD Conjecture", 40.0),
+    "p vs np": ("P vs NP Millennium", 50.0),
+    "hodge": ("Hodge Conjecture", 45.0),
+    # Number Theory & Frontiers
+    "goldbach": ("Goldbach / FRACTRAN", 45.0),
+    "fractran": ("FRACTRAN Arithmetic", 40.0),
+    "prime spirals": ("Ogg Prime Spirals", 35.0),
+    "fourier": ("Fourier Geometry", 30.0),
+    "collatz": ("Collatz Dynamics", 35.0),
+    # Exceptional Lie Algebras & Physics
+    "monster": ("Monster Moonshine", 45.0),
+    "moonshine": ("Monster Moonshine", 40.0),
+    "e8": ("E8 Lie Algebra", 40.0),
+    "f4": ("Albert / F4 Exceptional", 40.0),
+    "casimir": ("Casimir Stress Tensor", 35.0),
+    "wec": ("Energy Condition Violations", 35.0),
+    "mec": ("MEC Violations", 35.0),
+    "tokamak": ("Tokamak Equilibrium", 30.0),
+    "stellarator": ("Stellarator Bounds", 30.0),
+    "redshift": ("Ye Redshift Derivation", 30.0),
+    "graphene": ("Graphene Lattice", 25.0),
+    "c3": ("C3 369 Realization", 35.0),
+    # Algorithms & Foundations
+    "max cut": ("Max Cut CFFI", 30.0),
+    "cffi": ("CFFI Architecture", 25.0),
+    "sensiblaw": ("SensibLaw Agda Harness", 30.0),
+    "uniprot": ("UniProt Formalization", 25.0),
+    "nongin": ("Nongin Teleodynamics", 25.0),
+}
+
+
+@dataclass
+class AlphaOpportunity:
+    conversation_id: str
+    title: str
+    domain: str
+    alpha_score: float
+    turns: int
+    updated_at: str
+    target_prs: list[str]
+    theorems: list[str]
+    frontier_summary: str
+    formula_snippet: str | None
+    recommended_continuation: str
+

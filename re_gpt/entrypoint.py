@@ -84,9 +84,14 @@ def build_write_parser() -> argparse.ArgumentParser:
     mutation.add_argument("--revive", metavar="CONVERSATION", help="Revive a long conversation into a fresh thread with context attached.")
     mutation.add_argument("--fleet", action="store_true", help="Display full fleet coordination matrix across all clusters.")
     mutation.add_argument("--fleet-revive-fatigued", action="store_true", help="Automatically revive all fatigued lead threads across all clusters.")
+    mutation.add_argument("--fleet-alpha", action="store_true", help="Rank and display high-alpha mathematical & foundational continuations across recent threads.")
+    mutation.add_argument("--inspect-thread", metavar="CONVERSATION", help="Inspect a thread's title, turns, and recent messages.")
     mutation.add_argument("--branch", metavar="CONVERSATION", help="Create a user branch from --parent-node.")
     mutation.add_argument("--regenerate", metavar="CONVERSATION", help="Regenerate from an exact --user-node.")
     mutation.add_argument("--edit-branch", metavar="CONVERSATION", help="Replace an exact --user-node and create a branch.")
+    parser.add_argument("--turns", type=int, default=3, help="Number of turns to show for --inspect-thread.")
+    parser.add_argument("--alpha-limit", type=int, default=200, help="Number of recent threads to scan for --fleet-alpha.")
+    parser.add_argument("--min-score", type=float, default=25.0, help="Minimum score threshold for --fleet-alpha.")
     parser.add_argument("--parent-node", help="Exact graph node used as the parent for --branch.")
     parser.add_argument("--user-node", help="Exact user node for --regenerate or --edit-branch.")
     parser.add_argument("--prompt")
@@ -198,6 +203,26 @@ def write_main(argv: list[str] | None = None) -> int:
             for r in revivals:
                 print(f"- [{r['cluster']}] {r['title']}: {r['parent_conversation_id'][:8]} -> {str(r['revived_conversation_id'])[:8]} ({r['prior_turn_count']} prior turns)")
             return 0
+        elif args.fleet_alpha:
+            orchestrator = FleetOrchestrator(
+                db_path=getattr(service, "db_path", DEFAULT_DB_PATH),
+                profile_dir=args.browser_profile,
+                browser_mode=args.browser_mode,
+                session_token=args.key,
+                model=args.model,
+            )
+            print(orchestrator.render_alpha_matrix(limit=args.alpha_limit, min_score=args.min_score))
+            return 0
+        elif args.inspect_thread:
+            orchestrator = FleetOrchestrator(
+                db_path=getattr(service, "db_path", DEFAULT_DB_PATH),
+                profile_dir=args.browser_profile,
+                browser_mode=args.browser_mode,
+                session_token=args.key,
+                model=args.model,
+            )
+            print(orchestrator.inspect_thread(args.inspect_thread, n_turns=args.turns))
+            return 0
         elif args.send:
             result = service.continue_thread(
                 args.send,
@@ -261,7 +286,10 @@ def write_main(argv: list[str] | None = None) -> int:
 
 
 def main() -> int:
-    graph_flags = ("--send", "--new", "--revive", "--fleet", "--fleet-revive-fatigued", "--branch", "--regenerate", "--edit-branch")
+    graph_flags = (
+        "--send", "--new", "--revive", "--fleet", "--fleet-revive-fatigued",
+        "--fleet-alpha", "--inspect-thread", "--branch", "--regenerate", "--edit-branch",
+    )
     legacy_flags = (
         "--list", "--view", "--inspect", "--download", "--latest", "--since-last",
         "--nostore", "--browser-login", "--list-follow-out",
