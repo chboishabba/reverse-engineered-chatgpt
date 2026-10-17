@@ -11,7 +11,11 @@ _INSTALLED = False
 
 
 def _merge_stream_summary(result: dict[str, Any], summary: dict[str, Any]) -> dict[str, Any]:
-    merged = dict(result) | dict(summary)
+    merged = dict(result)
+    for key, value in summary.items():
+        if value is None and key in merged:
+            continue
+        merged[key] = value
     if result.get("stream_terminal_observed"):
         merged["stream_terminal_observed"] = True
         merged["stream_terminal_reason"] = result.get("stream_terminal_reason") or summary.get("stream_terminal_reason")
