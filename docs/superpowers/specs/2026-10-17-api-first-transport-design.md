@@ -2,16 +2,17 @@
 
 ## Intent
 
-Make curl_cffi HTTP the preferred steady-state transport for exact graph reads and eventually writes, while retaining browser/CDP as protocol oracle, auth/bootstrap recovery, acceptance surface, and emergency fallback. DOM mutation becomes last resort rather than the final architecture.
+Make `curl_cffi` HTTP the preferred steady-state transport for ordinary exact graph reads and text continuation, while retaining browser/CDP as an authentication/bootstrap surface, diagnostic oracle, acceptance surface, attachment fallback, and emergency mutation fallback. DOM is not the final product architecture.
 
 ## Invariants
 
 - Canonical truth remains the validated conversation graph plus SQLite persistence/receipts.
-- No adapter is canonical by identity; adapters are acquisition mechanisms.
-- A 429/Too Many Requests is a request-context/bot-detection rejection for that adapter, not account-wide throttling or conversation absence.
+- No adapter is canonical by identity; adapters are acquisition or mutation mechanisms.
+- Request-context rejection does not imply account-wide throttling or conversation absence.
 - Once send evidence exists, never auto-resubmit because reconciliation failed.
 - Once canonical `committed` or `complete` exists, later read rejection cannot demote it.
-- Protocol observations are redaction-first: never persist cookie/token/device-ID/opaque anti-abuse secret values or raw response bodies.
+- Protocol observations are redaction-first: never persist raw response bodies or secret values in diagnostics.
+- Authenticated session snapshot persistence is explicit opt-in rather than a side effect of ordinary mutation.
 
 ## Target architecture
 
@@ -20,11 +21,14 @@ CLI / MCP / Python
        |
 MutationService
        |
-transport broker
-  |-- async curl_cffi  (preferred while healthy)
-  |-- sync curl_cffi   (sibling/diagnostic/fallback)
-  |-- browser fetch    (oracle/fallback/bootstrap)
-  `-- DOM mutation     (last-resort writer)
+text transport
+  |-- async curl_cffi  (demonstrated direct path; promotion receipt-gated)
+  `-- browser DOM      (fallback / attachments)
+       |
+exact graph broker
+  |-- async curl_cffi
+  |-- sync curl_cffi
+  `-- browser exact read
        |
 validated graph
        |
@@ -39,54 +43,71 @@ Expose one adapter-independent contract:
 fetch_exact_graph(conversation_id, ...) -> GraphAcquisitionResult
 ```
 
-`GraphAcquisitionResult` carries the graph, adapter used, timing, redacted observation, attempted adapters, and rejected adapters. Current priority is `async -> sync -> browser` because the 762-node medium-thread read succeeded through `AsyncChatGPT` while sync and browser same-origin contexts returned the known 429 rejection.
+`GraphAcquisitionResult` carries the graph, adapter used, timing, redacted observations, attempted adapters, and rejected adapters. Current priority is `async -> sync -> browser`. Every accepted graph goes through one validator and persistence path.
 
-Each adapter receives at most one attempt per acquisition operation after a request-context rejection. Rejected adapters are skipped for the rest of that operation. Every accepted graph goes through the same graph validator and persistence path.
+Each adapter receives at most one attempt per broker call. A request-context rejection quarantines only that adapter for the active operation. The caller never falls back to catalog traversal for an exact ID.
 
-## Protocol observation
+Synchronous MCP/library entrypoints use one running-event-loop-aware bridge when invoking async transports.
 
-Introduce a shared `ProtocolObservation` schema for browser and CFFI traces. It records only:
+## Exactly-once async mutation semantics
 
-- transport/adapter and operation;
-- sequence index and timing;
-- method and normalized path;
-- status / response class;
-- header names;
-- cookie names and domains;
-- booleans for Authorization, device-id, route/affinity and sentinel headers;
-- bootstrap stage;
-- sanitized JSON body key/schema information;
-- SSE/event shape metadata without transcript or secret values.
+Direct async text mutation is a one-attempt operation.
 
-The browser recorder uses Playwright/CDP request/response events around a bounded native action. It does not packet-sniff or MITM TLS.
+Pre-dispatch preparation errors may be reported as precommit failures. Once the conversation POST is dispatched, every uncertain outcome is unsafe to resend:
 
-## Mutation progression
+- 4xx: explicit rejection;
+- 5xx: ambiguous post-dispatch outcome;
+- timeout/reset after dispatch: ambiguous;
+- 200 without usable SSE evidence: ambiguous;
+- observation/cleanup/context-manager failure after dispatch: ambiguous.
 
-The existing DOM writer remains the safe production mutation owner until an HTTP writer proves canonical success. In parallel, add an opt-in async-CFFI mutation probe that reuses the existing `AsyncConversation` payload/sentinel machinery and is allowed only on explicit sacrificial calls. Promotion requires:
+An ambiguous async write never causes an automatic second HTTP POST or DOM fallback. Recovery is graph reconciliation only.
 
-1. send returns accepted transport evidence;
-2. broker subsequently reads a validated graph;
-3. exact new user node is present;
-4. optional assistant child is present for completion;
-5. no duplicate prompt is created.
+Promotion of direct async text continuation requires canonical user/assistant graph receipts rather than transport success alone.
 
-After this receipt is demonstrated repeatedly, the transport selection seam can promote async HTTP to primary while retaining browser/DOM fallback.
+## Diagnostics
 
-## Attachments
+Browser and CFFI diagnostics share a redaction-first structural observation shape. Useful fields include transport, operation, sequence, method/path, status, response class, header names, cookie names/domains, timing, body key/schema shape, and SSE event shape. Unknown browser diagnostic fields are not merged into sanitized receipts.
 
-For this max-cut, capture browser upload/staging request metadata and canonical graph attachment receipts under the same observation schema. Do not guess or synthesize upload endpoints. HTTP attachment promotion remains gated on an observed, reproducible sequence plus canonical file-ID/pointer binding.
+The product boundary is ordinary authenticated session state plus supported request metadata. Session snapshots are explicit local operational artifacts rather than an automatic mutation side effect.
 
-## MCP/CLI impact
+## Session snapshot safety
 
-MCP and CLI continue to call `MutationService`; they inherit broker behavior. Results standardize `read_adapter`, attempted/rejected adapters, and redacted observations. No duplicate archive/event store is introduced.
+If an operator explicitly captures an authenticated browser session snapshot:
 
-## Release gate
+- write it through a unique exclusive temporary file created with mode `0600`;
+- atomically replace the destination only after a completed write;
+- never enable persistence merely because a profile directory was provided;
+- ordinary mutation and read/status protocol recording remain observation-only.
 
-This cut is complete when:
+## Browser fallback and attachments
 
-- async-first broker unit tests pass, including adapter rejection quarantine and monotonic receipts;
-- protocol observation redaction tests prove values/bodies are absent;
-- browser recorder can emit sanitized traces from Playwright request events;
-- an opt-in async HTTP mutation probe exists behind explicit flags and canonical graph receipt verification;
-- existing DOM behavior remains available as fallback;
-- live promotion to primary HTTP writes is not claimed without sacrificial-thread receipts.
+Browser mutation remains available and continues to own attachment sends until a direct attachment API path earns canonical receipts.
+
+Attachment staging must clean only complete-filename matches, dismiss blocking dialogs, send exactly once, and bind the resulting local file to the canonical graph file ID/pointer on the committed user node.
+
+Rendered DOM follow logic selects the newest matching user turn across both plain text and attachment-prefixed shapes.
+
+## Release gate for PR #41
+
+The pre-hardening `89637e4` baseline demonstrated:
+
+- async exact reads across short/medium/long conversations;
+- two complete canonical async/CFFI text mutation receipts;
+- DOM medium/long completion;
+- canonical DOM attachment completion;
+- local `pytest`: 173 passed, 1 skipped.
+
+Review hardening after that baseline addresses exactly-once ambiguity, event-loop compatibility, session persistence safety, diagnostic redaction, attachment matching, duplicate DOM turn selection, status parsing, and recorder shutdown races.
+
+The later hardening head must receive a fresh full pytest receipt and one fresh paced canonical async-write receipt before merge/release is claimed. No new feature lane belongs in PR #41 before that gate is paid.
+
+## Post-merge roadmap
+
+After PR #41 is verified and merged:
+
+1. promote direct async text continuation toward the preferred normal transport while retaining browser fallback;
+2. add direct attachment support only after the normal upload/message-reference sequence is demonstrated and canonically verified;
+3. make normal text MCP operation no-DOM;
+4. implement new conversation, branch, regenerate, and edit-and-branch with direct semantics where proven and DOM fallback otherwise;
+5. migrate the interactive CLI onto the same `MutationService` path.
