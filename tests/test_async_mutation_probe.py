@@ -60,15 +60,25 @@ class FakeConversation:
 
 
 class FakeAsyncClient:
-    def __init__(self, *, session: FakeSession, conv: FakeConversation, sentinel_exc: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        session: FakeSession,
+        conv: FakeConversation,
+        sentinel_exc: Exception | None = None,
+        exit_exc: Exception | None = None,
+    ) -> None:
         self.session = session
         self._conv = conv
         self.sentinel_exc = sentinel_exc
+        self.exit_exc = exit_exc
 
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
+        if self.exit_exc is not None:
+            raise self.exit_exc
         return False
 
     def get_conversation(self, _conversation_id: str) -> FakeConversation:
@@ -141,6 +151,22 @@ def test_async_probe_explicit_http_rejection_never_retries() -> None:
     assert "SECRET_ERROR_BODY" not in serialized
 
 
+def test_async_probe_5xx_is_ambiguous_and_never_retries() -> None:
+    session = FakeSession(post_status=503, chunks=[])
+    conv = FakeConversation()
+
+    with pytest.raises(AmbiguousAsyncWriteError) as excinfo:
+        submit_async_prompt_once(
+            "conv-1",
+            "hello",
+            session_token="SECRET_TOKEN",
+            client_factory=lambda **kwargs: FakeAsyncClient(session=session, conv=conv),
+        )
+
+    assert session.post_calls == 1
+    assert excinfo.value.status == 503
+
+
 def test_async_probe_timeout_or_reset_raises_ambiguous_without_retry() -> None:
     session = FakeSession(post_exc=TimeoutError("stream timed out after send"))
     conv = FakeConversation()
@@ -157,3 +183,22 @@ def test_async_probe_timeout_or_reset_raises_ambiguous_without_retry() -> None:
     assert len(excinfo.value.observations) == 3
     assert excinfo.value.observations[-1].bootstrap_stage == "conversation_post"
     assert excinfo.value.observations[-1].response_class == "TimeoutError"
+
+
+def test_async_probe_exit_failure_after_post_is_ambiguous() -> None:
+    session = FakeSession(post_status=200)
+    conv = FakeConversation()
+
+    with pytest.raises(AmbiguousAsyncWriteError):
+        submit_async_prompt_once(
+            "conv-1",
+            "hello",
+            session_token="SECRET_TOKEN",
+            client_factory=lambda **kwargs: FakeAsyncClient(
+                session=session,
+                conv=conv,
+                exit_exc=RuntimeError("close failed"),
+            ),
+        )
+
+    assert session.post_calls == 1
