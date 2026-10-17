@@ -12,6 +12,7 @@ import json
 from typing import Any, Mapping, Sequence
 
 from .attachments import LocalAttachment, canonical_attachments_for_node
+from .protocol_observation import normalize_protocol_path
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
@@ -214,7 +215,7 @@ def summarize_protocol_stages(observations: Sequence[Mapping[str, Any]]) -> list
             "sequence_index": _sequence_index(item),
             "stage": str(item.get("bootstrap_stage") or "unclassified"),
             "method": str(item.get("method") or ""),
-            "path": str(item.get("path") or item.get("route") or ""),
+            "path": normalize_protocol_path(str(item.get("path") or item.get("route") or "")),
             "status": item.get("status") if isinstance(item.get("status"), int) else None,
             "response_class": str(item.get("response_class") or ""),
             "body_keys": sorted(str(key) for key in (item.get("body_keys") or [])),
