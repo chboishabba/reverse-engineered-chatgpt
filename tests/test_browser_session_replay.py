@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import stat
 import time
 from pathlib import Path
 
@@ -71,6 +72,7 @@ def test_snapshot_save_load_and_consume_roundtrip(tmp_path: Path) -> None:
     snap = _sample_snapshot()
     saved_path = save_browser_session_snapshot(snap, profile_dir=tmp_path)
     assert saved_path.is_file()
+    assert stat.S_IMODE(saved_path.stat().st_mode) == 0o600
 
     loaded = load_browser_session_snapshot(profile_dir=tmp_path)
     assert loaded is not None
