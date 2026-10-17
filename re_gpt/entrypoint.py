@@ -10,7 +10,6 @@ from typing import Any, TextIO
 
 from .read_plane import fetch_validated_conversation, install_validated_sync_read_plane
 from .mutation_receipt import classify_prompt_mutation
-
 install_validated_sync_read_plane()
 
 from .browser_write import BrowserWriteError
@@ -21,12 +20,7 @@ from .sync_chatgpt import SyncChatGPT
 from .utils import get_default_model, get_default_user_agent, get_session_token
 
 
-def resolve_prompt(
-    prompt: str | None,
-    prompt_file: Path | None,
-    *,
-    stdin: TextIO,
-) -> str:
+def resolve_prompt(prompt: str | None, prompt_file: Path | None, *, stdin: TextIO) -> str:
     if prompt is not None and prompt_file is not None:
         raise ValueError("provide either --prompt or --prompt-file, not both")
     if prompt is not None:
@@ -37,7 +31,6 @@ def resolve_prompt(
         resolved = stdin.read()
     else:
         raise ValueError("provide --prompt, --prompt-file, or pipe prompt text on stdin")
-
     resolved = resolved.strip()
     if not resolved:
         raise ValueError("prompt is empty")
@@ -54,30 +47,17 @@ def reconcile_conversation(
     not_before: float | None = None,
 ) -> dict[str, Any]:
     """Compatibility helper for explicit archive reconciliation."""
-
     token = key or get_session_token()
     default_model = model or get_default_model()
     user_agent = get_default_user_agent()
-
     with ConversationStorage(write_json=export_json) as storage, SyncChatGPT(
-        session_token=token,
-        default_model=default_model,
-        user_agent=user_agent,
+        session_token=token, default_model=default_model, user_agent=user_agent,
     ) as chatgpt:
         chat = fetch_validated_conversation(chatgpt, conversation_id)
         messages = extract_ordered_messages(chat)
-        asset_fetcher = None
-        if hasattr(chatgpt, "download_asset"):
-            asset_fetcher = functools.partial(chatgpt.download_asset, conversation_id=conversation_id)
-        result = storage.persist_chat(
-            conversation_id,
-            chat,
-            messages,
-            asset_fetcher=asset_fetcher,
-        )
-        receipt = None
-        if expected_prompt is not None:
-            receipt = classify_prompt_mutation(chat, expected_prompt, not_before=float(not_before or 0.0))
+        asset_fetcher = functools.partial(chatgpt.download_asset, conversation_id=conversation_id) if hasattr(chatgpt, "download_asset") else None
+        result = storage.persist_chat(conversation_id, chat, messages, asset_fetcher=asset_fetcher)
+        receipt = classify_prompt_mutation(chat, expected_prompt, not_before=float(not_before or 0.0)) if expected_prompt is not None else None
         return {
             "conversation_id": conversation_id,
             "new_messages": result.new_messages,
@@ -85,33 +65,24 @@ def reconcile_conversation(
             "json_path": str(result.json_path) if result.json_path else None,
             "asset_count": len(result.asset_paths),
             "asset_errors": len(result.asset_errors),
-            "mutation_prompt_present": receipt.prompt_committed if receipt is not None else None,
-            "mutation_prompt_nodes": list(receipt.user_node_ids) if receipt is not None else [],
-            "mutation_assistant": receipt.assistant_text if receipt is not None else None,
+            "mutation_prompt_present": receipt.prompt_committed if receipt else None,
+            "mutation_prompt_nodes": list(receipt.user_node_ids) if receipt else [],
+            "mutation_assistant": receipt.assistant_text if receipt else None,
         }
 
 
 def build_write_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="re-gpt",
-        description=(
-            "Submit to an existing ChatGPT conversation through the authenticated "
-            "browser DOM, then certify the mutation against the validated graph."
-        ),
-    )
+    parser = argparse.ArgumentParser(prog="re-gpt", description="Continue an existing ChatGPT thread through the authenticated DOM and certify it against the canonical graph.")
     parser.add_argument("--send", required=True, metavar="CONVERSATION", help="Conversation UUID, URL, or relay alias.")
-    parser.add_argument("--prompt", help="Prompt text to submit.")
-    parser.add_argument("--prompt-file", type=Path, help="Read prompt text from this file.")
+    parser.add_argument("--prompt")
+    parser.add_argument("--prompt-file", type=Path)
+    parser.add_argument("--attach", action="append", type=Path, default=[], help="Attach a file using ChatGPT's native file input; repeat for multiple files.")
     parser.add_argument("--browser-profile", type=Path, help="Persistent authenticated browser profile.")
-    parser.add_argument(
-        "--browser-mode",
-        choices=("displayless", "headless", "headed"),
-        default="displayless",
-    )
+    parser.add_argument("--browser-mode", choices=("displayless", "headless", "headed"), default="displayless")
     parser.add_argument("--cdp-endpoint", help="Attach to an already-running browser over CDP.")
-    parser.add_argument("--write-timeout", type=int, default=60, help="Browser readiness/submission budget in seconds.")
+    parser.add_argument("--write-timeout", type=int, default=60, help="Browser readiness/attachment/submission budget in seconds.")
     parser.add_argument("--key", "-k", help="Session token used only for canonical reconciliation.")
-    parser.add_argument("--model", "-m", help="Default model slug used by the reconciliation client.")
+    parser.add_argument("--model", "-m")
     parser.add_argument("--export-json", action="store_true")
     parser.add_argument("--follow", action="store_true", help="After commit, keep reconciling until an assistant child appears.")
     parser.add_argument("--follow-timeout", type=float, default=60.0)
@@ -119,18 +90,14 @@ def build_write_parser() -> argparse.ArgumentParser:
 
 
 def write_main(argv: list[str] | None = None) -> int:
-    parser = build_write_parser()
-    args = parser.parse_args(argv)
+    args = build_write_parser().parse_args(argv)
     try:
         prompt = resolve_prompt(args.prompt, args.prompt_file, stdin=sys.stdin)
-        service = MutationService(
-            session_token=args.key,
-            model=args.model,
-            export_json=args.export_json,
-        )
+        service = MutationService(session_token=args.key, model=args.model, export_json=args.export_json)
         result = service.continue_thread(
             args.send,
             prompt,
+            attachments=args.attach,
             profile_dir=args.browser_profile,
             browser_mode=args.browser_mode,
             cdp_endpoint=args.cdp_endpoint,
@@ -141,7 +108,7 @@ def write_main(argv: list[str] | None = None) -> int:
     except (BrowserWriteError, OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    except Exception as exc:  # browser may already have committed; fail closed
+    except Exception as exc:
         print(f"error: mutation status is uncertain: {exc}. Do not resend automatically.", file=sys.stderr)
         return 2
 
@@ -150,25 +117,17 @@ def write_main(argv: list[str] | None = None) -> int:
     assistant = str(result.get("assistant_text") or "").strip()
     if assistant:
         print(assistant)
+    attachment_ids = result.get("attachment_ids") or []
+    suffix = f" attachments={','.join(attachment_ids)}" if attachment_ids else ""
 
     if state == "complete":
-        print(
-            f"[re-gpt] complete operation={operation_id} conversation={result.get('conversation_id')} "
-            f"user_node={result.get('user_node_id')} assistant_node={result.get('assistant_node_id')}"
-        )
+        print(f"[re-gpt] complete operation={operation_id} conversation={result.get('conversation_id')} user_node={result.get('user_node_id')} assistant_node={result.get('assistant_node_id')}{suffix}")
         return 0
-    if state == "committed_pending":
-        print(
-            f"[re-gpt] committed_pending operation={operation_id} conversation={result.get('conversation_id')} "
-            f"user_node={result.get('user_node_id')}"
-        )
+    if state in {"committed", "committed_pending"}:
+        print(f"[re-gpt] {state} operation={operation_id} conversation={result.get('conversation_id')} user_node={result.get('user_node_id')}{suffix}")
         return 0
 
-    print(
-        f"error: operation={operation_id} state={state}; canonical commit is not proven. "
-        "Do not resend automatically; use operation status/reconciliation.",
-        file=sys.stderr,
-    )
+    print(f"error: operation={operation_id} state={state}; canonical commit is not proven. Do not resend automatically; use operation status/reconciliation.", file=sys.stderr)
     return 2
 
 
