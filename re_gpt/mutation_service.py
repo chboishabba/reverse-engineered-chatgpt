@@ -260,11 +260,23 @@ class MutationService:
             }
             receipt = classify_prompt_mutation(pulled["chat"], prompt, not_before=not_before)
             if not receipt.prompt_committed:
-                return operations.update(operation_id, state="commit_unknown") | read_bits
+                return operations.update(
+                    operation_id,
+                    state="commit_unknown",
+                    error_class=None,
+                    error_detail=None,
+                ) | read_bits
 
             user_node_id = receipt.user_node_ids[-1]
             committed_at = op.get("committed_at") or time.time()
-            operations.update(operation_id, state="committed", committed_at=committed_at, user_node_id=user_node_id)
+            operations.update(
+                operation_id,
+                state="committed",
+                committed_at=committed_at,
+                user_node_id=user_node_id,
+                error_class=None,
+                error_detail=None,
+            )
 
             attachment_ids: list[str] = []
             if expected:
@@ -275,6 +287,8 @@ class MutationService:
                         state="committed_pending",
                         committed_at=committed_at,
                         user_node_id=user_node_id,
+                        error_class=None,
+                        error_detail=None,
                     ) | {"attachment_ids": []} | read_bits
                 operations.record_canonical_attachments(operation_id, canonical)
                 attachment_ids = [entry.file_id for entry in canonical if entry.file_id]
@@ -299,6 +313,8 @@ class MutationService:
                 completed_at=now if state == "complete" else None,
                 user_node_id=user_node_id,
                 assistant_node_id=assistant_node_id,
+                error_class=None,
+                error_detail=None,
             )
             return stored | {
                 "assistant_text": receipt.assistant_text,
