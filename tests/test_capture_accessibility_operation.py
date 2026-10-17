@@ -136,3 +136,42 @@ def test_prompt_file_is_supported(tmp_path: Path, monkeypatch) -> None:
     )
     assert rc == 0
     assert seen["prompt"] == "ACCESSIBILITY-FILE-PROBE"
+
+
+def test_post_capture_output_failure_falls_back_to_stdout_without_rerun(tmp_path: Path, monkeypatch, capsys) -> None:
+    attachment = tmp_path / "probe.txt"
+    attachment.write_text("hello\n", encoding="utf-8")
+    output = tmp_path / "capture.json"
+    calls = {"capture": 0}
+
+    def fake_capture(*args, **kwargs):
+        calls["capture"] += 1
+        return _receipt()
+
+    monkeypatch.setattr(cli, "capture_attachment_continue", fake_capture)
+    original_write_text = Path.write_text
+
+    def fail_only_output(self: Path, data: str, *args, **kwargs):
+        if self == output:
+            raise OSError("disk write failed")
+        return original_write_text(self, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_only_output)
+    rc = cli.main(
+        [
+            "attachment-continue",
+            "conversation-1",
+            "--prompt",
+            "ACCESSIBILITY-PROBE",
+            "--attach",
+            str(attachment),
+            "--output",
+            str(output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert calls["capture"] == 1
+    assert json.loads(captured.out)["canonical_receipt"]["state"] == "complete"
+    assert "do not rerun" in captured.err.lower()
