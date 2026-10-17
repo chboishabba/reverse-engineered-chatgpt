@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Opt-in live acceptance matrix for existing-thread re-gpt + MCP v1.
 
-This script performs real browser mutations. It is intentionally not part of
-the unit test suite and must be supplied disposable authenticated threads.
+The runner first performs non-mutating exact-read broker preflights. Real browser
+mutations remain explicit and the already-proven short case is skipped by
+default.
 """
 
 from __future__ import annotations
@@ -13,12 +14,13 @@ import time
 from pathlib import Path
 from typing import Any
 
+from re_gpt.graph_broker import GraphAcquisitionFailed, fetch_exact_graph
 from re_gpt.mutation_service import MutationService
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run live short/medium/long existing-thread ACK acceptance plus one attachment"
+        description="Preflight and run live existing-thread ACK acceptance cases"
     )
     parser.add_argument("--short-thread", required=True)
     parser.add_argument("--medium-thread", required=True)
@@ -30,7 +32,59 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--browser-timeout", type=int, default=60)
     parser.add_argument("--follow-timeout", type=float, default=120.0)
     parser.add_argument("--db-path", type=Path)
+    parser.add_argument(
+        "--include-short-mutation",
+        action="store_true",
+        help="Repeat the short mutation case. Off by default because the short case is already proven.",
+    )
+    parser.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="Run exact-read broker preflights only; perform no mutations.",
+    )
     return parser
+
+
+def _preflight(
+    label: str,
+    conversation_id: str,
+    *,
+    profile_dir: Path | None,
+    browser_mode: str,
+    cdp_endpoint: str | None,
+    browser_timeout: int,
+) -> dict[str, Any]:
+    started = time.perf_counter()
+    try:
+        result = fetch_exact_graph(
+            conversation_id,
+            profile_dir=profile_dir,
+            browser_mode=browser_mode,
+            cdp_endpoint=cdp_endpoint,
+            browser_timeout=browser_timeout,
+        )
+    except GraphAcquisitionFailed as exc:
+        return {
+            "label": label,
+            "conversation_id": conversation_id,
+            "accepted": False,
+            "adapter": None,
+            "attempted_adapters": list(exc.attempted_adapters),
+            "rejected_adapters": list(exc.rejected_adapters),
+            "elapsed_seconds": round(time.perf_counter() - started, 3),
+            "error_class": exc.__class__.__name__,
+        }
+    return {
+        "label": label,
+        "conversation_id": conversation_id,
+        "accepted": True,
+        "adapter": result.adapter,
+        "attempted_adapters": list(result.attempted_adapters),
+        "rejected_adapters": list(result.rejected_adapters),
+        "mapping_nodes": len(result.graph.get("mapping") or {}),
+        "elapsed_seconds": round(time.perf_counter() - started, 3),
+        "error_class": None,
+    }
 
 
 def _probe(
@@ -74,6 +128,8 @@ def _probe(
         "operation_id": result.get("operation_id"),
         "state": result.get("state"),
         "read_adapter": result.get("read_adapter"),
+        "attempted_read_adapters": result.get("attempted_read_adapters", []),
+        "rejected_read_adapters": result.get("rejected_read_adapters", []),
         "user_node_id": result.get("user_node_id"),
         "assistant_node_id": result.get("assistant_node_id"),
         "assistant_text": assistant_text,
@@ -92,26 +148,49 @@ def main() -> int:
     if not attachment.is_file():
         raise SystemExit(f"attachment does not exist or is not a file: {attachment}")
 
+    common_read = {
+        "profile_dir": args.profile_dir,
+        "browser_mode": args.browser_mode,
+        "cdp_endpoint": args.cdp_endpoint,
+        "browser_timeout": args.browser_timeout,
+    }
+    preflights = [
+        _preflight("short", args.short_thread, **common_read),
+        _preflight("medium", args.medium_thread, **common_read),
+        _preflight("long", args.long_thread, **common_read),
+    ]
+    if args.preflight_only:
+        payload = {
+            "accepted": all(item["accepted"] for item in preflights),
+            "preflights": preflights,
+            "receipts": [],
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0 if payload["accepted"] else 1
+
     service_kwargs: dict[str, Any] = {}
     if args.db_path is not None:
         service_kwargs["db_path"] = args.db_path.expanduser()
     service = MutationService(**service_kwargs)
 
-    common = {
-        "profile_dir": args.profile_dir,
-        "browser_mode": args.browser_mode,
-        "cdp_endpoint": args.cdp_endpoint,
-        "browser_timeout": args.browser_timeout,
+    common_mutation = {
+        **common_read,
         "follow_timeout": args.follow_timeout,
     }
-    receipts = [
-        _probe(service, "short", args.short_thread, attachment=None, **common),
-        _probe(service, "medium", args.medium_thread, attachment=None, **common),
-        _probe(service, "long", args.long_thread, attachment=None, **common),
-        _probe(service, "attachment", args.short_thread, attachment=attachment, **common),
-    ]
+    receipts: list[dict[str, Any]] = []
+    if args.include_short_mutation:
+        receipts.append(_probe(service, "short", args.short_thread, attachment=None, **common_mutation))
+    receipts.extend(
+        [
+            _probe(service, "medium", args.medium_thread, attachment=None, **common_mutation),
+            _probe(service, "long", args.long_thread, attachment=None, **common_mutation),
+            _probe(service, "attachment", args.short_thread, attachment=attachment, **common_mutation),
+        ]
+    )
     payload = {
-        "accepted": all(receipt["accepted"] for receipt in receipts),
+        "accepted": all(item["accepted"] for item in preflights)
+        and all(receipt["accepted"] for receipt in receipts),
+        "preflights": preflights,
         "receipts": receipts,
     }
     print(json.dumps(payload, indent=2, sort_keys=True))
