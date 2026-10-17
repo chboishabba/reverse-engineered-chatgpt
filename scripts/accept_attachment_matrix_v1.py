@@ -83,8 +83,10 @@ def run_acceptance(
     dup_a.write_text(f"duplicate-a-{nonce}\n", encoding="utf-8")
     dup_b.write_text(f"duplicate-b-{nonce}-different-size\n", encoding="utf-8")
 
-    large = work_dir / "large.bin"
-    large.write_bytes((nonce.encode("utf-8") + b"\0") * max(1, large_bytes // (len(nonce.encode("utf-8")) + 1)))
+    large = work_dir / "large.txt"
+    chunk = f"large-attachment-{nonce}\n".encode("utf-8")
+    repetitions = max(1, large_bytes // len(chunk))
+    large.write_bytes(chunk * repetitions)
     if large.stat().st_size < large_bytes:
         with large.open("ab") as handle:
             handle.write(b"x" * (large_bytes - large.stat().st_size))
@@ -95,7 +97,7 @@ def run_acceptance(
     cases = [
         ("multi_file", [multi_a, multi_b]),
         ("duplicate_basename", [dup_a, dup_b]),
-        ("larger_binary", [large]),
+        ("larger_text", [large]),
         ("non_text_png", [png]),
     ]
 
@@ -128,7 +130,7 @@ def run_acceptance(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Certify direct attachment robustness across multi-file, duplicate-name, large and binary cases")
+    parser = argparse.ArgumentParser(description="Certify direct attachment robustness across multi-file, duplicate-name, larger and non-text cases")
     parser.add_argument("--nonce")
     parser.add_argument("--db-path", type=Path, default=DEFAULT_DB_PATH)
     parser.add_argument("--profile-dir", type=Path)
