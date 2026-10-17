@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from re_gpt.mutation_service import MutationService
+from re_gpt.operation_store import MutationOperationStore
 
 
 def _chat(prompt: str, *, assistant: str | None = None, attachment: dict | None = None):
@@ -124,6 +125,36 @@ def test_direct_rejection_is_sticky_across_reconcile_attempts(monkeypatch, tmp_p
     assert result["state"] == "committed_pending"
     assert sync_calls == ["abc"]
     assert browser_calls == [("abc", True), ("abc", True)]
+
+
+def test_successful_reconcile_clears_stale_direct_rejection_error(monkeypatch, tmp_path) -> None:
+    service = MutationService(db_path=tmp_path / "history.sqlite3")
+    with MutationOperationStore(service.db_path) as operations:
+        op = operations.create(operation="continue", conversation_id="abc", prompt="hello")
+        operation_id = str(op["operation_id"])
+        operations.update(
+            operation_id,
+            state="commit_unknown",
+            error_class="DirectClientRejected",
+            error_detail="HTTP 429",
+        )
+
+    monkeypatch.setattr(
+        service,
+        "_pull_and_persist",
+        lambda conversation_id, **kwargs: {
+            "chat": _chat("hello", assistant="ACK"),
+            "new_messages": 2,
+            "total_messages": 2,
+            "read_adapter": "browser",
+            "read_diagnostic": {},
+            "direct_client_rejected": False,
+        },
+    )
+    result = service.reconcile(operation_id, prompt="hello", not_before=0)
+    assert result["state"] == "complete"
+    assert result["error_class"] is None
+    assert result["error_detail"] is None
 
 
 def test_sync_429_after_dom_evidence_is_direct_client_rejection(monkeypatch, tmp_path) -> None:
