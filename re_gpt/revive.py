@@ -173,7 +173,7 @@ def revive_thread(
         browser_timeout=browser_timeout,
         follow=False,
     )
-    new_cid = str(init_res.get("resolved_thread_id") or "").strip()
+    new_cid = str(init_res.get("conversation_id") or init_res.get("resolved_thread_id") or "").strip()
     if not new_cid:
         raise RuntimeError(f"failed to initialize new thread for revival: {init_res.get('state')}")
 
