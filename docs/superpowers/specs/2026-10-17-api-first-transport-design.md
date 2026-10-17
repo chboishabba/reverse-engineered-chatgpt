@@ -2,34 +2,33 @@
 
 ## Intent
 
-Prefer the existing asynchronous curl_cffi reader for exact conversation graph acquisition when it is healthy. Keep sync and browser readers as fallback acquisition mechanisms. Keep the existing browser DOM writer unchanged in this cut.
+Make curl_cffi HTTP the preferred steady-state transport for exact graph reads and eventually writes, while retaining browser/CDP as protocol oracle, auth/bootstrap recovery, acceptance surface, and emergency fallback. DOM mutation becomes last resort rather than the final architecture.
 
 ## Invariants
 
-- Canonical truth is the validated conversation graph plus SQLite receipts.
-- Read adapters are interchangeable acquisition mechanisms.
-- A rejected read adapter does not imply the conversation is unavailable.
-- After submission evidence exists, reconciliation failure never causes an automatic resend.
-- A later read failure cannot demote an already committed or complete operation.
-- Diagnostics store only non-sensitive operational metadata and never raw response bodies or credential values.
+- Canonical truth remains the validated conversation graph plus SQLite persistence/receipts.
+- No adapter is canonical by identity; adapters are acquisition mechanisms.
+- A 429/Too Many Requests is a request-context/bot-detection rejection for that adapter, not account-wide throttling or conversation absence.
+- Once send evidence exists, never auto-resubmit because reconciliation failed.
+- Once canonical `committed` or `complete` exists, later read rejection cannot demote it.
+- Protocol observations are redaction-first: never persist cookie/token/device-ID/opaque anti-abuse secret values or raw response bodies.
 
-## Architecture
+## Target architecture
 
 ```text
 CLI / MCP / Python
        |
 MutationService
        |
-exact-read broker
-  |-- async curl_cffi
-  |-- sync curl_cffi
-  `-- browser exact read
+transport broker
+  |-- async curl_cffi  (preferred while healthy)
+  |-- sync curl_cffi   (sibling/diagnostic/fallback)
+  |-- browser fetch    (oracle/fallback/bootstrap)
+  `-- DOM mutation     (last-resort writer)
        |
 validated graph
        |
 ConversationStorage + attachment archive + mutation receipts
-
-writes: existing exactly-once DOM path remains unchanged
 ```
 
 ## Exact graph acquisition broker
@@ -40,26 +39,54 @@ Expose one adapter-independent contract:
 fetch_exact_graph(conversation_id, ...) -> GraphAcquisitionResult
 ```
 
-The result carries the graph, adapter used, timing, attempted adapters, rejected adapters, and redacted operational diagnostics. The current order is `async -> sync -> browser` based on the supplied live evidence that async exact reading succeeds on the medium thread.
+`GraphAcquisitionResult` carries the graph, adapter used, timing, redacted observation, attempted adapters, and rejected adapters. Current priority is `async -> sync -> browser` because the 762-node medium-thread read succeeded through `AsyncChatGPT` while sync and browser same-origin contexts returned the known 429 rejection.
 
-An adapter is attempted at most once in one broker acquisition call. Rejected adapters can be carried forward by `MutationService` and skipped for the rest of the active mutation/follow operation. Every accepted graph flows through the same validation and persistence path.
+Each adapter receives at most one attempt per acquisition operation after a request-context rejection. Rejected adapters are skipped for the rest of that operation. Every accepted graph goes through the same graph validator and persistence path.
 
-## Operational diagnostics
+## Protocol observation
 
-A shared observation shape may record adapter, operation, sequence, timing, method, normalized path, response status/class, and body key/type schema for client-owned generated JSON. It must not persist raw bodies, transcript text, credential values, cookie values, or other private session data.
+Introduce a shared `ProtocolObservation` schema for browser and CFFI traces. It records only:
 
-## Mutation and attachments
+- transport/adapter and operation;
+- sequence index and timing;
+- method and normalized path;
+- status / response class;
+- header names;
+- cookie names and domains;
+- booleans for Authorization, device-id, route/affinity and sentinel headers;
+- bootstrap stage;
+- sanitized JSON body key/schema information;
+- SSE/event shape metadata without transcript or secret values.
 
-The browser DOM writer remains the production writer in this cut. Native browser attachment staging and canonical attachment receipts remain unchanged. No new direct HTTP writer or upload protocol is introduced.
+The browser recorder uses Playwright/CDP request/response events around a bounded native action. It does not packet-sniff or MITM TLS.
+
+## Mutation progression
+
+The existing DOM writer remains the safe production mutation owner until an HTTP writer proves canonical success. In parallel, add an opt-in async-CFFI mutation probe that reuses the existing `AsyncConversation` payload/sentinel machinery and is allowed only on explicit sacrificial calls. Promotion requires:
+
+1. send returns accepted transport evidence;
+2. broker subsequently reads a validated graph;
+3. exact new user node is present;
+4. optional assistant child is present for completion;
+5. no duplicate prompt is created.
+
+After this receipt is demonstrated repeatedly, the transport selection seam can promote async HTTP to primary while retaining browser/DOM fallback.
+
+## Attachments
+
+For this max-cut, capture browser upload/staging request metadata and canonical graph attachment receipts under the same observation schema. Do not guess or synthesize upload endpoints. HTTP attachment promotion remains gated on an observed, reproducible sequence plus canonical file-ID/pointer binding.
 
 ## MCP/CLI impact
 
-MCP and CLI continue to call `MutationService` and inherit the broker. Results standardize `read_adapter`, `attempted_read_adapters`, and `rejected_read_adapters`. No duplicate archive is introduced.
+MCP and CLI continue to call `MutationService`; they inherit broker behavior. Results standardize `read_adapter`, attempted/rejected adapters, and redacted observations. No duplicate archive/event store is introduced.
 
 ## Release gate
 
-- async-first broker tests cover success, fallback, rejection quarantine, invalid graphs, and all-adapter failure;
-- `MutationService` persists whichever accepted graph the broker returns;
-- canonical receipts survive later read failures;
-- operational diagnostics remain redacted;
-- existing DOM mutation and attachment behavior remains available.
+This cut is complete when:
+
+- async-first broker unit tests pass, including adapter rejection quarantine and monotonic receipts;
+- protocol observation redaction tests prove values/bodies are absent;
+- browser recorder can emit sanitized traces from Playwright request events;
+- an opt-in async HTTP mutation probe exists behind explicit flags and canonical graph receipt verification;
+- existing DOM behavior remains available as fallback;
+- live promotion to primary HTTP writes is not claimed without sacrificial-thread receipts.

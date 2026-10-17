@@ -65,8 +65,18 @@ def is_conversation_mutation_request(method: str, url: str) -> bool:
 def rendered_prompt_count(page_text: str, prompt: str) -> int:
     """Count rendered user-turn markers for an exact prompt."""
 
-    marker = f"You said:\n{prompt.strip()}"
-    return (page_text or "").count(marker)
+    clean = prompt.strip()
+    if not clean or not page_text:
+        return 0
+    exact = (page_text or "").count(f"You said:\n{clean}")
+    if exact:
+        return exact
+    count = 0
+    for segment in (page_text or "").split("You said:\n")[1:]:
+        user_part = segment.split("\nChatGPT said:", 1)[0]
+        if clean in user_part:
+            count += 1
+    return count
 
 
 def should_retry_dom_with_enter(receipt: DomSubmissionReceipt, prompt: str) -> bool:

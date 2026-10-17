@@ -1,27 +1,23 @@
-# Browser-owned mutation service
+# Browser-owned and API-first mutation service
 
-`re-gpt --send` treats the browser as the mutation owner and a validated ChatGPT conversation graph as the commit authority.
+`re-gpt --send` treats a validated ChatGPT conversation graph as the commit authority. The steady-state architectural target is API-first (`curl_cffi` HTTP for exact reads and eventually writes), with browser/CDP as the protocol oracle, auth/bootstrap recovery, and fallback, and DOM mutation as the safe production writer until HTTP writes earn repeated canonical graph receipts.
 
-## Production path
+## Production and probe paths
 
 ```text
 CLI / MCP
   -> MutationService
-  -> authenticated browser profile
-  -> target thread hydration
-  -> real ProseMirror composer
-  -> optional native file-input staging
-  -> one DOM trigger
-  -> browser submission evidence
-  -> reconciliation read
-       -> sync exact GET
-       -> on direct-client rejection only: authenticated browser same-origin exact GET
+  -> write transport
+       -> default production: authenticated browser DOM composer + native file input
+       -> opt-in probe (--write-transport async): single-attempt AsyncChatGPT HTTP POST
+  -> submission evidence + redacted ProtocolObservation trace
+  -> reconciliation read via exact-graph broker (async -> sync -> browser)
   -> shared graph validation
   -> canonical user-node + attachment receipt
   -> ConversationStorage / shared SQLite
 ```
 
-The historical handcrafted same-origin conversation POST remains diagnostic/research code in `re_gpt.accessibility_browser`. The production write path never tries it first. The browser fallback described above is read-only and retrieves structured conversation JSON; it is not a second mutation transport and not a rendered-DOM transcript scrape.
+The historical handcrafted same-origin conversation POST remains diagnostic/research code in `re_gpt.accessibility_browser`. The browser read fallback retrieves structured conversation JSON (`fetch('/backend-api/conversation/<id>')`); it is not a second mutation transport and not a rendered-DOM transcript scrape.
 
 ## Existing-thread readiness
 
@@ -39,21 +35,21 @@ The pending textarea is a loading-state control and is deliberately excluded fro
 
 ## Mutation states
 
-Browser evidence is weaker than canonical commit evidence.
+Browser or HTTP submission evidence is weaker than canonical commit evidence.
 
-- `failed_precommit`: the DOM mutation was never observed; retry is safe after fixing the cause.
+- `failed_precommit`: the mutation was never dispatched or was explicitly rejected before commit; retry is safe after fixing the cause.
 - `attachment_failed_precommit`: native file staging failed before any message submission evidence; retry is safe.
-- `submission_observed`: the browser emitted evidence that makes a second trigger unsafe.
-- `commit_unknown`: reconciliation did not prove the user node. **Do not resend.** Reconcile later.
+- `submission_observed`: the transport emitted evidence that makes a second trigger unsafe.
+- `commit_unknown`: reconciliation or an ambiguous HTTP POST did not prove the user node. **Do not resend.** Reconcile later.
 - `committed`: a validated graph contains the exact new user node.
 - `committed_pending`: the user node is canonical but the assistant and/or canonical attachment metadata has not settled yet.
 - `complete`: the canonical graph contains the user node, all expected attachments (if any), and an assistant child with text.
 
-A direct-client 429 / `Too Many Requests` after DOM submission is recorded as `DirectClientRejected`, not `SyncRateLimited`. The service stops retrying that direct context immediately. It may perform one authenticated browser same-origin exact-thread GET; if that also fails, the durable result remains recoverable `commit_unknown`. No reconciliation failure can trigger a second browser submission.
+A 429 / `Too Many Requests` on any read adapter is recorded as a request-context rejection for that adapter (`RequestContextRejected`). The broker quarantines that adapter for the remainder of the active operation and advances through `async -> sync -> browser`. If all adapters fail, the durable result remains recoverable `commit_unknown`. No reconciliation failure or ambiguous HTTP write ever triggers a second submission or DOM fallback.
 
-## Browser read fallback
+## Exact-graph broker and browser read fallback
 
-The fallback executes inside the authenticated Chrome origin:
+`re_gpt.graph_broker.fetch_exact_graph` tries `async -> sync -> browser`. The browser fallback executes inside the authenticated Chrome origin:
 
 ```text
 GET /api/auth/session
@@ -63,21 +59,33 @@ GET /backend-api/conversation/<id>
   Accept: application/json
 ```
 
-No `Content-Type` header is synthesized for the bodyless GET. The response must be a JSON object with a non-empty `mapping`; only then does it enter the same persistence path used by the sync reader.
+No `Content-Type` header is synthesized for the bodyless GET. The response must be a JSON object with a non-empty `mapping`; only then does it enter the same persistence path used by all readers.
 
 The fallback can use the same launch-owned profile or the same CDP-attached browser context as mutation. CDP remains non-owning: re-gpt disconnects Playwright rather than closing the user's browser.
 
-## Differential read diagnostics
+## Redacted protocol observations and browser session/fingerprint replay
+
+Both CFFI and browser/CDP paths emit `re_gpt.protocol_observation.ProtocolObservation` records containing only transport, operation, sequence index, method, normalized path, status, response class, header names, cookie names/domains, auth/device/route/sentinel presence booleans, sanitized JSON payload key/schema trees, and SSE event counts. Secret values and transcript/response bodies are never emitted in diagnostic traces.
+
+For offline session analysis and CFFI reuse without loading thread DOM, `re_gpt.browser_session_replay` records and replays a local `BrowserSessionSnapshot` (`<profile_dir>/.re_gpt_session_snapshot.json`, `0600` permissions) capturing:
+
+- full browser cookie jar (`__Secure-next-auth.session-token`, `oai-did`, `oai-sc`, `__cf_bm`, `_cfuvid`, etc.);
+- bearer `accessToken` and `chatgpt-account-id` from `/api/auth/session`;
+- Client-Hints (`sec-ch-ua*`), `User-Agent`, `Accept-Language`, and contextual navigator/screen/timezone fingerprint;
+- single-use pre-minted sentinel token trio (`openai-sentinel-chat-requirements-token`, `openai-sentinel-proof-token`, `openai-sentinel-turnstile-token`) from `/backend-api/sentinel/chat-requirements/finalize`.
+
+`AsyncChatGPT`, `SyncChatGPT`, `fetch_exact_graph`, and `submit_async_prompt_once` automatically replay the cached `BrowserSessionSnapshot` when available, refreshing single-use sentinel tokens via a lightweight root-page bootstrap (`https://chatgpt.com/`, no thread DOM) when needed for `POST /backend-api/f/conversation`.
 
 Use:
 
 ```bash
 python -m re_gpt.read_diagnostics <conversation-uuid>
+python -m re_gpt.browser_protocol_recorder <conversation-uuid> --read
+python -m re_gpt.browser_protocol_recorder <conversation-uuid> --session --profile-dir ./chatgpt_browser_profile
+python -m re_gpt.async_mutation_probe <conversation-uuid> --prompt 'Reply exactly ACK.' --sacrificial --profile-dir ./chatgpt_browser_profile
 ```
 
-to compare `sync`, `async`, and browser same-origin exact-thread reads. The output is intentionally redacted and contains only adapter, method, route, header names, cookie names/domains, auth/device-header presence, status, elapsed time, and response class. Cookie, bearer-token and device-ID values are never emitted.
-
-Async remains useful as a differential reference implementation; it is not inserted between sync and browser in the production reconciliation chain.
+to compare `sync`, `async`, and browser same-origin exact-thread reads, record bounded browser request sequences, capture/refresh the local session snapshot, or test one-attempt async HTTP writes against a sacrificial thread.
 
 ## Live DOM status
 

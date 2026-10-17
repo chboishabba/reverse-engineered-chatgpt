@@ -11,11 +11,16 @@ import time
 from pathlib import Path
 from typing import Any, Sequence
 
+from .async_mutation_probe import (
+    AmbiguousAsyncWriteError,
+    ExplicitAsyncWriteRejection,
+    submit_async_prompt_once,
+)
 from .attachment_archive import AttachmentArchive
 from .attachments import LocalAttachment, match_expected_attachments
 from .browser_write import BrowserWriteError, submit_prompt
 from .graph_broker import GraphAcquisitionFailed, fetch_exact_graph
-from .mutation_receipt import classify_prompt_mutation
+from .mutation_receipt import classify_prompt_mutation, find_turn_assistant_nodes
 from .operation_store import MutationOperationStore
 from .read_plane import install_validated_sync_read_plane
 from .storage import ConversationStorage, DEFAULT_DB_PATH, extract_ordered_messages
@@ -31,25 +36,10 @@ def _assistant_child_id(chat: dict[str, Any], user_node_id: str) -> str | None:
     mapping = chat.get("mapping")
     if not isinstance(mapping, dict):
         return None
-    candidates: list[tuple[float, str]] = []
-    for node_id, node in mapping.items():
-        if not isinstance(node, dict) or str(node.get("parent") or "") != user_node_id:
-            continue
-        message = node.get("message")
-        if not isinstance(message, dict):
-            continue
-        author = message.get("author")
-        if not isinstance(author, dict) or author.get("role") != "assistant":
-            continue
-        try:
-            created = float(message.get("create_time") or message.get("update_time") or 0.0)
-        except (TypeError, ValueError):
-            created = 0.0
-        candidates.append((created, str(node_id)))
+    candidates = find_turn_assistant_nodes(mapping, user_node_id)
     if not candidates:
         return None
-    candidates.sort()
-    return candidates[-1][1]
+    return candidates[-1][2]
 
 
 def _stored_expected_attachments(op: dict[str, Any]) -> list[LocalAttachment]:
@@ -95,6 +85,7 @@ class MutationService:
         read_diagnostic: dict[str, Any] | None = None,
         attempted_read_adapters: Sequence[str] = (),
         rejected_read_adapters: Sequence[str] = (),
+        read_observations: Sequence[dict[str, Any]] = (),
     ) -> dict[str, Any]:
         messages = extract_ordered_messages(chat)
         with ConversationStorage(db_path=self.db_path, write_json=self.export_json) as storage:
@@ -118,6 +109,7 @@ class MutationService:
             "read_diagnostic": read_diagnostic or {},
             "attempted_read_adapters": list(attempted_read_adapters),
             "rejected_read_adapters": list(rejected_read_adapters),
+            "read_observations": [dict(item) for item in read_observations],
         }
 
     def _pull_and_persist(
@@ -157,6 +149,7 @@ class MutationService:
             read_diagnostic=result.diagnostic,
             attempted_read_adapters=result.attempted_adapters,
             rejected_read_adapters=result.rejected_adapters,
+            read_observations=result.observations,
         )
 
     def reconcile(
@@ -198,6 +191,7 @@ class MutationService:
                 "read_diagnostic": pulled.get("read_diagnostic", {}),
                 "attempted_read_adapters": pulled.get("attempted_read_adapters", []),
                 "rejected_read_adapters": pulled.get("rejected_read_adapters", []),
+                "read_observations": pulled.get("read_observations", []),
             }
             receipt = classify_prompt_mutation(pulled["chat"], prompt, not_before=not_before)
             if not receipt.prompt_committed:
@@ -274,6 +268,7 @@ class MutationService:
         browser_mode: str = "displayless",
         cdp_endpoint: str | None = None,
         browser_timeout: int = 60,
+        write_transport: str = "dom",
         reconcile_attempts: int = 3,
         reconcile_interval: float = 1.0,
         follow: bool = False,
@@ -282,42 +277,75 @@ class MutationService:
         prompt = prompt.strip()
         if not prompt:
             raise ValueError("prompt is empty")
+        if write_transport not in {"dom", "async"}:
+            raise ValueError(f"unsupported write_transport {write_transport!r}; expected 'dom' or 'async'")
         local_attachments = [LocalAttachment.from_path(path) for path in attachments]
+        if write_transport == "async" and local_attachments:
+            raise ValueError("async HTTP mutation probe does not synthesize attachment upload endpoints")
         started_at = time.time()
 
+        write_observations: list[dict[str, Any]] = []
         with MutationOperationStore(self.db_path) as operations:
             op = operations.create(operation="continue", conversation_id=conversation, prompt=prompt)
             operation_id = str(op["operation_id"])
             operations.record_local_attachments(operation_id, local_attachments)
-            operations.update(operation_id, state="browser_starting")
-            try:
-                browser = submit_prompt(
-                    conversation,
-                    prompt,
-                    attachments=[item.path for item in local_attachments],
-                    profile_dir=profile_dir,
-                    browser_mode=browser_mode,
-                    cdp_endpoint=cdp_endpoint,
-                    timeout=browser_timeout,
-                    follow=False,
-                )
-            except (BrowserWriteError, OSError, ValueError) as exc:
-                state = "attachment_failed_precommit" if local_attachments and "attachment" in str(exc).lower() else "failed_precommit"
-                operations.mark_error(operation_id, state, exc)
-                raise
 
-            conversation_id = str(browser.get("resolved_thread_id") or browser.get("conversation_id") or conversation).strip()
-            stage_times = browser.get("stage_times") if isinstance(browser.get("stage_times"), dict) else {}
+            if write_transport == "async":
+                operations.update(operation_id, state="async_starting", transport="async")
+                try:
+                    submission = submit_async_prompt_once(
+                        conversation,
+                        prompt,
+                        session_token=self.session_token,
+                        model=self.model,
+                        profile_dir=profile_dir,
+                        browser_mode=browser_mode,
+                        cdp_endpoint=cdp_endpoint,
+                        browser_timeout=browser_timeout,
+                    )
+                except ExplicitAsyncWriteRejection as exc:
+                    operations.mark_error(operation_id, "failed_precommit", exc)
+                    raise
+                except AmbiguousAsyncWriteError as exc:
+                    write_observations = [obs.to_dict() for obs in exc.observations]
+                    return operations.update(
+                        operation_id,
+                        state="commit_unknown",
+                        transport="async",
+                        error_class=exc.__class__.__name__,
+                        error_detail=str(exc),
+                    ) | {"write_observations": write_observations}
+            else:
+                operations.update(operation_id, state="browser_starting")
+                try:
+                    submission = submit_prompt(
+                        conversation,
+                        prompt,
+                        attachments=[item.path for item in local_attachments],
+                        profile_dir=profile_dir,
+                        browser_mode=browser_mode,
+                        cdp_endpoint=cdp_endpoint,
+                        timeout=browser_timeout,
+                        follow=follow,
+                    )
+                except (BrowserWriteError, OSError, ValueError) as exc:
+                    state = "attachment_failed_precommit" if local_attachments and "attachment" in str(exc).lower() else "failed_precommit"
+                    operations.mark_error(operation_id, state, exc)
+                    raise
+
+            write_observations = list(submission.get("protocol_observations") or [])
+            conversation_id = str(submission.get("resolved_thread_id") or submission.get("conversation_id") or conversation).strip()
+            stage_times = submission.get("stage_times") if isinstance(submission.get("stage_times"), dict) else {}
             now = time.time()
             operations.update(
                 operation_id,
                 state="submission_observed",
                 conversation_id=conversation_id,
-                authenticated_at=stage_times.get("authenticated") or (now if browser.get("authenticated") else None),
-                hydrated_at=stage_times.get("hydrated") or (now if browser.get("hydrated") else None),
+                authenticated_at=stage_times.get("authenticated") or (now if submission.get("authenticated") else None),
+                hydrated_at=stage_times.get("hydrated") or (now if submission.get("hydrated") else None),
                 attachment_ready_at=stage_times.get("attachment_ready"),
                 submitted_at=stage_times.get("submission_observed") or now,
-                transport="dom",
+                transport=write_transport,
             )
 
         last: dict[str, Any] | None = None
@@ -347,6 +375,7 @@ class MutationService:
                     ) | {
                         "attempted_read_adapters": list(exc.attempted_adapters),
                         "rejected_read_adapters": list(exc.rejected_adapters),
+                        "read_observations": list(exc.observations),
                     }
                 break
             except Exception as exc:  # noqa: BLE001 - preserve durable post-submit state.
@@ -366,13 +395,19 @@ class MutationService:
         if last is None:
             last = self.operation_status(operation_id) or {"operation_id": operation_id, "state": "commit_unknown"}
 
-        if follow and last.get("state") in {"committed", "committed_pending", "commit_unknown"}:
+        all_adapters_rejected = {"async", "sync", "browser"}.issubset(rejected_read_adapters)
+        if (
+            follow
+            and not all_adapters_rejected
+            and last.get("error_class") != "GraphAcquisitionFailed"
+            and last.get("state") in {"committed", "committed_pending", "commit_unknown"}
+        ):
             deadline = time.monotonic() + max(0.0, follow_timeout)
             while time.monotonic() < deadline:
                 remaining = max(0.0, deadline - time.monotonic())
                 if remaining <= 0:
                     break
-                time.sleep(min(1.0, remaining))
+                time.sleep(min(2.0, remaining))
                 try:
                     last = self.reconcile(
                         operation_id,
@@ -391,7 +426,7 @@ class MutationService:
                     with MutationOperationStore(self.db_path) as operations:
                         prior = operations.get(operation_id)
                         if prior and prior.get("state") in {"committed", "committed_pending", "complete"}:
-                            last = prior
+                            last = (dict(last) if isinstance(last, dict) else {}) | prior
                         else:
                             last = operations.update(
                                 operation_id,
@@ -401,13 +436,14 @@ class MutationService:
                             ) | {
                                 "attempted_read_adapters": list(exc.attempted_adapters),
                                 "rejected_read_adapters": list(exc.rejected_adapters),
+                                "read_observations": list(exc.observations),
                             }
                     break
                 except Exception as exc:  # noqa: BLE001
                     with MutationOperationStore(self.db_path) as operations:
                         prior = operations.get(operation_id)
                         if prior and prior.get("state") in {"committed", "committed_pending", "complete"}:
-                            last = prior
+                            last = (dict(last) if isinstance(last, dict) else {}) | prior
                         else:
                             last = operations.update(
                                 operation_id,
@@ -418,4 +454,6 @@ class MutationService:
                     continue
                 if last.get("state") == "complete":
                     break
+        if write_observations and "write_observations" not in last:
+            last = dict(last) | {"write_observations": write_observations}
         return last

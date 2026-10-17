@@ -30,6 +30,7 @@ def chatgpt_continue(
     prompt: str,
     attachments: list[str] | None = None,
     follow: bool = False,
+    write_transport: str = "dom",
     db_path: str | None = None,
 ) -> dict[str, Any]:
     """Continue an existing thread; canonical reconciliation uses the exact-read broker."""
@@ -38,6 +39,7 @@ def chatgpt_continue(
         prompt,
         attachments=attachments or (),
         follow=follow,
+        write_transport=write_transport,
     )
 
 

@@ -85,8 +85,12 @@ class AsyncConversation:
             return {}
 
         url = CHATGPT_API.format(f"conversation/{self.conversation_id}")
+        headers = dict(self.chatgpt.build_request_headers())
+        if getattr(self.chatgpt, "_replayed_browser_snapshot", None) is not None:
+            headers["Accept"] = "application/json"
+            headers.pop("Content-Type", None)
         response = await self.chatgpt.session.get(
-            url=url, headers=self.chatgpt.build_request_headers()
+            url=url, headers=headers
         )
 
         error = None
@@ -471,6 +475,7 @@ class AsyncChatGPT:
         timezone_offset_min: Optional[int] = None,
         client_contextual_info: Optional[dict] = None,
         user_agent: Optional[str] = None,
+        browser_session: Any = None,
     ):
         """
         Initializes an instance of the class.
@@ -488,6 +493,7 @@ class AsyncChatGPT:
             timezone_offset_min (Optional[int]): Timezone offset in minutes.
             client_contextual_info (Optional[dict]): Client context payload for chats.
             user_agent (Optional[str]): User agent string override.
+            browser_session (Any): Optional BrowserSessionSnapshot, dict, or profile/snapshot path to replay.
         """
         self.proxies = proxies
         self.exit_callback_function = exit_callback_function
@@ -500,6 +506,8 @@ class AsyncChatGPT:
         self.session_token = session_token
         self.auth_token = auth_token
         self.session = None
+        self.browser_session = browser_session
+        self._replayed_browser_snapshot = None
 
         self.websocket_mode = websocket_mode
         self.ws_loop = None
@@ -530,10 +538,38 @@ class AsyncChatGPT:
         )
         
         # do not need session mode
-        self.free_mode = True if self.session_token is None else False
+        self.free_mode = True if self.session_token is None and self.auth_token is None and self.browser_session is None else False
         self.auth_cookie = None
         self.devive_id = str(uuid.uuid4())
         self._frontend_cookies: dict[str, str] = {}
+
+    def _apply_browser_session(self) -> None:
+        if not self.browser_session:
+            return
+        from pathlib import Path
+        from typing import Mapping
+        from .browser_session_replay import (
+            BrowserSessionSnapshot,
+            apply_browser_session_to_client,
+            load_browser_session_snapshot,
+        )
+
+        snapshot: BrowserSessionSnapshot | None = None
+        if isinstance(self.browser_session, BrowserSessionSnapshot):
+            snapshot = self.browser_session
+        elif isinstance(self.browser_session, Mapping):
+            snapshot = BrowserSessionSnapshot.from_dict(self.browser_session)
+        elif isinstance(self.browser_session, (Path, str)):
+            candidate = Path(self.browser_session).expanduser()
+            if candidate.is_dir():
+                snapshot = load_browser_session_snapshot(profile_dir=candidate)
+            else:
+                snapshot = load_browser_session_snapshot(snapshot_path=candidate)
+        elif self.browser_session is True:
+            snapshot = load_browser_session_snapshot()
+
+        if snapshot is not None:
+            apply_browser_session_to_client(self, snapshot)
 
     def _debug_log(self, message: str, *, channel: str = "fetch") -> None:
         if channel == "asset" and not self.debug_assets:
@@ -616,6 +652,7 @@ class AsyncChatGPT:
             impersonate="chrome142", timeout=99999, proxies=self.proxies
         )
         self._frontend_cookies = {}
+        self._apply_browser_session()
         if self.session_token:
             self._frontend_cookies["__Secure-next-auth.session-token"] = self.session_token
             try:
@@ -645,7 +682,7 @@ class AsyncChatGPT:
             else:
                 self.auth_cookie = await self.fetch_free_mode_cookies()
 
-        if not self.websocket_mode:
+        if not self.websocket_mode and getattr(self, "_replayed_browser_snapshot", None) is None:
             self.websocket_mode = await self.check_websocket_availability()
 
         if self.websocket_mode:
@@ -687,6 +724,22 @@ class AsyncChatGPT:
             headers["Cookie"] = ';'.join([f"{key}={value}" for key, value in self.auth_cookie.items()])
         else:
             headers["Authorization"] = f"Bearer {self.auth_token}"
+
+        snapshot = getattr(self, "_replayed_browser_snapshot", None)
+        if snapshot is not None:
+            for k, v in snapshot.build_replay_headers().items():
+                if k.lower() == "user-agent":
+                    headers["User-Agent"] = v
+                elif k.lower() == "accept-language":
+                    headers["Accept-Language"] = v
+                elif k.lower() == "authorization":
+                    if not self.auth_token:
+                        headers["Authorization"] = v
+                else:
+                    headers[k] = v
+            if snapshot.device_id:
+                headers["oai-did"] = snapshot.device_id
+                headers["Oai-device-id"] = snapshot.device_id
 
         user_agent = self._env_override("RE_GPT_USER_AGENT")
         referer = self._env_override("RE_GPT_REFERER")

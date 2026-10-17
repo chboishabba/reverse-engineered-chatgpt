@@ -15,6 +15,7 @@ from chatgpt_dom_relay import DEFAULT_ALIAS_PATHS, DEFAULT_PROFILE_DIR, load_ali
 from .accessibility_browser import AccessibilityBrowserRelay, BROWSER_MODES
 from .attachments import LocalAttachment, stage_attachments
 from .browser_mutation import follow_prompt, submit_prompt_once
+from .browser_protocol_recorder import BrowserProtocolRecorder
 from .browser_readiness import open_ready_thread
 
 
@@ -53,18 +54,31 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
         idle_ms=args.idle_ms,
     ) as relay:
         stage_times["browser_ready"] = time.time()
-        readiness = await open_ready_thread(relay, thread_id)
-        stage_times["authenticated"] = time.time()
-        stage_times["hydrated"] = stage_times["authenticated"]
+        async with BrowserProtocolRecorder(
+            relay.page,
+            operation="continue",
+            profile_dir=args.profile_dir,
+        ) as recorder:
+            readiness = await open_ready_thread(relay, thread_id)
+            stage_times["authenticated"] = time.time()
+            stage_times["hydrated"] = stage_times["authenticated"]
 
-        attachment_receipts = []
-        if attachments:
-            stage_times["attachment_selecting"] = time.time()
-            attachment_receipts = await stage_attachments(relay, attachments)
-            stage_times["attachment_ready"] = time.time()
+            attachment_receipts = []
+            if attachments:
+                stage_times["attachment_selecting"] = time.time()
+                attachment_receipts = await stage_attachments(relay, attachments)
+                stage_times["attachment_ready"] = time.time()
 
-        result = await submit_prompt_once(relay, prompt)
-        stage_times["submission_observed"] = time.time()
+            result = await submit_prompt_once(relay, prompt)
+            stage_times["submission_observed"] = time.time()
+            if args.follow:
+                try:
+                    followed = await follow_prompt(relay, prompt, int(result["baseline_prompt_count"]))
+                    result["latest_assistant"] = str(followed.get("latest_assistant") or "")
+                    result["mutation_state"] = "assistant_observed"
+                    stage_times["assistant_complete"] = time.time()
+                except TimeoutError:
+                    result["mutation_state"] = "submission_observed"
         result.update({
             "transport": "dom",
             "browser_mode": "attached" if args.cdp_endpoint else args.browser_mode,
@@ -76,13 +90,9 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                 {"path": str(item.path), "filename": item.filename, "mime_type": item.mime_type, "size": item.size, "sha256": item.sha256}
                 for item in attachments
             ],
+            "protocol_observations": recorder.to_dicts(),
             "stage_times": stage_times,
         })
-        if args.follow:
-            followed = await follow_prompt(relay, prompt, int(result["baseline_prompt_count"]))
-            result["latest_assistant"] = str(followed.get("latest_assistant") or "")
-            result["mutation_state"] = "assistant_observed"
-            stage_times["assistant_complete"] = time.time()
         return result
 
 

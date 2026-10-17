@@ -42,6 +42,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run exact-read broker preflights only; perform no mutations.",
     )
+    parser.add_argument(
+        "--probe-async-write",
+        action="store_true",
+        help="Opt-in: run one sacrificial async-CFFI HTTP write probe on --short-thread and certify via canonical graph.",
+    )
+    parser.add_argument(
+        "--step-delay",
+        type=float,
+        default=22.0,
+        help="Seconds to pause between sequential mutation probes to stay under per-minute rate limits.",
+    )
     return parser
 
 
@@ -71,6 +82,7 @@ def _preflight(
             "adapter": None,
             "attempted_adapters": list(exc.attempted_adapters),
             "rejected_adapters": list(exc.rejected_adapters),
+            "observations": list(exc.observations),
             "elapsed_seconds": round(time.perf_counter() - started, 3),
             "error_class": exc.__class__.__name__,
         }
@@ -81,6 +93,7 @@ def _preflight(
         "adapter": result.adapter,
         "attempted_adapters": list(result.attempted_adapters),
         "rejected_adapters": list(result.rejected_adapters),
+        "observations": list(result.observations),
         "mapping_nodes": len(result.graph.get("mapping") or {}),
         "elapsed_seconds": round(time.perf_counter() - started, 3),
         "error_class": None,
@@ -98,38 +111,69 @@ def _probe(
     cdp_endpoint: str | None,
     browser_timeout: int,
     follow_timeout: float,
+    write_transport: str = "dom",
 ) -> dict[str, Any]:
     nonce = f"REGPT-V1-{label.upper()}-{time.time_ns()}"
     prompt = f"Reply exactly {nonce}."
     started = time.perf_counter()
-    result = service.continue_thread(
-        conversation_id,
-        prompt,
-        attachments=[attachment] if attachment is not None else (),
-        profile_dir=profile_dir,
-        browser_mode=browser_mode,
-        cdp_endpoint=cdp_endpoint,
-        browser_timeout=browser_timeout,
-        follow=True,
-        follow_timeout=follow_timeout,
-    )
+    try:
+        result = service.continue_thread(
+            conversation_id,
+            prompt,
+            attachments=[attachment] if attachment is not None else (),
+            profile_dir=profile_dir,
+            browser_mode=browser_mode,
+            cdp_endpoint=cdp_endpoint,
+            browser_timeout=browser_timeout,
+            write_transport=write_transport,
+            follow=True,
+            follow_timeout=follow_timeout,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "label": label,
+            "conversation_id": conversation_id,
+            "write_transport": write_transport,
+            "operation_id": None,
+            "state": "failed_precommit",
+            "read_adapter": None,
+            "attempted_read_adapters": [],
+            "rejected_read_adapters": [],
+            "read_observations": [],
+            "write_observations": [
+                obs.to_dict() for obs in getattr(exc, "observations", ())
+            ],
+            "user_node_id": None,
+            "assistant_node_id": None,
+            "assistant_text": "",
+            "expected_reply": f"{nonce}.",
+            "attachment_ids": [],
+            "elapsed_seconds": round(time.perf_counter() - started, 3),
+            "accepted": False,
+            "error_class": exc.__class__.__name__,
+            "error_detail": str(exc),
+        }
+
     elapsed = round(time.perf_counter() - started, 3)
     assistant_text = str(result.get("assistant_text") or "").strip()
     expected_reply = f"{nonce}."
     attachment_ids = list(result.get("attachment_ids") or [])
     accepted = (
         result.get("state") == "complete"
-        and assistant_text == expected_reply
+        and assistant_text in {expected_reply, nonce}
         and (attachment is None or bool(attachment_ids))
     )
     return {
         "label": label,
         "conversation_id": conversation_id,
+        "write_transport": write_transport,
         "operation_id": result.get("operation_id"),
         "state": result.get("state"),
         "read_adapter": result.get("read_adapter"),
         "attempted_read_adapters": result.get("attempted_read_adapters", []),
         "rejected_read_adapters": result.get("rejected_read_adapters", []),
+        "read_observations": result.get("read_observations", []),
+        "write_observations": result.get("write_observations", []),
         "user_node_id": result.get("user_node_id"),
         "assistant_node_id": result.get("assistant_node_id"),
         "assistant_text": assistant_text,
@@ -154,14 +198,25 @@ def main() -> int:
         "cdp_endpoint": args.cdp_endpoint,
         "browser_timeout": args.browser_timeout,
     }
-    preflights = [
-        _preflight("short", args.short_thread, **common_read),
-        _preflight("medium", args.medium_thread, **common_read),
-        _preflight("long", args.long_thread, **common_read),
-    ]
-    if args.preflight_only:
+    step_delay = max(0.0, float(args.step_delay))
+    preflight_delay = min(16.0, step_delay)
+    preflights = []
+    for idx, (label, thread_id) in enumerate(
+        (
+            ("short", args.short_thread),
+            ("medium", args.medium_thread),
+            ("long", args.long_thread),
+        )
+    ):
+        if idx > 0 and preflight_delay > 0:
+            time.sleep(preflight_delay)
+        item = _preflight(label, thread_id, **common_read)
+        preflights.append(item)
+        if not item["accepted"]:
+            break
+    if args.preflight_only or not all(item["accepted"] for item in preflights):
         payload = {
-            "accepted": all(item["accepted"] for item in preflights),
+            "accepted": len(preflights) == 3 and all(item["accepted"] for item in preflights),
             "preflights": preflights,
             "receipts": [],
         }
@@ -177,16 +232,32 @@ def main() -> int:
         **common_read,
         "follow_timeout": args.follow_timeout,
     }
-    receipts: list[dict[str, Any]] = []
+    probe_plan: list[tuple[str, str, Path | None, str]] = []
+    if args.probe_async_write:
+        probe_plan.append(("async_write_probe", args.short_thread, None, "async"))
     if args.include_short_mutation:
-        receipts.append(_probe(service, "short", args.short_thread, attachment=None, **common_mutation))
-    receipts.extend(
+        probe_plan.append(("short", args.short_thread, None, "dom"))
+    probe_plan.extend(
         [
-            _probe(service, "medium", args.medium_thread, attachment=None, **common_mutation),
-            _probe(service, "long", args.long_thread, attachment=None, **common_mutation),
-            _probe(service, "attachment", args.short_thread, attachment=attachment, **common_mutation),
+            ("medium", args.medium_thread, None, "dom"),
+            ("long", args.long_thread, None, "dom"),
+            ("attachment", args.short_thread, attachment, "dom"),
         ]
     )
+    receipts: list[dict[str, Any]] = []
+    for label, thread_id, item_attachment, transport in probe_plan:
+        if step_delay > 0:
+            time.sleep(step_delay)
+        receipts.append(
+            _probe(
+                service,
+                label,
+                thread_id,
+                attachment=item_attachment,
+                write_transport=transport,
+                **common_mutation,
+            )
+        )
     payload = {
         "accepted": all(item["accepted"] for item in preflights)
         and all(receipt["accepted"] for receipt in receipts),

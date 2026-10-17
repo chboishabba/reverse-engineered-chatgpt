@@ -163,13 +163,23 @@ def assistant_reply_after_prompt(snapshot: dict[str, Any], prompt: str) -> str |
 
 def assistant_reply_after_rendered_text(page_text: str, prompt: str) -> str | None:
     """Return the assistant reply from ChatGPT's current labeled turn markup."""
-    marker = f"You said:\n{prompt.strip()}\nChatGPT said:"
-    start = page_text.rfind(marker)
-    if start < 0:
+    clean = prompt.strip()
+    if not clean or not page_text:
         return None
-    reply = page_text[start + len(marker) :]
-    reply = reply.split("\nChatGPT can make mistakes.", 1)[0].strip()
-    return reply or None
+    marker = f"You said:\n{clean}\nChatGPT said:"
+    start = page_text.rfind(marker)
+    if start >= 0:
+        reply = page_text[start + len(marker) :]
+        reply = reply.split("\nChatGPT can make mistakes.", 1)[0].strip()
+        return reply or None
+    for segment in reversed(page_text.split("You said:\n")[1:]):
+        if "\nChatGPT said:" not in segment:
+            continue
+        user_part, rest = segment.split("\nChatGPT said:", 1)
+        if clean in user_part:
+            reply = rest.split("\nChatGPT can make mistakes.", 1)[0].strip()
+            return reply or None
+    return None
 
 
 def latest_assistant_from_sse(raw: str) -> str:

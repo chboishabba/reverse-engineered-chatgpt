@@ -195,3 +195,70 @@ def test_attachment_requires_canonical_metadata_before_complete(monkeypatch, tmp
     assert result["attachment_ids"] == ["file_123"]
     status = service.operation_status(result["operation_id"])
     assert status["attachments"][0]["canonical_file_id"] == "file_123"
+
+
+def test_continue_thread_async_write_transport_certifies_via_broker(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        "re_gpt.mutation_service.submit_async_prompt_once",
+        lambda *args, **kwargs: {
+            "resolved_thread_id": "abc",
+            "transport": "async",
+            "state": "submission_observed",
+            "protocol_observations": [{"transport": "async", "operation": "continue", "status": 200}],
+            "stage_times": {"authenticated": 10.0, "hydrated": 11.0, "submission_observed": 12.0},
+        },
+    )
+    service = MutationService(db_path=tmp_path / "history.sqlite3")
+    monkeypatch.setattr(
+        service,
+        "_pull_and_persist",
+        lambda conversation_id, **kwargs: {
+            "chat": _chat("hello", assistant="ACK"),
+            "new_messages": 2,
+            "total_messages": 2,
+            "read_adapter": "async",
+            "read_diagnostic": {},
+            "attempted_read_adapters": ["async"],
+            "rejected_read_adapters": [],
+            "read_observations": [{"transport": "async", "operation": "exact_read", "status": 200}],
+        },
+    )
+    result = service.continue_thread("abc", "hello", write_transport="async", reconcile_attempts=1)
+    assert result["state"] == "complete"
+    assert result["transport"] == "async"
+    assert result["read_adapter"] == "async"
+    assert result["read_observations"] == [{"transport": "async", "operation": "exact_read", "status": 200}]
+    assert result["write_observations"] == [{"transport": "async", "operation": "continue", "status": 200}]
+
+
+def test_continue_thread_ambiguous_async_write_never_falls_back_to_dom(monkeypatch, tmp_path: Path) -> None:
+    from re_gpt.async_mutation_probe import AmbiguousAsyncWriteError
+    from re_gpt.protocol_observation import build_protocol_observation
+
+    dom_calls: list[int] = []
+    monkeypatch.setattr(
+        "re_gpt.mutation_service.submit_prompt",
+        lambda *args, **kwargs: dom_calls.append(1) or _browser_result(),
+    )
+    obs = build_protocol_observation(
+        transport="async",
+        operation="continue",
+        method="POST",
+        path="/backend-api/conversation",
+        status=None,
+        response_class="TimeoutError",
+    )
+    monkeypatch.setattr(
+        "re_gpt.mutation_service.submit_async_prompt_once",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AmbiguousAsyncWriteError("ambiguous post", status=None, observations=(obs,))
+        ),
+    )
+    service = MutationService(db_path=tmp_path / "history.sqlite3")
+    result = service.continue_thread("abc", "hello", write_transport="async", reconcile_attempts=1)
+    assert result["state"] == "commit_unknown"
+    assert result["transport"] == "async"
+    assert result["error_class"] == "AmbiguousAsyncWriteError"
+    assert len(result["write_observations"]) == 1
+    assert dom_calls == []
+

@@ -15,6 +15,11 @@ from typing import Any, Callable, Mapping, Sequence
 
 from .async_chatgpt import AsyncChatGPT
 from .browser_observer import fetch_conversation_same_origin
+from .browser_session_replay import load_browser_session_snapshot
+from .protocol_observation import (
+    build_protocol_observation,
+    observation_from_exception,
+)
 from .sync_chatgpt import SyncChatGPT
 from .utils import get_default_model, get_default_user_agent, get_session_token
 
@@ -34,8 +39,13 @@ class RequestContextRejected(RuntimeError):
 class GraphAcquisitionFailed(RuntimeError):
     """No configured adapter returned a valid exact-thread graph."""
 
-    def __init__(self, attempts: Sequence[dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        attempts: Sequence[dict[str, Any]],
+        observations: Sequence[dict[str, Any]] = (),
+    ) -> None:
         self.attempts = tuple(dict(item) for item in attempts)
+        self.observations = tuple(dict(item) for item in observations)
         self.attempted_adapters = tuple(str(item["adapter"]) for item in self.attempts)
         self.rejected_adapters = tuple(
             str(item["adapter"]) for item in self.attempts if item.get("rejected")
@@ -55,6 +65,7 @@ class GraphAcquisitionResult:
     attempts: tuple[dict[str, Any], ...]
     attempted_adapters: tuple[str, ...]
     rejected_adapters: tuple[str, ...]
+    observations: tuple[dict[str, Any], ...] = ()
 
 
 def validate_exact_graph(graph: Any) -> dict[str, Any]:
@@ -132,6 +143,7 @@ def _build_default_fetchers(
     browser_timeout: int,
 ) -> dict[str, Callable[[str], Any]]:
     token, default_model, agent = _resolve_direct_context(session_token, model, user_agent)
+    snapshot = load_browser_session_snapshot(profile_dir=profile_dir, max_age_seconds=3600)
 
     def fetch_async(conversation_id: str):
         async def run() -> tuple[dict[str, Any], dict[str, Any]]:
@@ -139,9 +151,23 @@ def _build_default_fetchers(
                 session_token=token,
                 default_model=default_model,
                 user_agent=agent,
+                browser_session=snapshot,
             ) as client:
+                raw_headers = dict(client.build_request_headers())
+                raw_headers["Accept"] = "application/json"
+                raw_headers.pop("Content-Type", None)
                 graph = await client.fetch_conversation(conversation_id)
-                return graph, {"adapter": "async", "status": 200, "response_class": "ok"}
+                obs = build_protocol_observation(
+                    transport="async",
+                    operation="exact_read",
+                    method="GET",
+                    path=f"/backend-api/conversation/{conversation_id}",
+                    status=200,
+                    response_class="ok",
+                    headers=raw_headers,
+                    cookies=getattr(client.session, "cookies", None),
+                )
+                return graph, obs.to_dict()
 
         return asyncio.run(run())
 
@@ -150,9 +176,23 @@ def _build_default_fetchers(
             session_token=token,
             default_model=default_model,
             user_agent=agent,
+            browser_session=snapshot,
         ) as client:
+            raw_headers = dict(client.build_request_headers())
+            raw_headers["Accept"] = "application/json"
+            raw_headers.pop("Content-Type", None)
             graph = client.fetch_conversation(conversation_id)
-            return graph, {"adapter": "sync", "status": 200, "response_class": "ok"}
+            obs = build_protocol_observation(
+                transport="sync",
+                operation="exact_read",
+                method="GET",
+                path=f"/backend-api/conversation/{conversation_id}",
+                status=200,
+                response_class="ok",
+                headers=raw_headers,
+                cookies=getattr(client.session, "cookies", None),
+            )
+            return graph, obs.to_dict()
 
     def fetch_browser(conversation_id: str):
         result = fetch_conversation_same_origin(
@@ -201,8 +241,10 @@ def fetch_exact_graph(
     ))
 
     attempts: list[dict[str, Any]] = []
+    observations: list[dict[str, Any]] = []
     rejected_adapters: list[str] = []
     seen: set[str] = set()
+    seq = 0
 
     for adapter in adapter_order:
         if adapter in seen:
@@ -211,6 +253,7 @@ def fetch_exact_graph(
         fetcher = fetchers.get(adapter)
         if fetcher is None:
             continue
+        seq += 1
         started = time.perf_counter()
         try:
             graph, diagnostic = _normalize_fetch_result(fetcher(conversation_id))
@@ -219,28 +262,56 @@ def fetch_exact_graph(
             rejected = _is_request_context_rejection(exc)
             if rejected:
                 rejected_adapters.append(adapter)
+            status = _status_from_exception(exc)
             attempts.append(
                 _safe_attempt(
                     adapter,
                     elapsed_ms=elapsed_ms,
-                    status=_status_from_exception(exc),
+                    status=status,
                     response_class=exc.__class__.__name__,
                     rejected=rejected,
                 )
+            )
+            observations.append(
+                observation_from_exception(
+                    exc,
+                    transport=adapter,
+                    operation="exact_read",
+                    method="GET",
+                    path=f"/backend-api/conversation/{conversation_id}",
+                    sequence_index=seq,
+                    elapsed_ms=elapsed_ms,
+                ).to_dict()
             )
             continue
 
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         status = diagnostic.get("status")
+        resolved_status = int(status) if isinstance(status, int) else 200
+        resolved_class = str(diagnostic.get("response_class") or "ok")
         attempts.append(
             _safe_attempt(
                 adapter,
                 elapsed_ms=elapsed_ms,
-                status=int(status) if isinstance(status, int) else 200,
-                response_class=str(diagnostic.get("response_class") or "ok"),
+                status=resolved_status,
+                response_class=resolved_class,
                 rejected=False,
             )
         )
+        obs = build_protocol_observation(
+            transport=adapter,
+            operation="exact_read",
+            method=str(diagnostic.get("method") or "GET"),
+            path=str(diagnostic.get("route") or f"/backend-api/conversation/{conversation_id}"),
+            status=resolved_status,
+            response_class=resolved_class,
+            headers={name: "<redacted>" for name in diagnostic.get("header_names") or ()},
+            cookies=diagnostic.get("cookie_names") or (),
+            cookie_domains=diagnostic.get("cookie_domains") or (),
+            sequence_index=seq,
+            elapsed_ms=elapsed_ms,
+        ).to_dict()
+        observations.append(obs)
         return GraphAcquisitionResult(
             graph=graph,
             adapter=adapter,
@@ -249,6 +320,7 @@ def fetch_exact_graph(
             attempts=tuple(attempts),
             attempted_adapters=tuple(item["adapter"] for item in attempts),
             rejected_adapters=tuple(rejected_adapters),
+            observations=tuple(observations),
         )
 
-    raise GraphAcquisitionFailed(attempts)
+    raise GraphAcquisitionFailed(attempts, observations)
