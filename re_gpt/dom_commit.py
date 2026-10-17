@@ -27,8 +27,8 @@ class DomSubmissionReceipt:
     """Signals observed after a DOM submission trigger.
 
     ``commit_evidence`` means that a second trigger is unsafe, not that the
-    backend graph has already been proven durable.  Canonical graph
-    confirmation is performed separately through the validated sync reader.
+    backend graph has already been proven durable. Canonical graph confirmation
+    is performed separately through the validated exact-read broker.
     """
 
     mutation_request_seen: bool
@@ -55,7 +55,6 @@ class DomSubmissionNotObserved(RuntimeError):
 
 def is_conversation_mutation_request(method: str, url: str) -> bool:
     """Return whether a browser request is the conversation mutation POST."""
-
     if (method or "").upper() != "POST":
         return False
     path = (url or "").split("?", 1)[0].rstrip("/")
@@ -63,25 +62,26 @@ def is_conversation_mutation_request(method: str, url: str) -> bool:
 
 
 def rendered_prompt_count(page_text: str, prompt: str) -> int:
-    """Count rendered user-turn markers for an exact prompt."""
+    """Count all rendered user turns containing the exact prompt text.
 
+    Each ``You said`` segment is counted at most once, whether the prompt is the
+    first rendered item or follows an attachment card. This avoids preferring an
+    older plain-text turn over a newer attachment-bearing duplicate.
+    """
     clean = prompt.strip()
     if not clean or not page_text:
         return 0
-    exact = (page_text or "").count(f"You said:\n{clean}")
-    if exact:
-        return exact
     count = 0
     for segment in (page_text or "").split("You said:\n")[1:]:
         user_part = segment.split("\nChatGPT said:", 1)[0]
-        if clean in user_part:
+        normalized = user_part.strip()
+        if normalized == clean or normalized.endswith(f"\n{clean}") or f"\n{clean}\n" in f"\n{normalized}\n":
             count += 1
     return count
 
 
 def should_retry_dom_with_enter(receipt: DomSubmissionReceipt, prompt: str) -> bool:
     """Allow a second trigger only for a positively observed no-op click."""
-
     if receipt.commit_evidence:
         return False
     return receipt.composer_text.strip() == prompt.strip()
@@ -119,7 +119,6 @@ async def _observe_submission_receipt(
 ) -> DomSubmissionReceipt:
     deadline = time.monotonic() + max(0.25, window_ms / 1000.0)
     latest = DomSubmissionReceipt(False, False, False, False, prompt)
-
     while time.monotonic() < deadline:
         composer_text = await _composer_text(composer)
         page_text = await _main_text(relay)
@@ -133,7 +132,6 @@ async def _observe_submission_receipt(
         if latest.commit_evidence:
             return latest
         await relay.page.wait_for_timeout(100)
-
     return latest
 
 
@@ -144,12 +142,10 @@ async def _wait_for_new_assistant_turn(
     baseline_prompt_count: int,
 ) -> dict[str, Any]:
     """Wait for an assistant reply belonging to a newly rendered prompt turn."""
-
     deadline = time.monotonic() + (relay.timeout_ms / 1000.0)
     latest: dict[str, Any] | None = None
     latest_signature = ""
     stable_since: float | None = None
-
     while time.monotonic() < deadline:
         page_text = await _main_text(relay)
         if rendered_prompt_count(page_text, prompt) > baseline_prompt_count:
@@ -169,7 +165,6 @@ async def _wait_for_new_assistant_turn(
                 ):
                     return latest
         await relay.page.wait_for_timeout(700)
-
     if latest is not None:
         return latest
     raise TimeoutError("Timed out waiting for assistant response after observed DOM submission.")
@@ -177,7 +172,6 @@ async def _wait_for_new_assistant_turn(
 
 async def send_prompt_with_receipt(self: ChatGPTDomRelay, prompt: str) -> dict[str, Any]:
     """Submit through the DOM with a trigger receipt and exactly-once fallback."""
-
     prompt = prompt.strip()
     if not prompt:
         raise ValueError("prompt is empty")
@@ -212,7 +206,6 @@ async def send_prompt_with_receipt(self: ChatGPTDomRelay, prompt: str) -> dict[s
             baseline_prompt_count=baseline_prompt_count,
             mutation_requests=mutation_requests,
         )
-
         if should_retry_dom_with_enter(receipt, prompt):
             trigger = "enter"
             self._log("click produced no submission signal; retrying trigger with Enter")
@@ -224,7 +217,6 @@ async def send_prompt_with_receipt(self: ChatGPTDomRelay, prompt: str) -> dict[s
                 baseline_prompt_count=baseline_prompt_count,
                 mutation_requests=mutation_requests,
             )
-
         if not receipt.commit_evidence:
             raise DomSubmissionNotObserved(
                 "DOM send produced no mutation request, rendered user turn, stop state, "
@@ -259,7 +251,6 @@ async def send_prompt_with_receipt(self: ChatGPTDomRelay, prompt: str) -> dict[s
 
 def install_dom_commit_receipts() -> None:
     """Install the receipt-aware DOM sender once for all relay entrypoints."""
-
     if getattr(ChatGPTDomRelay.send_prompt, "_re_gpt_receipt_aware", False):
         return
     send_prompt_with_receipt._re_gpt_receipt_aware = True  # type: ignore[attr-defined]
