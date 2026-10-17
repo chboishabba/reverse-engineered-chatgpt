@@ -45,6 +45,26 @@ def test_match_expected_attachment_requires_filename_and_pointer(tmp_path: Path)
     assert matched[0].file_id == "file_123"
 
 
+def test_match_expected_attachments_does_not_reuse_one_remote_file_for_duplicate_basenames(tmp_path: Path):
+    first_dir = tmp_path / "first"
+    second_dir = tmp_path / "second"
+    first_dir.mkdir()
+    second_dir.mkdir()
+    first = first_dir / "spec.md"
+    second = second_dir / "spec.md"
+    first.write_text("one", encoding="utf-8")
+    second.write_text("two", encoding="utf-8")
+
+    ok, matched = match_expected_attachments(
+        _chat_with_attachment(filename="spec.md", file_id="file_once", mime="text/markdown", size=3),
+        "u1",
+        [LocalAttachment.from_path(first), LocalAttachment.from_path(second)],
+    )
+
+    assert ok is False
+    assert len(matched) == 1
+
+
 def test_operation_store_persists_local_and_canonical_attachment_provenance(tmp_path: Path):
     path = tmp_path / "spec.md"
     path.write_text("hello world!", encoding="utf-8")

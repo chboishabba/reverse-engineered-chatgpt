@@ -16,6 +16,11 @@ REAL_EDITOR_SELECTORS = (
     '.ProseMirror[contenteditable="true"][role="textbox"]',
 )
 PENDING_EDITOR_SELECTOR = '#pending-conversation-input'
+RENDERED_TURN_SELECTORS = (
+    TURN_SELECTOR,
+    'button[aria-label="Copy message"]',
+    'button[aria-label="Edit message"]',
+)
 
 
 @dataclass(frozen=True)
@@ -35,8 +40,6 @@ class BrowserReadiness:
             self.history_hydrated,
             self.pending_composer_absent,
             self.editor_present,
-            self.send_control_present,
-            not self.send_control_busy,
         ))
 
 
@@ -82,13 +85,12 @@ async def inspect_readiness(relay, thread_id: str) -> BrowserReadiness:
         except Exception:
             continue
 
-    history_hydrated = await _visible_count(relay.page, TURN_SELECTOR) > 0
-    if not history_hydrated:
-        try:
-            title = str(await relay.page.title() or "").strip().lower()
-        except Exception:
-            title = ""
-        history_hydrated = bool(title and title not in {"chatgpt", "new chat"})
+    # A title is populated before virtualized conversation content; it cannot
+    # certify that this exact thread's history has hydrated.
+    history_hydrated = any([
+        await _visible_count(relay.page, selector) > 0
+        for selector in RENDERED_TURN_SELECTORS
+    ])
 
     return BrowserReadiness(
         thread_id, authenticated, history_hydrated, pending_absent,

@@ -233,11 +233,18 @@ def iter_canonical_attachments(chat: Mapping[str, Any]) -> list[CanonicalAttachm
 def match_expected_attachments(chat: Mapping[str, Any], user_node_id: str, expected: Sequence[LocalAttachment]) -> tuple[bool, list[CanonicalAttachment]]:
     actual = canonical_attachments_for_user_node(chat, user_node_id)
     matched: list[CanonicalAttachment] = []
+    used: set[tuple[str, str, str | None]] = set()
     for item in expected:
-        candidates = [entry for entry in actual if entry.filename == item.filename]
+        candidates = [
+            entry for entry in actual
+            if entry.filename == item.filename
+            and (entry.file_id, entry.filename, entry.pointer) not in used
+        ]
         if item.mime_type:
             candidates = [entry for entry in candidates if not entry.mime_type or entry.mime_type == item.mime_type]
         candidates = [entry for entry in candidates if bool(entry.file_id or entry.pointer)]
         if not candidates: return False, matched
-        matched.append(candidates[-1])
+        selected = candidates[-1]
+        matched.append(selected)
+        used.add((selected.file_id, selected.filename, selected.pointer))
     return True, matched

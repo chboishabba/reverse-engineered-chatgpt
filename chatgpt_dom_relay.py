@@ -43,6 +43,7 @@ EDITOR_TEXT_SELECTORS = (
     "#prompt-textarea > p:nth-child(1)",
     "#prompt-textarea",
     "textarea[placeholder]",
+    'div[role="textbox"][contenteditable="true"]',
 )
 SEND_BUTTON_SELECTORS = (
     "#composer-submit-button",

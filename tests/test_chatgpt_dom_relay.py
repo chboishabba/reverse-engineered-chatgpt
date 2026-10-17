@@ -28,6 +28,10 @@ def test_editor_text_selectors_include_textarea_fallback() -> None:
     assert "textarea[placeholder]" in EDITOR_TEXT_SELECTORS
 
 
+def test_editor_text_selectors_include_current_prosemirror_composer() -> None:
+    assert 'div[role="textbox"][contenteditable="true"]' in EDITOR_TEXT_SELECTORS
+
+
 def test_extract_thread_id_from_url() -> None:
     assert (
         extract_thread_id("https://chatgpt.com/c/6a33ae58-cb84-83ec-b187-ddab3179ccbb")
