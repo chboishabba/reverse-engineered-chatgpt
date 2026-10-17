@@ -53,6 +53,18 @@ def install_stream_first_follow() -> None:
     direct_graph_mutation.submit_direct_graph_mutation_once = stream_graph_submit
     mutation_service.submit_direct_graph_mutation_once = stream_graph_submit
 
+    original_browser_submit = mutation_service.submit_prompt
+
+    @functools.wraps(original_browser_submit)
+    def terminal_browser_submit(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        active = current_stream_state()
+        if active is not None and active.follow_requested:
+            kwargs["follow"] = True
+        return original_browser_submit(*args, **kwargs)
+
+    terminal_browser_submit._re_gpt_stream_first = True
+    mutation_service.submit_prompt = terminal_browser_submit
+
     original_continue = mutation_service.MutationService.continue_thread
 
     @functools.wraps(original_continue)
@@ -64,10 +76,11 @@ def install_stream_first_follow() -> None:
         no_poll["follow"] = False
         no_poll["reconcile_attempts"] = 1
         no_poll["reconcile_interval"] = 0.0
-        with stream_runtime(progress_callback) as state:
+        with stream_runtime(progress_callback, follow_requested=True) as state:
             result = original_continue(self, *args, **no_poll)
             return dict(result) | state.summary() | {
                 "follow_mode": "stream_terminal_single_reconcile",
+                "terminal_reconcile_count": 1,
                 "reconcile_poll_count": 0,
             }
 
@@ -85,10 +98,11 @@ def install_stream_first_follow() -> None:
         no_poll["follow"] = False
         no_poll["reconcile_attempts"] = 1
         no_poll["reconcile_interval"] = 0.0
-        with stream_runtime(None) as state:
+        with stream_runtime(None, follow_requested=True) as state:
             result = original_run_graph(self, operation, *args, **no_poll)
             return dict(result) | state.summary() | {
                 "follow_mode": "stream_terminal_single_reconcile",
+                "terminal_reconcile_count": 1,
                 "reconcile_poll_count": 0,
             }
 
