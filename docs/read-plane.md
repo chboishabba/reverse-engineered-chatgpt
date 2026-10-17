@@ -1,10 +1,10 @@
 # Canonical conversation read plane
 
-For an exact ChatGPT conversation ID or conversation URL, canonical truth is the validated conversation graph plus the shared SQLite archive. No transport is canonical by identity.
+For an exact ChatGPT conversation ID, canonical local truth is a validated conversation graph plus the shared SQLite archive. No transport is canonical merely because of its adapter name.
 
-## Adapter-independent exact graph broker
+## GraphBroker
 
-Mutation reconciliation uses:
+Mutation reconciliation and direct exact reads use:
 
 ```python
 from re_gpt.graph_broker import fetch_exact_graph
@@ -12,63 +12,79 @@ from re_gpt.graph_broker import fetch_exact_graph
 result = fetch_exact_graph(conversation_id)
 ```
 
-The current acquisition order is:
+Default acquisition order:
 
 ```text
 async curl_cffi exact GET
-  -> accepted: validate graph -> shared persistence/receipt path
-  -> rejected/fails: one bounded attempt only
+  -> validate graph
 sync curl_cffi exact GET
-  -> accepted: same validation/persistence path
-  -> rejected/fails: one bounded attempt only
+  -> validate graph
 browser same-origin exact GET
-  -> accepted: same validation/persistence path
-  -> otherwise: commit_unknown / acquisition failure
+  -> validate graph
 ```
 
-This ordering reflects live evidence from the API-first tranche: async exact reads succeeded on short, medium and long conversations while other request contexts could receive 429s. The broker contract, rather than the adapter name, is stable.
+Each adapter is attempted at most once per broker call. The first valid graph wins and flows through the same persistence/receipt path.
 
-Each successful result carries the validated graph, adapter used, timing, attempted adapters, rejected adapters, and redacted observations. Adapter failures never create a second archive format.
+A successful broker result includes:
 
-A 429 / `Too Many Requests` is treated as rejection of that request context for the current operation. It does **not** establish account-wide throttling or conversation absence. The rejected adapter is not immediately retried in the same operation, and no post-submission read failure can trigger mutation resubmission.
+- validated graph;
+- adapter used;
+- timing;
+- attempted adapters;
+- rejected adapters;
+- redaction-safe protocol observations.
 
-## Existing-thread API-first phase
+## Request-context rejection
 
-Text continuation now has a demonstrated direct async/CFFI transport path in addition to the DOM fallback. Promotion remains receipt-driven:
+A 429 / `Too Many Requests` is rejection of that concrete request context for the current broker call. It is not treated as proof of conversation absence or account-wide throttling.
+
+A rejected adapter is skipped for the remainder of the current reconciliation loop where appropriate. Read failures after mutation dispatch never cause mutation resubmission.
+
+## Mutation reconciliation
+
+Every supported mutation converges on an exact graph read:
 
 ```text
-one async HTTP mutation attempt
-  -> submission evidence
-  -> exact graph broker
-  -> canonical user node
-  -> optional final assistant descendant
-  -> SQLite mutation receipt
+one mutation dispatch
+-> exact GraphBroker read
+-> operation-specific graph identity check
+-> ConversationStorage / AttachmentArchive
+-> durable MutationOperationStore state
 ```
 
-Post-dispatch transport failures, HTTP 5xx responses, missing SSE data, and cleanup failures are ambiguous outcomes. They must never be reported as safe precommit failures and must never cause automatic resend or DOM fallback. Explicit 4xx rejection remains distinguishable from an ambiguous dispatched POST.
+Operation-specific checks include:
 
-The synchronous wrapper used by MCP/library entrypoints is running-event-loop aware: async work moves to a worker thread when a caller already owns an event loop rather than nesting `asyncio.run()` on that thread.
+- tail continuation — exact prompt/time receipt;
+- attachments — expected local file bound to canonical graph attachment;
+- new conversation — assigned server conversation ID plus new user/assistant turn;
+- branch — new user node beneath exact requested parent;
+- regenerate — new assistant variant beneath exact requested user node;
+- edit-and-branch — replacement user node beneath the original user's canonical parent.
+
+Reasoning/tool intermediate nodes are traversed when locating the visible assistant descendant.
+
+## Exactly-once interaction with reads
+
+After conversation POST dispatch, failures such as timeout/reset, HTTP 5xx, or HTTP 200 without usable SSE data are ambiguous. The system moves to read/reconciliation only.
+
+An exact-read failure may leave the operation `commit_unknown`, but it must never trigger automatic resend or a DOM fallback mutation.
+
+Explicit pre-commit rejection remains distinguishable and is the only direct-write condition under which ordinary continuation may use configured DOM fallback.
 
 ## Session snapshot boundary
 
-Authenticated browser-session snapshots are explicit operational state, not an automatic side effect of ordinary DOM mutation or diagnostics.
+Authenticated browser-session snapshots are explicit local operational state:
 
-- ordinary mutation/diagnostic recording does not persist a snapshot;
-- explicit session capture may persist one when requested;
-- persisted snapshot files are created private (`0600`) from the first write and atomically replace the prior snapshot;
-- diagnostic receipts contain structural metadata only and never merge unknown raw fields back into sanitized observations.
+- ordinary reads/mutations do not persist a new snapshot merely because a profile is configured;
+- explicit bootstrap/capture may persist one;
+- persisted snapshots are written through private (`0600`) temporary files and atomically replaced;
+- redacted diagnostics do not serialize raw cookie/bearer/sentinel values.
 
-## Supported single-conversation operations
+## Compatibility reads
 
-The `re-gpt` entrypoint retains exact-ID semantics for:
+`SyncConversation.fetch_chat()` remains a compatibility surface over validated exact-ID fetching. Exact conversation lookup failures do not silently expand into remote catalog search/pagination.
 
-- `re-gpt --view <UUID>`;
-- `re-gpt --download <UUID>`;
-- interactive resume through legacy `SyncConversation.fetch_chat()` callers;
-- post-write reconciliation through the graph broker;
-- direct library callers that still invoke `SyncConversation.fetch_chat()`.
-
-`SyncConversation.fetch_chat()` remains a compatibility surface. Exact-ID failures must not expand into remote catalog pagination.
+Legacy list/view/download catalog helpers remain available for archive workflows, but mutation reconciliation always uses exact conversation identity.
 
 ## Differential diagnostics
 
@@ -78,14 +94,8 @@ Use:
 python -m re_gpt.read_diagnostics <conversation-uuid>
 ```
 
-to compare exact-read transports. Output is redacted to structural request/response metadata such as adapter, method/path, header and cookie names, status, timing, and response class. Cookie values, bearer tokens, device identifiers, raw response bodies, and arbitrary unknown diagnostic fields are not emitted.
+The diagnostic output describes structural request/response facts such as adapter, method/path, header/cookie names, status, timing and response class. It excludes secret values and raw transcript bodies.
 
-## Structurer pulls
+## Persistence
 
-The structurer may select an explicit engine for experiments, but the mutation architecture should consume the broker rather than encode an adapter as canonical. Exact conversation identity must be validated before ingestion.
-
-## Merge/release criterion for this tranche
-
-The proven baseline for PR #41 established async exact reads across short/medium/long threads, canonical async text-write receipts, DOM fallback writes, canonical attachment receipts, and a green local suite. Subsequent hardening changes specifically address exactly-once ambiguity, MCP event-loop compatibility, snapshot safety, diagnostic redaction, attachment cleanup, DOM duplicate-turn selection, strict status parsing, and recorder shutdown races.
-
-The hardening head still requires a fresh full test run and one paced async-write canonical receipt before merge/release is claimed. Do not substitute the earlier baseline receipt for verification of later hardening commits.
+Accepted graphs are persisted through `ConversationStorage`. Canonical attachments are additionally persisted through `AttachmentArchive`. JSON export is optional; SQLite is the normal local archive.
