@@ -15,6 +15,8 @@ from mcp.server.fastmcp import FastMCP
 
 from .browser_observer import observe_live_status
 from .mutation_service import MutationService
+from .protocol_drift import build_protocol_fingerprint, compare_protocol_fingerprints
+from .session_lifecycle import SessionLifecycle
 from .storage import DEFAULT_DB_PATH
 
 mcp = FastMCP("re-gpt")
@@ -46,11 +48,7 @@ def chatgpt_continue(
 
 
 @mcp.tool()
-def chatgpt_new(
-    prompt: str,
-    follow: bool = False,
-    db_path: str | None = None,
-) -> dict[str, Any]:
+def chatgpt_new(prompt: str, follow: bool = False, db_path: str | None = None) -> dict[str, Any]:
     """Create a new conversation through the direct async API and return its assigned conversation ID."""
     return _service(db_path).new_conversation(prompt, follow=follow)
 
@@ -66,11 +64,7 @@ def chatgpt_branch(
 ) -> dict[str, Any]:
     """Create a user branch from an exact canonical graph parent node."""
     return _service(db_path).branch_from_node(
-        conversation_id,
-        parent_node_id,
-        prompt,
-        attachments=attachments or (),
-        follow=follow,
+        conversation_id, parent_node_id, prompt, attachments=attachments or (), follow=follow,
     )
 
 
@@ -82,11 +76,7 @@ def chatgpt_regenerate(
     db_path: str | None = None,
 ) -> dict[str, Any]:
     """Generate another assistant variant from an exact canonical user node."""
-    return _service(db_path).regenerate(
-        conversation_id,
-        user_node_id,
-        follow=follow,
-    )
+    return _service(db_path).regenerate(conversation_id, user_node_id, follow=follow)
 
 
 @mcp.tool()
@@ -100,12 +90,68 @@ def chatgpt_edit_branch(
 ) -> dict[str, Any]:
     """Replace an exact user node's text by creating a sibling user branch."""
     return _service(db_path).edit_and_branch(
-        conversation_id,
-        user_node_id,
-        prompt,
-        attachments=attachments or (),
-        follow=follow,
+        conversation_id, user_node_id, prompt, attachments=attachments or (), follow=follow,
     )
+
+
+@mcp.tool()
+def chatgpt_session_status(profile_dir: str | None = None, snapshot_path: str | None = None) -> dict[str, Any]:
+    """Return redacted local session freshness/expiry state without exposing token or cookie values."""
+    return SessionLifecycle().status(profile_dir=profile_dir, snapshot_path=snapshot_path)
+
+
+@mcp.tool()
+def chatgpt_session_bootstrap(
+    profile_dir: str | None = None,
+    snapshot_path: str | None = None,
+    browser_mode: str = "displayless",
+    cdp_endpoint: str | None = None,
+    timeout: int = 30,
+) -> dict[str, Any]:
+    """Capture fresh owned browser session state from the lightweight ChatGPT root context."""
+    return SessionLifecycle().bootstrap(
+        profile_dir=profile_dir,
+        snapshot_path=snapshot_path,
+        browser_mode=browser_mode,
+        cdp_endpoint=cdp_endpoint,
+        timeout=timeout,
+    )
+
+
+@mcp.tool()
+def chatgpt_session_refresh(
+    profile_dir: str | None = None,
+    snapshot_path: str | None = None,
+    browser_mode: str = "displayless",
+    cdp_endpoint: str | None = None,
+    timeout: int = 30,
+) -> dict[str, Any]:
+    """Refresh persisted owned browser session state and return only a redacted status receipt."""
+    return SessionLifecycle().refresh(
+        profile_dir=profile_dir,
+        snapshot_path=snapshot_path,
+        browser_mode=browser_mode,
+        cdp_endpoint=cdp_endpoint,
+        timeout=timeout,
+    )
+
+
+@mcp.tool()
+def chatgpt_session_doctor(profile_dir: str | None = None, snapshot_path: str | None = None) -> dict[str, Any]:
+    """Classify session failure mode and recommend bootstrap/refresh actions without secrets."""
+    return SessionLifecycle().doctor(profile_dir=profile_dir, snapshot_path=snapshot_path)
+
+
+@mcp.tool()
+def chatgpt_protocol_fingerprint(observations: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build a value-free structural protocol fingerprint from redacted observations."""
+    return build_protocol_fingerprint(observations)
+
+
+@mcp.tool()
+def chatgpt_protocol_compare(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    """Compare two structural fingerprints and classify compatible/drift_suspected/incompatible."""
+    return compare_protocol_fingerprints(baseline, candidate)
 
 
 @mcp.tool()
