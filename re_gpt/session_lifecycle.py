@@ -19,7 +19,7 @@ from .browser_session_replay import (
 DEFAULT_EXPIRY_SKEW_SECONDS = 30.0
 
 
-class StaleSessionError(RuntimeError):
+class StaleSessionError(ValueError):
     """Raised before mutation dispatch when persisted session expiry is provably stale."""
 
 
