@@ -15,7 +15,7 @@ from typing import Any, Sequence
 
 from .attachment_archive import AttachmentArchive
 from .attachments import LocalAttachment, match_expected_attachments
-from .browser_observer import BrowserObservationError, fetch_conversation_same_origin
+from .browser_observer import fetch_conversation_same_origin
 from .browser_write import BrowserWriteError, submit_prompt
 from .mutation_receipt import classify_prompt_mutation
 from .operation_store import MutationOperationStore
@@ -194,7 +194,7 @@ class MutationService:
                     cdp_endpoint=cdp_endpoint,
                     browser_timeout=browser_timeout,
                 )
-            except BrowserObservationError as browser_exc:
+            except Exception as browser_exc:  # noqa: BLE001 - preserve both transport failures.
                 raise DirectClientRejected(
                     f"direct exact-thread client rejected ({sync_exc}); browser fallback failed ({browser_exc})"
                 ) from browser_exc
