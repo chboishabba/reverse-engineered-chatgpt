@@ -20,8 +20,8 @@
 
 ## Hardening / resilience
 
-- [ ] Run the full local pytest suite on the graph-mutation branch and record the exact pass/skip receipt.
-- [ ] Run `scripts/accept_graph_mutations_v1.py` against a sacrificial account thread and retain canonical complete receipts for all four graph operations.
+- [x] Run the full local pytest suite on the graph-mutation branch and record the exact pass/skip receipt (221 passed, 1 skipped).
+- [x] Run `scripts/accept_graph_mutations_v1.py` against a sacrificial account thread and retain canonical complete receipts for all four graph operations.
 - [ ] Expand the attachment acceptance matrix: multiple files, duplicate basenames, larger files and non-text MIME types.
 - [ ] Add explicit session-bootstrap / refresh lifecycle commands and expiry diagnostics.
 - [ ] Add protocol-drift detection against redacted browser-oracle captures.
