@@ -143,3 +143,76 @@ def test_branch_regenerate_and_edit_route_exact_node_ids(monkeypatch) -> None:
         ("regenerate", "c1", "u0"),
         ("edit", "c1", "u0", "replacement"),
     ]
+
+
+def test_write_main_streams_tokens_and_writes_output_file(monkeypatch, tmp_path: Path, capsys) -> None:
+    seen = {}
+    output_path = tmp_path / "sub" / "reply.md"
+
+    class FakeService:
+        def __init__(self, **kwargs):
+            pass
+
+        def continue_thread(self, *args, **kwargs):
+            seen.update(kwargs)
+            cb = kwargs.get("progress_callback")
+            if cb:
+                cb({"kind": "token_delta", "delta": "part1 "})
+                cb({"kind": "token_delta", "delta": "part2"})
+            return {
+                "operation_id": "op-stream",
+                "conversation_id": "c1",
+                "state": "complete",
+                "user_node_id": "u1",
+                "assistant_node_id": "a1",
+                "assistant_text": "part1 part2",
+            }
+
+    monkeypatch.setattr(entrypoint, "MutationService", FakeService)
+    code = entrypoint.write_main([
+        "--send", "c1",
+        "--prompt", "test",
+        "--stream",
+        "--output", str(output_path),
+    ])
+    assert code == 0
+    assert seen["follow"] is True
+    assert callable(seen["progress_callback"])
+
+    # Output file contains full reply text
+    assert output_path.read_text(encoding="utf-8") == "part1 part2\n"
+
+    # stdout captures streamed tokens followed by completion metadata
+    out = capsys.readouterr().out
+    assert "part1 part2" in out
+    assert "[re-gpt] complete" in out
+
+
+def test_top_level_convenience_functions(monkeypatch, tmp_path: Path) -> None:
+    from re_gpt import continue_thread, new_conversation
+    output_file = tmp_path / "direct.md"
+
+    class FakeService:
+        def __init__(self, **kwargs):
+            pass
+
+        def continue_thread(self, conversation, prompt, **kwargs):
+            cb = kwargs.get("progress_callback")
+            if cb:
+                cb({"kind": "token_delta", "delta": "DIRECT-ACK"})
+            return {"conversation_id": conversation, "state": "complete", "assistant_text": "DIRECT-ACK"}
+
+        def new_conversation(self, prompt, **kwargs):
+            return {"conversation_id": "new-conv", "state": "complete", "assistant_text": "NEW-CONV-ACK"}
+
+    monkeypatch.setattr("re_gpt.mutation_service.MutationService", FakeService)
+
+    res1 = continue_thread("c-direct", "hello", stream=True, output=output_file)
+    assert res1["state"] == "complete"
+    assert output_file.read_text(encoding="utf-8") == "DIRECT-ACK\n"
+
+    out2 = tmp_path / "new.md"
+    res2 = new_conversation("start", output=out2)
+    assert res2["conversation_id"] == "new-conv"
+    assert out2.read_text(encoding="utf-8") == "NEW-CONV-ACK\n"
+

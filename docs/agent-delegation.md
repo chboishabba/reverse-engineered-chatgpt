@@ -45,38 +45,37 @@ When prompting the remote agent for an implementation tranche:
 3. **Clear Acceptance Gates**: List the specific tests, invariants, and acceptance scripts the local agent will run to certify the PR.
 4. **Division of Labor Reminder**: Clarify that execution and verification are owned locally; they own implementation and PR readiness.
 
-### Invoking via Python (`MutationService`)
+### Invoking via Python (`re_gpt`)
 
 ```python
-from re_gpt.mutation_service import MutationService
+from re_gpt import continue_thread
 
-service = MutationService()
-worker_thread_id = "6ad2d380-e204-83ec-b132-05289418989a"
-
-prompt = """### Milestone: Implement Feature X
-Implement the feature on branch maxcut/feature-x-20261017 using your GitHub connector.
-Requirements:
-- ...
-Open a PR when complete. Do not paste full file code in chat.
-"""
-
-# For long-running reasoning tasks, follow=False dispatches immediately
-result = service.continue_thread(
-    worker_thread_id,
+# 1-liner to dispatch, stream live tokens to stdout, and save clean markdown reply to a file:
+res = continue_thread(
+    "6ad2d380-e204-83ec-b132-05289418989a",
     prompt,
-    profile_dir="./chatgpt_browser_profile",
-    follow=False,
+    follow=True,
+    stream=True,
+    output="response.md",
 )
-print("Dispatched:", result.get("state"), result.get("operation_id"))
 ```
 
-### Invoking via CLI
+### Invoking via CLI (`re-gpt`)
 
 ```bash
-python -m re_gpt.entrypoint \
-  --send <WORKER_THREAD_ID> \
-  --prompt "Implement Milestone X on branch maxcut/... using your GitHub connector and open PR" \
-  --profile-dir ./chatgpt_browser_profile
+# 1-liner: read prompt, stream tokens live, and save markdown reply to a file:
+re-gpt --send <THREAD_ID> \
+       --stream \
+       --follow \
+       --output response.md <<'PROMPT'
+Implement Milestone X on branch maxcut/... using your GitHub connector and open PR.
+PROMPT
+
+# Or via prompt file:
+re-gpt --send <THREAD_ID> \
+       --prompt-file prompt.txt \
+       --stream \
+       --output response.md
 ```
 
 ---

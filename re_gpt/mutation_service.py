@@ -8,6 +8,7 @@ an exact conversation graph and persisted through the same SQLite path.
 
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -996,3 +997,115 @@ class MutationService:
                 if key in submission and key not in last:
                     last = dict(last) | {key: submission[key]}
         return last
+
+
+def continue_thread(
+    conversation: str,
+    prompt: str,
+    *,
+    attachments: Sequence[Path | str] = (),
+    profile_dir: Path | str | None = None,
+    browser_mode: str = "displayless",
+    cdp_endpoint: str | None = None,
+    browser_timeout: int = 60,
+    write_transport: str = "async",
+    dom_fallback: bool = False,
+    reconcile_attempts: int = 3,
+    reconcile_interval: float = 1.0,
+    follow: bool = False,
+    follow_timeout: float = 60.0,
+    progress_callback: Any = None,
+    stream: bool = False,
+    output: Path | str | None = None,
+    db_path: Path | str = DEFAULT_DB_PATH,
+    session_token: str | None = None,
+    model: str | None = None,
+    export_json: bool = False,
+) -> dict[str, Any]:
+    """Top-level convenience function to continue an existing thread."""
+    if stream and progress_callback is None:
+        def on_progress(event: dict[str, Any]) -> None:
+            if event.get("kind") == "token_delta":
+                delta = str(event.get("delta") or "")
+                if delta:
+                    sys.stdout.write(delta)
+                    sys.stdout.flush()
+
+        progress_callback = on_progress
+        follow = True
+
+    service = MutationService(
+        session_token=session_token,
+        model=model,
+        export_json=export_json,
+        db_path=db_path,
+    )
+    res = service.continue_thread(
+        conversation,
+        prompt,
+        attachments=attachments,
+        profile_dir=profile_dir,
+        browser_mode=browser_mode,
+        cdp_endpoint=cdp_endpoint,
+        browser_timeout=browser_timeout,
+        write_transport=write_transport,
+        dom_fallback=dom_fallback,
+        reconcile_attempts=reconcile_attempts,
+        reconcile_interval=reconcile_interval,
+        follow=follow,
+        follow_timeout=follow_timeout,
+        progress_callback=progress_callback,
+    )
+    if stream:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+    if output:
+        out_path = Path(output).expanduser()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        reply = str(res.get("assistant_text") or "")
+        out_path.write_text(reply + ("\n" if reply else ""), encoding="utf-8")
+    return res
+
+
+def new_conversation(
+    prompt: str,
+    *,
+    profile_dir: Path | str | None = None,
+    browser_mode: str = "displayless",
+    cdp_endpoint: str | None = None,
+    browser_timeout: int = 60,
+    reconcile_attempts: int = 3,
+    reconcile_interval: float = 1.0,
+    follow: bool = False,
+    follow_timeout: float = 60.0,
+    stream: bool = False,
+    output: Path | str | None = None,
+    db_path: Path | str = DEFAULT_DB_PATH,
+    session_token: str | None = None,
+    model: str | None = None,
+    export_json: bool = False,
+) -> dict[str, Any]:
+    """Top-level convenience function to start a new conversation."""
+    service = MutationService(
+        session_token=session_token,
+        model=model,
+        export_json=export_json,
+        db_path=db_path,
+    )
+    res = service.new_conversation(
+        prompt,
+        profile_dir=profile_dir,
+        browser_mode=browser_mode,
+        cdp_endpoint=cdp_endpoint,
+        browser_timeout=browser_timeout,
+        reconcile_attempts=reconcile_attempts,
+        reconcile_interval=reconcile_interval,
+        follow=follow or stream,
+        follow_timeout=follow_timeout,
+    )
+    if output:
+        out_path = Path(output).expanduser()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        reply = str(res.get("assistant_text") or "")
+        out_path.write_text(reply + ("\n" if reply else ""), encoding="utf-8")
+    return res

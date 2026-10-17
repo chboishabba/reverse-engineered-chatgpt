@@ -100,15 +100,28 @@ def build_write_parser() -> argparse.ArgumentParser:
     parser.add_argument("--export-json", action="store_true")
     parser.add_argument("--follow", action="store_true", help="Keep reconciling until a visible assistant descendant appears.")
     parser.add_argument("--follow-timeout", type=float, default=60.0)
+    parser.add_argument("--output", "-o", type=Path, help="Write assistant response text directly to this file.")
+    parser.add_argument("--stream", action="store_true", help="Stream token deltas live to stdout as they arrive.")
     return parser
 
 
-def _print_result(result: dict[str, Any]) -> int:
+def _print_result(
+    result: dict[str, Any],
+    *,
+    output_file: Path | None = None,
+    streamed: bool = False,
+) -> int:
     state = str(result.get("state") or "commit_unknown")
     operation_id = str(result.get("operation_id") or "")
     assistant = str(result.get("assistant_text") or "").strip()
-    if assistant:
+    if output_file:
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text(assistant + ("\n" if assistant else ""), encoding="utf-8")
+    if assistant and not streamed:
         print(assistant)
+    elif streamed:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
     attachment_ids = result.get("attachment_ids") or []
     suffix = f" attachments={','.join(attachment_ids)}" if attachment_ids else ""
     conversation_id = result.get("conversation_id")
@@ -140,12 +153,21 @@ def write_main(argv: list[str] | None = None) -> int:
     try:
         prompt = resolve_prompt(args.prompt, args.prompt_file, stdin=sys.stdin) if needs_prompt else None
         service = MutationService(session_token=args.key, model=args.model, export_json=args.export_json)
+        streamed = bool(args.stream)
+
+        def on_progress(event: dict[str, Any]) -> None:
+            if event.get("kind") == "token_delta":
+                delta = str(event.get("delta") or "")
+                if delta:
+                    sys.stdout.write(delta)
+                    sys.stdout.flush()
+
         common = {
             "profile_dir": args.browser_profile,
             "browser_mode": args.browser_mode,
             "cdp_endpoint": args.cdp_endpoint,
             "browser_timeout": args.write_timeout,
-            "follow": args.follow,
+            "follow": args.follow or streamed,
             "follow_timeout": args.follow_timeout,
         }
         if args.send:
@@ -155,6 +177,7 @@ def write_main(argv: list[str] | None = None) -> int:
                 attachments=args.attach,
                 write_transport=args.write_transport,
                 dom_fallback=args.dom_fallback,
+                progress_callback=on_progress if streamed else None,
                 **common,
             )
         elif args.new:
@@ -193,13 +216,22 @@ def write_main(argv: list[str] | None = None) -> int:
     except Exception as exc:  # noqa: BLE001 - do not convert uncertain mutations into retries.
         print(f"error: mutation status is uncertain: {exc}. Do not resend automatically.", file=sys.stderr)
         return 2
-    return _print_result(result)
+    return _print_result(result, output_file=args.output, streamed=streamed)
 
 
 def main() -> int:
     graph_flags = ("--send", "--new", "--branch", "--regenerate", "--edit-branch")
+    legacy_flags = (
+        "--list", "--view", "--inspect", "--download", "--latest", "--since-last",
+        "--nostore", "--browser-login", "--list-follow-out",
+    )
     if any(arg == flag or arg.startswith(flag + "=") for arg in sys.argv[1:] for flag in graph_flags):
         return write_main(sys.argv[1:])
+    if any(arg == flag or arg.startswith(flag + "=") for arg in sys.argv[1:] for flag in legacy_flags):
+        legacy_main()
+        return 0
+    if "-h" in sys.argv[1:] or "--help" in sys.argv[1:]:
+        return write_main(["--help"])
     legacy_main()
     return 0
 
