@@ -80,13 +80,50 @@ def test_direct_client_rejection_falls_back_to_browser_reader(monkeypatch, tmp_p
 
     def browser_ok(conversation_id, **kwargs):
         calls.append(("browser", conversation_id))
-        return {"chat": _chat("hello"), "new_messages": 1, "total_messages": 1, "read_adapter": "browser"}
+        return {
+            "chat": _chat("hello"),
+            "new_messages": 1,
+            "total_messages": 1,
+            "read_adapter": "browser",
+            "direct_client_rejected": kwargs.get("direct_client_rejected", False),
+        }
 
     monkeypatch.setattr(service, "_pull_sync_and_persist", sync_rejected)
     monkeypatch.setattr(service, "_pull_browser_and_persist", browser_ok)
     result = service._pull_and_persist("abc", browser_fallback=True)
     assert result["read_adapter"] == "browser"
+    assert result["direct_client_rejected"] is True
     assert calls == [("sync", "abc"), ("browser", "abc")]
+
+
+def test_direct_rejection_is_sticky_across_reconcile_attempts(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("re_gpt.mutation_service.submit_prompt", lambda *args, **kwargs: _browser_result())
+    service = MutationService(db_path=tmp_path / "history.sqlite3")
+    sync_calls = []
+    browser_calls = []
+
+    def sync_rejected(conversation_id):
+        sync_calls.append(conversation_id)
+        raise RuntimeError("HTTP 429 Too Many Requests from direct client")
+
+    def browser_eventual(conversation_id, **kwargs):
+        browser_calls.append((conversation_id, kwargs.get("direct_client_rejected")))
+        chat = {"mapping": {}} if len(browser_calls) == 1 else _chat("hello")
+        return {
+            "chat": chat,
+            "new_messages": 0 if len(browser_calls) == 1 else 1,
+            "total_messages": 0 if len(browser_calls) == 1 else 1,
+            "read_adapter": "browser",
+            "read_diagnostic": {},
+            "direct_client_rejected": kwargs.get("direct_client_rejected", False),
+        }
+
+    monkeypatch.setattr(service, "_pull_sync_and_persist", sync_rejected)
+    monkeypatch.setattr(service, "_pull_browser_and_persist", browser_eventual)
+    result = service.continue_thread("abc", "hello", reconcile_attempts=2, reconcile_interval=0)
+    assert result["state"] == "committed_pending"
+    assert sync_calls == ["abc"]
+    assert browser_calls == [("abc", True), ("abc", True)]
 
 
 def test_sync_429_after_dom_evidence_is_direct_client_rejection(monkeypatch, tmp_path) -> None:
