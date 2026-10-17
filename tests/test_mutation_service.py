@@ -70,6 +70,25 @@ def test_missing_canonical_user_node_never_retries_browser(monkeypatch, tmp_path
     assert len(calls) == 1
 
 
+def test_direct_client_rejection_falls_back_to_browser_reader(monkeypatch, tmp_path) -> None:
+    service = MutationService(db_path=tmp_path / "history.sqlite3")
+    calls = []
+
+    def sync_rejected(conversation_id):
+        calls.append(("sync", conversation_id))
+        raise RuntimeError("HTTP 429 Too Many Requests from direct client")
+
+    def browser_ok(conversation_id, **kwargs):
+        calls.append(("browser", conversation_id))
+        return {"chat": _chat("hello"), "new_messages": 1, "total_messages": 1, "read_adapter": "browser"}
+
+    monkeypatch.setattr(service, "_pull_sync_and_persist", sync_rejected)
+    monkeypatch.setattr(service, "_pull_browser_and_persist", browser_ok)
+    result = service._pull_and_persist("abc", browser_fallback=True)
+    assert result["read_adapter"] == "browser"
+    assert calls == [("sync", "abc"), ("browser", "abc")]
+
+
 def test_sync_429_after_dom_evidence_is_direct_client_rejection(monkeypatch, tmp_path) -> None:
     calls = []
     def fake_submit(*args, **kwargs):
