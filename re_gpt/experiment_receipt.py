@@ -1,6 +1,6 @@
 """Redaction-first structural receipts for bounded accessibility experiments.
 
-The canonical conversation graph is projected before hashing or diffing.  Raw
+The canonical conversation graph is projected before hashing or diffing. Raw
 message parts, arbitrary metadata values, attachment pointers, credentials and
 local paths are deliberately excluded so receipts can be shared for debugging.
 """
@@ -29,9 +29,8 @@ def _pointer_type(pointer: str | None) -> str | None:
     return "present"
 
 
-def _project_attachment(node_id: str, attachment: Any) -> dict[str, Any]:
+def _project_attachment(attachment: Any) -> dict[str, Any]:
     return {
-        "node_id": node_id,
         "file_id": str(getattr(attachment, "file_id", "") or ""),
         "filename": str(getattr(attachment, "filename", "") or ""),
         "mime_type": getattr(attachment, "mime_type", None),
@@ -41,16 +40,29 @@ def _project_attachment(node_id: str, attachment: Any) -> dict[str, Any]:
     }
 
 
-def _project_node(chat: Mapping[str, Any], node_id: str, node: Mapping[str, Any], current_node: str | None) -> dict[str, Any]:
+def _project_node(
+    chat: Mapping[str, Any],
+    node_id: str,
+    node: Mapping[str, Any],
+    current_node: str | None,
+) -> dict[str, Any]:
     message = _mapping(node.get("message"))
     author = _mapping(message.get("author"))
     content = _mapping(message.get("content"))
     metadata = _mapping(message.get("metadata"))
     attachments = [
-        _project_attachment(node_id, item)
+        _project_attachment(item)
         for item in canonical_attachments_for_node(chat, node_id)
     ]
-    attachments.sort(key=lambda item: (item["file_id"], item["filename"], item["mime_type"] or ""))
+    attachments.sort(
+        key=lambda item: (
+            item["file_id"],
+            item["filename"],
+            str(item["mime_type"] or ""),
+            int(item["size"]) if isinstance(item["size"], int) else -1,
+            str(item["pointer_type"] or ""),
+        )
+    )
     return {
         "node_id": node_id,
         "parent": str(node.get("parent")) if node.get("parent") is not None else None,
@@ -109,8 +121,21 @@ def _edges(projected: Mapping[str, Any]) -> set[tuple[str, str]]:
     return result
 
 
-def _attachments(projected: Mapping[str, Any]) -> dict[tuple[Any, ...], dict[str, Any]]:
-    result: dict[tuple[Any, ...], dict[str, Any]] = {}
+def _attachment_sort_key(item: Mapping[str, Any]) -> tuple[str, str, str, str, int, bool, str]:
+    size = item.get("size")
+    return (
+        str(item.get("node_id") or ""),
+        str(item.get("file_id") or ""),
+        str(item.get("filename") or ""),
+        str(item.get("mime_type") or ""),
+        int(size) if isinstance(size, int) else -1,
+        bool(item.get("pointer_present")),
+        str(item.get("pointer_type") or ""),
+    )
+
+
+def _attachments(projected: Mapping[str, Any]) -> dict[tuple[str, str, str, str, int, bool, str], dict[str, Any]]:
+    result: dict[tuple[str, str, str, str, int, bool, str], dict[str, Any]] = {}
     nodes = _mapping(projected.get("nodes"))
     for node_id, raw in nodes.items():
         node = _mapping(raw)
@@ -126,11 +151,7 @@ def _attachments(projected: Mapping[str, Any]) -> dict[tuple[Any, ...], dict[str
                 "pointer_present": bool(item.get("pointer_present")),
                 "pointer_type": item.get("pointer_type"),
             }
-            key = (
-                safe["node_id"], safe["file_id"], safe["filename"], safe["mime_type"],
-                safe["size"], safe["pointer_present"], safe["pointer_type"],
-            )
-            result[key] = safe
+            result[_attachment_sort_key(safe)] = safe
     return result
 
 
@@ -173,17 +194,24 @@ def diff_graphs(before: Mapping[str, Any], after: Mapping[str, Any]) -> dict[str
     }
 
 
+def _sequence_index(item: Mapping[str, Any]) -> int:
+    try:
+        return int(item.get("sequence_index") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def summarize_protocol_stages(observations: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """Keep only structural protocol evidence needed for stage comparison."""
 
     ordered = sorted(
         (item for item in observations if isinstance(item, Mapping)),
-        key=lambda item: int(item.get("sequence_index") or 0),
+        key=_sequence_index,
     )
     result: list[dict[str, Any]] = []
     for item in ordered:
         result.append({
-            "sequence_index": int(item.get("sequence_index") or 0),
+            "sequence_index": _sequence_index(item),
             "stage": str(item.get("bootstrap_stage") or "unclassified"),
             "method": str(item.get("method") or ""),
             "path": str(item.get("path") or item.get("route") or ""),
@@ -261,6 +289,7 @@ def build_experiment_receipt(
             "stage": str(error.get("stage") or "unknown"),
             "class": str(error.get("class") or "Error"),
         }
+    stages = summarize_protocol_stages(protocol_observations)
     return {
         "schema_version": 1,
         "operation": str(operation),
@@ -272,8 +301,8 @@ def build_experiment_receipt(
         "local_inputs": {
             "attachments": [_safe_local_attachment(item) for item in local_attachments],
         },
-        "protocol_observations": summarize_protocol_stages(protocol_observations),
-        "protocol_stages": summarize_protocol_stages(protocol_observations),
+        "protocol_observations": stages,
+        "protocol_stages": stages,
         "graph_before": graph_snapshot(graph_before),
         "graph_after": graph_snapshot(graph_after) if graph_after is not None else None,
         "graph_delta": diff_graphs(graph_before, graph_after) if graph_after is not None else None,
