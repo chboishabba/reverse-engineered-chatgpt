@@ -269,6 +269,7 @@ class MutationService:
         cdp_endpoint: str | None = None,
         browser_timeout: int = 60,
         write_transport: str = "dom",
+        dom_fallback: bool = False,
         reconcile_attempts: int = 3,
         reconcile_interval: float = 1.0,
         follow: bool = False,
@@ -277,12 +278,15 @@ class MutationService:
         prompt = prompt.strip()
         if not prompt:
             raise ValueError("prompt is empty")
-        if write_transport not in {"dom", "async"}:
-            raise ValueError(f"unsupported write_transport {write_transport!r}; expected 'dom' or 'async'")
+        if write_transport not in {"dom", "async", "auto"}:
+            raise ValueError(f"unsupported write_transport {write_transport!r}; expected 'dom', 'async', or 'auto'")
         local_attachments = [LocalAttachment.from_path(path) for path in attachments]
-        if write_transport == "async" and local_attachments:
-            raise ValueError("async HTTP mutation probe does not synthesize attachment upload endpoints")
         started_at = time.time()
+
+        try_async = write_transport in {"async", "auto"}
+        allow_dom_fallback = write_transport == "auto" or (write_transport == "async" and bool(dom_fallback))
+        effective_transport = "async" if try_async else "dom"
+        pre_fallback_observations: list[dict[str, Any]] = []
 
         write_observations: list[dict[str, Any]] = []
         with MutationOperationStore(self.db_path) as operations:
@@ -290,12 +294,14 @@ class MutationService:
             operation_id = str(op["operation_id"])
             operations.record_local_attachments(operation_id, local_attachments)
 
-            if write_transport == "async":
+            submission: dict[str, Any] | None = None
+            if try_async:
                 operations.update(operation_id, state="async_starting", transport="async")
                 try:
                     submission = submit_async_prompt_once(
                         conversation,
                         prompt,
+                        attachments=local_attachments,
                         session_token=self.session_token,
                         model=self.model,
                         profile_dir=profile_dir,
@@ -304,8 +310,16 @@ class MutationService:
                         browser_timeout=browser_timeout,
                     )
                 except ExplicitAsyncWriteRejection as exc:
-                    operations.mark_error(operation_id, "failed_precommit", exc)
-                    raise
+                    if not allow_dom_fallback:
+                        state = (
+                            "attachment_failed_precommit"
+                            if local_attachments and str(getattr(exc, "stage", "")).startswith("attachment")
+                            else "failed_precommit"
+                        )
+                        operations.mark_error(operation_id, state, exc)
+                        raise
+                    pre_fallback_observations = [obs.to_dict() for obs in exc.observations]
+                    effective_transport = "dom"
                 except AmbiguousAsyncWriteError as exc:
                     write_observations = [obs.to_dict() for obs in exc.observations]
                     return operations.update(
@@ -315,8 +329,10 @@ class MutationService:
                         error_class=exc.__class__.__name__,
                         error_detail=str(exc),
                     ) | {"write_observations": write_observations}
-            else:
-                operations.update(operation_id, state="browser_starting")
+
+            if submission is None:
+                effective_transport = "dom"
+                operations.update(operation_id, state="browser_starting", transport="dom")
                 try:
                     submission = submit_prompt(
                         conversation,
@@ -333,7 +349,7 @@ class MutationService:
                     operations.mark_error(operation_id, state, exc)
                     raise
 
-            write_observations = list(submission.get("protocol_observations") or [])
+            write_observations = pre_fallback_observations + list(submission.get("protocol_observations") or [])
             conversation_id = str(submission.get("resolved_thread_id") or submission.get("conversation_id") or conversation).strip()
             stage_times = submission.get("stage_times") if isinstance(submission.get("stage_times"), dict) else {}
             now = time.time()
@@ -345,7 +361,7 @@ class MutationService:
                 hydrated_at=stage_times.get("hydrated") or (now if submission.get("hydrated") else None),
                 attachment_ready_at=stage_times.get("attachment_ready"),
                 submitted_at=stage_times.get("submission_observed") or now,
-                transport=write_transport,
+                transport=effective_transport,
             )
 
         last: dict[str, Any] | None = None

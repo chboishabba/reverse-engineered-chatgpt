@@ -262,3 +262,125 @@ def test_continue_thread_ambiguous_async_write_never_falls_back_to_dom(monkeypat
     assert len(result["write_observations"]) == 1
     assert dom_calls == []
 
+
+def test_continue_thread_async_attachment_certifies_canonical_file_id(monkeypatch, tmp_path: Path) -> None:
+    file_path = tmp_path / "spec.md"
+    file_path.write_text("spec", encoding="utf-8")
+    captured_kwargs: dict = {}
+
+    def fake_async_submit(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return {
+            "resolved_thread_id": "abc",
+            "transport": "async",
+            "state": "submission_observed",
+            "attachment_ids": ["file_123"],
+            "protocol_observations": [
+                {"transport": "async", "operation": "continue", "bootstrap_stage": "attachment_staging", "status": 200},
+                {"transport": "async", "operation": "continue", "bootstrap_stage": "conversation_post", "status": 200},
+            ],
+            "stage_times": {
+                "authenticated": 10.0,
+                "hydrated": 11.0,
+                "attachment_ready": 11.5,
+                "submission_observed": 12.0,
+            },
+        }
+
+    monkeypatch.setattr("re_gpt.mutation_service.submit_async_prompt_once", fake_async_submit)
+    service = MutationService(db_path=tmp_path / "history.sqlite3")
+    attachment = {"name": "spec.md", "mime_type": "text/markdown", "size": 4, "id": "file_123"}
+    monkeypatch.setattr(
+        service,
+        "_pull_and_persist",
+        lambda conversation_id, **kwargs: {
+            "chat": _chat("hello", assistant="ACK", attachment=attachment),
+            "new_messages": 2,
+            "total_messages": 2,
+        },
+    )
+    result = service.continue_thread(
+        "abc",
+        "hello",
+        attachments=[file_path],
+        write_transport="async",
+        reconcile_attempts=1,
+    )
+    assert len(captured_kwargs["attachments"]) == 1
+    assert captured_kwargs["attachments"][0].filename == "spec.md"
+    assert result["state"] == "complete"
+    assert result["transport"] == "async"
+    assert result["attachment_ids"] == ["file_123"]
+    status = service.operation_status(result["operation_id"])
+    assert status["attachment_ready_at"] == 11.5
+    assert status["attachments"][0]["canonical_file_id"] == "file_123"
+
+
+def test_continue_thread_dom_fallback_recovers_from_explicit_precommit_rejection_only(monkeypatch, tmp_path: Path) -> None:
+    from re_gpt.async_mutation_probe import ExplicitAsyncWriteRejection
+    from re_gpt.protocol_observation import build_protocol_observation
+
+    obs = build_protocol_observation(
+        transport="async",
+        operation="continue",
+        method="POST",
+        path="/backend-api/f/conversation",
+        status=403,
+        response_class="http_403",
+        bootstrap_stage="conversation_post",
+    )
+    monkeypatch.setattr(
+        "re_gpt.mutation_service.submit_async_prompt_once",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            ExplicitAsyncWriteRejection("rejected 403", stage="conversation_post", status=403, observations=(obs,))
+        ),
+    )
+    dom_calls: list[int] = []
+    monkeypatch.setattr(
+        "re_gpt.mutation_service.submit_prompt",
+        lambda *args, **kwargs: dom_calls.append(1) or _browser_result(),
+    )
+    service = MutationService(db_path=tmp_path / "history.sqlite3")
+    monkeypatch.setattr(
+        service,
+        "_pull_and_persist",
+        lambda conversation_id, **kwargs: {
+            "chat": _chat("hello", assistant="ACK"),
+            "new_messages": 2,
+            "total_messages": 2,
+        },
+    )
+    result = service.continue_thread(
+        "abc",
+        "hello",
+        write_transport="async",
+        dom_fallback=True,
+        reconcile_attempts=1,
+    )
+    assert dom_calls == [1]
+    assert result["state"] == "complete"
+    assert result["transport"] == "dom"
+    assert len(result["write_observations"]) == 1
+    assert result["write_observations"][0]["status"] == 403
+
+
+def test_mcp_chatgpt_continue_defaults_to_async_with_dom_fallback(monkeypatch, tmp_path: Path) -> None:
+    from re_gpt import mcp_server
+
+    called: dict = {}
+
+    class DummyService:
+        def continue_thread(self, conversation_id: str, prompt: str, **kwargs):
+            called["conversation_id"] = conversation_id
+            called["prompt"] = prompt
+            called.update(kwargs)
+            return {"state": "complete", "transport": "async"}
+
+    monkeypatch.setattr(mcp_server, "_service", lambda db_path=None: DummyService())
+    res = mcp_server.chatgpt_continue("conv-1", "hello", attachments=["a.txt"])
+    assert res["state"] == "complete"
+    assert called["write_transport"] == "async"
+    assert called["dom_fallback"] is True
+    assert list(called["attachments"]) == ["a.txt"]
+
+
