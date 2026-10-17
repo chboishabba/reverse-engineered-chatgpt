@@ -15,7 +15,8 @@ install_validated_sync_read_plane()
 from .browser_write import BrowserWriteError
 from .cli import main as legacy_main
 from .mutation_service import MutationService
-from .storage import ConversationStorage, extract_ordered_messages
+from .revive import revive_thread
+from .storage import ConversationStorage, DEFAULT_DB_PATH, extract_ordered_messages
 from .sync_chatgpt import SyncChatGPT
 from .utils import get_default_model, get_default_user_agent, get_session_token
 
@@ -79,6 +80,7 @@ def build_write_parser() -> argparse.ArgumentParser:
     mutation = parser.add_mutually_exclusive_group(required=True)
     mutation.add_argument("--send", metavar="CONVERSATION", help="Continue an existing conversation.")
     mutation.add_argument("--new", action="store_true", help="Create a new conversation directly and return its assigned ID.")
+    mutation.add_argument("--revive", metavar="CONVERSATION", help="Revive a long conversation into a fresh thread with context attached.")
     mutation.add_argument("--branch", metavar="CONVERSATION", help="Create a user branch from --parent-node.")
     mutation.add_argument("--regenerate", metavar="CONVERSATION", help="Regenerate from an exact --user-node.")
     mutation.add_argument("--edit-branch", metavar="CONVERSATION", help="Replace an exact --user-node and create a branch.")
@@ -149,7 +151,7 @@ def _print_result(
 
 def write_main(argv: list[str] | None = None) -> int:
     args = build_write_parser().parse_args(argv)
-    needs_prompt = bool(args.send or args.new or args.branch or args.edit_branch)
+    needs_prompt = bool(args.send or args.new or args.branch or args.edit_branch or args.revive)
     try:
         prompt = resolve_prompt(args.prompt, args.prompt_file, stdin=sys.stdin) if needs_prompt else None
         service = MutationService(session_token=args.key, model=args.model, export_json=args.export_json)
@@ -178,6 +180,19 @@ def write_main(argv: list[str] | None = None) -> int:
                 write_transport=args.write_transport,
                 dom_fallback=args.dom_fallback,
                 progress_callback=on_progress if streamed else None,
+                **common,
+            )
+        elif args.revive:
+            result = revive_thread(
+                args.revive,
+                prompt or "",
+                attachments=args.attach,
+                write_transport=args.write_transport,
+                dom_fallback=args.dom_fallback,
+                progress_callback=on_progress if streamed else None,
+                db_path=getattr(service, "db_path", DEFAULT_DB_PATH),
+                session_token=args.key,
+                model=args.model,
                 **common,
             )
         elif args.new:
@@ -220,7 +235,7 @@ def write_main(argv: list[str] | None = None) -> int:
 
 
 def main() -> int:
-    graph_flags = ("--send", "--new", "--branch", "--regenerate", "--edit-branch")
+    graph_flags = ("--send", "--new", "--revive", "--branch", "--regenerate", "--edit-branch")
     legacy_flags = (
         "--list", "--view", "--inspect", "--download", "--latest", "--since-last",
         "--nostore", "--browser-login", "--list-follow-out",

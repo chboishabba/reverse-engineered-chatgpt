@@ -1,6 +1,7 @@
 from .async_chatgpt import AsyncChatGPT
 from .sync_chatgpt import SyncChatGPT
 from .mutation_service import MutationService, continue_thread, new_conversation
+from .revive import revive_thread, build_revival_document, record_lineage
 from .read_plane import install_sync_fetch_chat_compatibility
 from .dom_commit import install_dom_commit_receipts
 from .mutation_compat import install_unified_sync_mutation_plane
