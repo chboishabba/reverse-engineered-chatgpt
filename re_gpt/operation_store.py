@@ -53,7 +53,6 @@ class MutationOperationStore:
                     completed_at REAL,
                     user_node_id TEXT,
                     assistant_node_id TEXT,
-                    assistant_text TEXT,
                     error_class TEXT,
                     error_detail TEXT
                 )
@@ -100,7 +99,7 @@ class MutationOperationStore:
         allowed = {
             "conversation_id", "authenticated_at", "hydrated_at", "submitted_at",
             "committed_at", "completed_at", "user_node_id", "assistant_node_id",
-            "assistant_text", "error_class", "error_detail", "transport",
+            "error_class", "error_detail", "transport",
         }
         values: dict[str, Any] = {k: v for k, v in fields.items() if k in allowed}
         if state is not None:
