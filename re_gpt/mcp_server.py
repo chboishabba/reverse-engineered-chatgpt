@@ -32,7 +32,7 @@ def chatgpt_continue(
     follow: bool = False,
     db_path: str | None = None,
 ) -> dict[str, Any]:
-    """Continue an existing thread, optionally selecting local files through the native attachment input."""
+    """Continue an existing thread; canonical reconciliation uses the exact-read broker."""
     return _service(db_path).continue_thread(
         conversation_id,
         prompt,
@@ -61,7 +61,7 @@ def chatgpt_reconcile(
     browser_timeout: int = 60,
     db_path: str | None = None,
 ) -> dict[str, Any]:
-    """Re-pull a submitted operation; sync first, browser GET fallback, never resubmit."""
+    """Acquire one validated exact graph through the broker and never resubmit."""
     return _service(db_path).reconcile(
         operation_id,
         prompt=prompt,
