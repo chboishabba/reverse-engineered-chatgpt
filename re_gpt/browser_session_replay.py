@@ -129,11 +129,7 @@ class BrowserSessionSnapshot:
             headers["oai-did"] = self.device_id
         if self.access_token:
             headers["Authorization"] = f"Bearer {self.access_token}"
-        headers["Referer"] = (
-            f"https://chatgpt.com/c/{conversation_id}"
-            if conversation_id
-            else "https://chatgpt.com/"
-        )
+        headers["Referer"] = f"https://chatgpt.com/c/{conversation_id}" if conversation_id else "https://chatgpt.com/"
         return headers
 
     def client_contextual_info(self) -> dict[str, Any]:
@@ -202,16 +198,31 @@ def save_browser_session_snapshot(
     profile_dir: Path | str | None = None,
     snapshot_path: Path | str | None = None,
 ) -> Path:
+    """Atomically save snapshot secrets in a file that is private from birth."""
     target = resolve_snapshot_path(profile_dir=profile_dir or snapshot.profile_dir, snapshot_path=snapshot_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     serialized = json.dumps(snapshot.to_dict(), indent=2, sort_keys=True)
     tmp_path = target.with_suffix(".tmp")
-    tmp_path.write_text(serialized, encoding="utf-8")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(tmp_path, flags, 0o600)
     try:
-        os.chmod(tmp_path, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(serialized)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except Exception:
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+        raise
+    tmp_path.replace(target)
+    try:
+        os.chmod(target, 0o600)
     except OSError:
         pass
-    tmp_path.replace(target)
     return target
 
 
@@ -275,44 +286,31 @@ def filter_replayable_headers(headers: Mapping[str, Any] | None) -> tuple[dict[s
     return replay_headers, access_token
 
 
-def apply_browser_session_to_client(
-    client: Any,
-    snapshot: BrowserSessionSnapshot,
-) -> None:
+def apply_browser_session_to_client(client: Any, snapshot: BrowserSessionSnapshot) -> None:
     """Hydrate an AsyncChatGPT or SyncChatGPT instance with a recorded browser session."""
     if not isinstance(snapshot, BrowserSessionSnapshot):
         return
-
     cookie_map = snapshot.cookie_map()
-    session_token = (
-        cookie_map.get("__Secure-next-auth.session-token")
-        or cookie_map.get("__Secure-next-auth.session-token.0")
-    )
+    session_token = cookie_map.get("__Secure-next-auth.session-token") or cookie_map.get("__Secure-next-auth.session-token.0")
     if session_token and not getattr(client, "session_token", None):
         client.session_token = session_token
         client.free_mode = False
-
     if snapshot.access_token:
         client.auth_token = snapshot.access_token
         client.free_mode = False
-
     if snapshot.device_id:
         client.devive_id = snapshot.device_id
-
     if snapshot.user_agent:
         client.user_agent = snapshot.user_agent
-
     if snapshot.fingerprint:
         tz = snapshot.timezone()
         if tz:
             client.timezone = tz
         client.timezone_offset_min = snapshot.timezone_offset_min()
         client.client_contextual_info = snapshot.client_contextual_info()
-
     frontend_cookies = getattr(client, "_frontend_cookies", None)
     if isinstance(frontend_cookies, dict):
         frontend_cookies.update(cookie_map)
-
     session = getattr(client, "session", None)
     if session is not None and hasattr(session, "cookies"):
         for item in snapshot.cookies:
@@ -331,7 +329,6 @@ def apply_browser_session_to_client(
                     session.cookies.set(name, str(value))
                 except Exception:
                     pass
-
     client._replayed_browser_snapshot = snapshot
 
 
@@ -399,9 +396,7 @@ async def capture_browser_session_snapshot_async(
                 let session = {};
                 try {
                     const resp = await fetch("/api/auth/session", {method: "GET"});
-                    if (resp.ok) {
-                        session = await resp.json();
-                    }
+                    if (resp.ok) session = await resp.json();
                 } catch (_) {}
                 let uaData = null;
                 try {
@@ -434,20 +429,10 @@ async def capture_browser_session_snapshot_async(
 
     cookie_list = [dict(c) for c in (cookies or []) if isinstance(c, Mapping)]
     cookie_lookup = {str(c.get("name") or ""): str(c.get("value") or "") for c in cookie_list}
-
     access_token = str(env_info.get("accessToken") or captured_access_token or "").strip() or None
-    account_id = (
-        str(captured_headers.get("chatgpt-account-id") or env_info.get("accountId") or cookie_lookup.get("_account") or "").strip()
-        or None
-    )
-    device_id = (
-        str(captured_headers.get("oai-did") or cookie_lookup.get("oai-did") or "").strip()
-        or None
-    )
-    user_agent = (
-        str(captured_headers.get("user-agent") or env_info.get("userAgent") or "").strip()
-        or None
-    )
+    account_id = str(captured_headers.get("chatgpt-account-id") or env_info.get("accountId") or cookie_lookup.get("_account") or "").strip() or None
+    device_id = str(captured_headers.get("oai-did") or cookie_lookup.get("oai-did") or "").strip() or None
+    user_agent = str(captured_headers.get("user-agent") or env_info.get("userAgent") or "").strip() or None
 
     fingerprint = {
         "userAgent": user_agent,
