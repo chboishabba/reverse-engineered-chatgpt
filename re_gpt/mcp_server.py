@@ -13,6 +13,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from .adapter_health import AdapterHealthStore
 from .browser_observer import observe_live_status
 from .mutation_service import MutationService
 from .protocol_drift import build_protocol_fingerprint, compare_protocol_fingerprints
@@ -152,6 +153,14 @@ def chatgpt_protocol_fingerprint(observations: list[dict[str, Any]]) -> dict[str
 def chatgpt_protocol_compare(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
     """Compare two structural fingerprints and classify compatible/drift_suspected/incompatible."""
     return compare_protocol_fingerprints(baseline, candidate)
+
+
+@mcp.tool()
+def chatgpt_adapter_health(db_path: str | None = None, sample_limit: int = 200) -> dict[str, Any]:
+    """Return persistent exact-read adapter health, cooldown and empirical latency telemetry."""
+    path = Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH
+    with AdapterHealthStore(path) as store:
+        return store.report(sample_limit=max(1, min(int(sample_limit), 2000)))
 
 
 @mcp.tool()
