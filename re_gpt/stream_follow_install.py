@@ -86,12 +86,14 @@ def install_stream_first_follow() -> None:
     @functools.wraps(original_continue)
     def stream_continue(self, *args: Any, progress_callback=None, **kwargs: Any) -> dict[str, Any]:
         follow = bool(kwargs.get("follow", False))
-        if not follow:
+        write_transport = kwargs.get("write_transport", "dom")
+        if not follow or write_transport == "dom":
             return original_continue(self, *args, **kwargs)
         no_poll = dict(kwargs)
         no_poll["follow"] = False
         no_poll["reconcile_attempts"] = 1
         no_poll["reconcile_interval"] = 0.0
+        no_poll["progress_callback"] = progress_callback
         with stream_runtime(progress_callback, follow_requested=True) as state:
             result = original_continue(self, *args, **no_poll)
             return _merge_stream_summary(dict(result), state.summary()) | {

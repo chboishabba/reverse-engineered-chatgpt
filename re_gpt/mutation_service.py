@@ -791,6 +791,7 @@ class MutationService:
         reconcile_interval: float = 1.0,
         follow: bool = False,
         follow_timeout: float = 60.0,
+        progress_callback: Any = None,
     ) -> dict[str, Any]:
         prompt = prompt.strip()
         if not prompt:
@@ -825,6 +826,7 @@ class MutationService:
                         browser_mode=browser_mode,
                         cdp_endpoint=cdp_endpoint,
                         browser_timeout=browser_timeout,
+                        progress_callback=progress_callback,
                     )
                 except ExplicitAsyncWriteRejection as exc:
                     if not allow_dom_fallback:
@@ -989,4 +991,8 @@ class MutationService:
                     break
         if write_observations and "write_observations" not in last:
             last = dict(last) | {"write_observations": write_observations}
+        if submission:
+            for key in ("stream_terminal_observed", "stream_terminal_reason", "stream_event_counts", "assistant_stream_text"):
+                if key in submission and key not in last:
+                    last = dict(last) | {key: submission[key]}
         return last

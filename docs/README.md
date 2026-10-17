@@ -10,6 +10,7 @@ The current product architecture is API-first. Direct async `curl_cffi` owns nor
 - [Session/protocol resilience](session-protocol-resilience.md) — first-class session status/bootstrap/refresh/doctor plus redacted protocol compatibility fingerprints.
 - [Adapter/attachment resilience](adapter-attachment-resilience.md) — D2 read-adapter backoff/latency telemetry and live attachment robustness matrix.
 - [Stream-first follow/global queue](stream-follow-global-queue.md) — no-poll SSE follow, cross-process backend pacing, 429 backoff and per-profile browser launch isolation.
+- [Agent delegation guide](agent-delegation.md) — pair programming with remote ChatGPT reasoning models and GitHub connector workflows.
 - [Interface contract](interfaces.md) — public product/data surfaces.
 
 ## Accessibility / browser tooling

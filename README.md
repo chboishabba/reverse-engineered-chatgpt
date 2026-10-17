@@ -302,6 +302,8 @@ See:
 - [`docs/read-plane.md`](docs/read-plane.md)
 - [`docs/browser-mutation-service.md`](docs/browser-mutation-service.md)
 - [`docs/session-protocol-resilience.md`](docs/session-protocol-resilience.md)
+- [`docs/adapter-attachment-resilience.md`](docs/adapter-attachment-resilience.md)
+- [`docs/agent-delegation.md`](docs/agent-delegation.md)
 - [`docs/accessibility-browser.md`](docs/accessibility-browser.md)
 - [`docs/accessibility-capture.md`](docs/accessibility-capture.md)
 - [`docs/interfaces.md`](docs/interfaces.md)

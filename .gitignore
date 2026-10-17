@@ -3,6 +3,7 @@ chat_exports/
 page_raw.txt
 expected_payload.json
 expected_payload2.json
+*-receipt.json
 
 
 # Byte-compiled / optimized / DLL files

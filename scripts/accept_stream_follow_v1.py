@@ -70,7 +70,7 @@ def run_acceptance(
         "stream_terminal_observed": bool(result.get("stream_terminal_observed")),
         "terminal_event_callback_seen": bool(terminal),
         "realtime_progress_seen": bool(nonterminal) and all(float(item["at_seconds"]) <= returned_at for item in nonterminal),
-        "zero_poll": int(result.get("reconcile_poll_count") or -1) == 0,
+        "zero_poll": result.get("reconcile_poll_count") == 0,
         "single_terminal_reconcile": int(result.get("terminal_reconcile_count") or 0) == 1,
         "stream_follow_mode": result.get("follow_mode") == "stream_terminal_single_reconcile",
     }
