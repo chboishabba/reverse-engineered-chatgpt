@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import re
 import time
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -222,11 +221,7 @@ def diagnose_reads(
             cookie_domains=raw_diag.get("cookie_domains") or (),
             elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
         )
-        diagnostic = obs.to_dict()
-        for k, v in raw_diag.items():
-            if k not in diagnostic:
-                diagnostic[k] = v
-        receipts.append(diagnostic)
+        receipts.append(obs.to_dict())
     return receipts
 
 
