@@ -6,13 +6,13 @@ remain responsible for persistence and mutation-receipt classification.
 
 from __future__ import annotations
 
-import asyncio
 import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from .async_bridge import run_async_sync
 from .async_chatgpt import AsyncChatGPT
 from .browser_observer import fetch_conversation_same_origin
 from .browser_session_replay import load_browser_session_snapshot
@@ -23,7 +23,10 @@ from .protocol_observation import (
 from .sync_chatgpt import SyncChatGPT
 from .utils import get_default_model, get_default_user_agent, get_session_token
 
-_STATUS_RE = re.compile(r"(?:HTTP\s+)?(?P<status>[1-5][0-9]{2})", re.IGNORECASE)
+_STATUS_RE = re.compile(
+    r"(?:\bHTTP[/\s0-9.]*\s|\bstatus[\s:=]+)(?P<status>[1-5][0-9]{2})\b",
+    re.IGNORECASE,
+)
 DEFAULT_ADAPTER_ORDER = ("async", "sync", "browser")
 
 
@@ -169,7 +172,7 @@ def _build_default_fetchers(
                 )
                 return graph, obs.to_dict()
 
-        return asyncio.run(run())
+        return run_async_sync(run)
 
     def fetch_sync(conversation_id: str):
         with SyncChatGPT(
