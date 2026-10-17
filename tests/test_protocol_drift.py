@@ -23,6 +23,7 @@ def test_fingerprint_is_value_free_and_stable() -> None:
     assert fp["routes"] == [{"method": "POST", "path": "/backend-api/f/conversation", "stage": "conversation_post"}]
     assert "authorization" in fp["header_names"]
     assert "conversation_id,message" in fp["sse_event_key_signatures"]
+    assert fp["body_schema_signatures"]
 
 
 def test_identical_fingerprint_is_compatible() -> None:
@@ -39,6 +40,14 @@ def test_additive_structural_change_is_drift_suspected() -> None:
     result = compare_protocol_fingerprints(base, candidate)
     assert result["classification"] == "drift_suspected"
     assert "x-new-header" in result["delta"]["added_header_names"]
+
+
+def test_missing_authorization_header_is_incompatible() -> None:
+    base = build_protocol_fingerprint([_obs()])
+    candidate = build_protocol_fingerprint([_obs(headers=["content-type", "oai-did"])])
+    result = compare_protocol_fingerprints(base, candidate)
+    assert result["classification"] == "incompatible"
+    assert "authorization" in result["delta"]["missing_header_names"]
 
 
 def test_missing_critical_route_is_incompatible() -> None:
@@ -63,6 +72,14 @@ def test_added_sse_event_signature_is_drift_suspected() -> None:
     result = compare_protocol_fingerprints(base, candidate)
     assert result["classification"] == "drift_suspected"
     assert "conversation_id,type" in result["delta"]["added_sse_event_key_signatures"]
+
+
+def test_removed_sse_event_signature_is_incompatible() -> None:
+    base = build_protocol_fingerprint([_obs(event_keys=["conversation_id,message", "conversation_id,type"])])
+    candidate = build_protocol_fingerprint([_obs(event_keys=["conversation_id,message"])])
+    result = compare_protocol_fingerprints(base, candidate)
+    assert result["classification"] == "incompatible"
+    assert "conversation_id,type" in result["delta"]["missing_sse_event_key_signatures"]
 
 
 def test_attachment_stage_loss_is_incompatible() -> None:
