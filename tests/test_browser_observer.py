@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import subprocess
+import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,6 +13,7 @@ from re_gpt.browser_observer import (
     classify_dom_status,
     fetch_conversation_same_origin,
 )
+from re_gpt.browser_observer_runner import _dom_status
 
 
 def test_same_origin_reader_returns_validated_graph(monkeypatch, tmp_path: Path) -> None:
@@ -86,3 +89,22 @@ def test_dom_status_recognizes_tool_activity_and_settled_state() -> None:
     })
     assert tool["status"] == "tool_activity"
     assert settled["status"] == "settled"
+
+
+def test_dom_status_evaluate_source_escapes_javascript_newlines() -> None:
+    class Page:
+        async def goto(self, *args, **kwargs):
+            return None
+
+        async def wait_for_timeout(self, *args, **kwargs):
+            return None
+
+        async def evaluate(self, source, conversation_id):
+            assert r"tertiary.join('\n')" in source
+            assert r"(^|\n)Retry($|\n)" in source
+            return {"conversation_id": conversation_id}
+
+    relay = SimpleNamespace(page=Page(), timeout_ms=1000)
+    conversation_id = "6ad2b900-e558-83ec-bb40-3fb1f805e48b"
+    result = asyncio.run(_dom_status(relay, conversation_id))
+    assert result == {"observation": {"conversation_id": conversation_id}}

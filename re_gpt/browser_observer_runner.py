@@ -109,7 +109,7 @@ async def _dom_status(relay: AccessibilityBrowserRelay, conversation_id: str) ->
               .filter(visible)
               .map((node) => (node.innerText || '').trim())
               .filter(Boolean);
-            const lowerTertiary = tertiary.join('\n').toLowerCase();
+            const lowerTertiary = tertiary.join('\\n').toLowerCase();
             const assistantVisible = text.includes('ChatGPT said:') || anyVisible('button[aria-label="Copy message"]');
             return {
               conversation_id: conversationId,
@@ -122,7 +122,7 @@ async def _dom_status(relay: AccessibilityBrowserRelay, conversation_id: str) ->
               conversation_load_error: text.includes('Could not load this ChatGPT conversation'),
               history_load_error: text.includes('Unable to load history'),
               assistant_text_visible: assistantVisible,
-              retry_visible: /(^|\n)Retry($|\n)/.test(text),
+              retry_visible: /(^|\\n)Retry($|\\n)/.test(text),
               activity_text: tertiary.slice(-8),
             };
         }""",

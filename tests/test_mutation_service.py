@@ -197,6 +197,36 @@ def test_follow_does_not_retry_same_direct_client_context_after_rejection(monkey
     assert len(pulls) == 1
 
 
+def test_follow_rejection_does_not_erase_prior_canonical_commit(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("re_gpt.mutation_service.submit_prompt", lambda *args, **kwargs: _browser_result())
+    service = MutationService(db_path=tmp_path / "history.sqlite3")
+    calls = []
+
+    def reconcile_once_then_reject(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            with MutationOperationStore(service.db_path) as operations:
+                return operations.update(
+                    args[0],
+                    state="committed_pending",
+                    committed_at=1.0,
+                    user_node_id="u1",
+                )
+        raise RuntimeError("HTTP 429 Too Many Requests from browser reconciliation")
+
+    monkeypatch.setattr(service, "reconcile", reconcile_once_then_reject)
+    result = service.continue_thread(
+        "abc",
+        "hello",
+        reconcile_attempts=1,
+        follow=True,
+        follow_timeout=0.01,
+    )
+    assert result["state"] == "committed_pending"
+    assert result["user_node_id"] == "u1"
+    assert len(calls) == 2
+
+
 def test_attachment_requires_canonical_metadata_before_complete(monkeypatch, tmp_path: Path) -> None:
     file_path = tmp_path / "spec.md"
     file_path.write_text("spec", encoding="utf-8")

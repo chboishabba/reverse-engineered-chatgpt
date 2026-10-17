@@ -449,12 +449,17 @@ class MutationService:
                     rejected = _is_direct_client_rejection(exc)
                     direct_context_rejected = direct_context_rejected or rejected
                     with MutationOperationStore(self.db_path) as operations:
-                        last = operations.update(
-                            operation_id,
-                            state="commit_unknown",
-                            error_class="DirectClientRejected" if rejected else exc.__class__.__name__,
-                            error_detail=str(exc),
-                        )
+                        prior = operations.get(operation_id)
+                        if prior and prior.get("state") in {"committed", "committed_pending", "complete"}:
+                            # A canonical receipt remains true even if a later follow read is rejected.
+                            last = prior
+                        else:
+                            last = operations.update(
+                                operation_id,
+                                state="commit_unknown",
+                                error_class="DirectClientRejected" if rejected else exc.__class__.__name__,
+                                error_detail=str(exc),
+                            )
                     if rejected:
                         break
                     continue
