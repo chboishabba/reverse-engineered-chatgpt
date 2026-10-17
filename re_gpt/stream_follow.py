@@ -106,7 +106,7 @@ class SSEProgressDecoder:
                     "channel": channel or None,
                 }, output)
 
-        if status == "finished_successfully" and bool(message.get("end_turn")):
+        if role == "assistant" and status == "finished_successfully" and bool(message.get("end_turn")):
             self._terminal("finished_successfully", output)
 
     def feed(self, chunk: bytes | str) -> list[dict[str, Any]]:
