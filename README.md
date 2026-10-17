@@ -1,608 +1,325 @@
-<div align="center">
-  <a href="https://github.com/Zai-Kun/reverse-engineered-chatgpt">  </a>
+# reverse-engineered-chatgpt
 
-<h1 align="center">Reverse Engineered <a href="https://openai.com/blog/chatgpt">ChatGPT</a> API</h1>
+Accessibility-oriented, API-first access to the authenticated ChatGPT web account you already control.
 
-  <p align="center">
-    Use OpenAI ChatGPT in your Python code without an API key
+The project now treats the browser as **fallback/oracle/bootstrap infrastructure**, not the normal conversation writer. Existing-thread reads, text continuation, attachment staging, new-conversation creation, and graph-structural mutations run through the direct async `curl_cffi` transport and are certified from the canonical conversation graph before being persisted to SQLite.
 
-[![Stargazers][stars-badge]][stars-url]
-[![Forks][forks-badge]][forks-url]
-[![Discussions][discussions-badge]][discussions-url]
-[![Issues][issues-badge]][issues-url]
-[![MIT License][license-badge]][license-url]
+> This project targets the ChatGPT web application protocol. It is not the official OpenAI API and does not use an OpenAI API key. Web protocol details can change; the repository therefore keeps browser-based protocol capture and accessibility fallback tooling alongside the direct client.
 
-  English | [简体中文](./docs/zh-README.md)
+## Current architecture
 
-  </p>
-    <p align="center">
-    <a href="https://github.com/Zai-Kun/reverse-engineered-chatgpt"></a>
-    <a href="https://github.com/Zai-Kun/reverse-engineered-chatgpt/issues">Report Bug</a>
-    |
-    <a href="https://github.com/Zai-Kun/reverse-engineered-chatgpt/discussions">Request Feature</a>
-  </p>
-</div>
-
-<!-- TABLE OF CONTENTS -->
-<details>
-  <summary>Table of Contents</summary>
-  <ol>
-    <li>
-      <a href="#about-the-project">About The Project</a>
-      <ul>
-        <li><a href="#inspiration">Inspiration</a></li>
-        <li><a href="#how-it-works">How it works</a></li>
-        <li><a href="#built-using">Built using</a></li>
-      </ul>
-    </li>
-    <li>
-      <a href="#getting-started">Getting Started</a>
-      <ul>
-        <li><a href="#prerequisites">Prerequisites</a></li>
-        <li><a href="#installation">Installation</a></li>
-        <li><a href="#configuration">Configuration</a></li>
-        <li><a href="#obtaining-session-token">Obtaining Session Token</a></li>
-      </ul>
-    </li>
-    <li><a href="#usage">Usage</a>
-        <ul>
-        <li><a href="#basic-example">Example Usage</a></li>
-        <li><a href="#resume-a-previous-conversation-interactively">Resume a previous conversation interactively</a></li>
-        </ul>
-    </li>
-    <li><a href="#roadmap">Roadmap</a></li>
-    <li><a href="#contributing">Contributing</a></li>
-    <li><a href="#license">License</a></li>
-    <li><a href="#contact">Contact</a></li>
-    <li><a href="#acknowledgments">Acknowledgments</a></li>
-  </ol>
-</details>
-
-## About The Project
-
-This project can be used to integrate OpenAI's ChatGPT services into your python code. You can use this project to prompt ChatGPT for responses directly from python, without using an official API key.
-
-This can be useful if you want to use ChatGPT API without a [ChatGPT Plus](https://openai.com/blog/chatgpt-plus) account.
-
-### Inspiration
-
-ChatGPT has an official API which can be used to interface your Python code to it, but it needs to be used with an API key. This API key can only be obtained if you have a [ChatGPT Plus](https://openai.com/blog/chatgpt-plus) account, which requires $20/month (as of 05/11/2023). But you can use ChatGPT for free, using the [ChatGPT web interface](https://chatgpt.com/). This project aims to interface your code to ChatGPT web version so you can use ChatGPT in your Python code without using an API key.
-
-### How it works
-
-[ChatGPT](https://chatgpt.com/) web interface's requests have been reverse engineered, and directly integrated into Python requests. Hence, any requests made using this script is a simulated as a request made by a user directly on the website. Hence, it is free and needs no API key.
-
-### Built Using
-
-- [![Python][python-badge]][python-url]
-
-## Getting Started
-
-### Prerequisites
-
-- Python >= 3.9
-
-> [!TIP]
-> Some endpoints (e.g., the shared chat pages at `https://chatgpt.com/c/...`) are
-> occasionally guarded by Cloudflare challenges. Browser-based challenge
-> solving has been removed from this client because the spawned browser path is
-> not a reliable recovery mechanism here. If a live fetch hits Cloudflare,
-> treat that as a frontdoor/auth issue to debug and refresh the stored session
-> secret or cookie state instead of trying to solve the challenge in a spawned
-> browser.
->
-> Authenticated conversation fetches also rely on frontend cookies in addition
-> to `__Secure-next-auth.session-token`. If `api/auth/session` comes back with
-> a JSON `WARNING_BANNER` and no `accessToken`, the correct recovery is to
-> hydrate the frontend cookie jar from `https://chatgpt.com/`, preserve any
-> non-empty existing session token, and fall back to `client-bootstrap`
-> extraction where available, not to immediately assume the stored token is
-> stale. If the frontend still renders `authStatus: logged_out`, a browser-
-> authenticated path is still required.
->
-> If your browser stores the session token in chunked form, put the chunks in
-> `~/.chatgpt_session_new` as one raw chunk per line. The library will treat
-> those lines as a single stitched token before starting auth bootstrap.
-
-### Installation
-
-```sh
-pip install re-gpt
+```text
+CLI / interactive CLI / MCP / Python
+                 |
+                 v
+          MutationService
+                 |
+       +---------+----------+
+       |                    |
+ async curl_cffi API     browser / DOM
+     primary          fallback / login / oracle
+       |                    |
+       +---------+----------+
+                 v
+            GraphBroker
+       async -> sync -> browser
+                 v
+        validated exact graph
+                 v
+       SQLite canonical receipts
 ```
 
-For local editable installs (including restricted-network/offline fallbacks and
-CLI token setup), see `docs/source-install.md`.
+The exactly-once rule is fundamental: once a conversation POST may have been dispatched, an uncertain outcome is **read/reconciled, never automatically resent**.
 
-### Run the interactive CLI locally
+## What works
 
-On macOS or Linux you can bootstrap a local development environment and start the
-interactive CLI with the provided helper script:
+The API-first product surface includes:
 
-```sh
-./scripts/run_app.sh
+- validated exact conversation reads;
+- existing-thread text continuation;
+- direct attachment upload + message send;
+- new-conversation creation with server-assigned conversation ID capture;
+- branch from an exact canonical graph node;
+- regenerate from an exact user node;
+- edit-and-branch from an exact user node;
+- canonical user/assistant/attachment reconciliation;
+- durable operation state and conversation/message/attachment persistence in SQLite;
+- native MCP tools;
+- API-first command-line mutations;
+- legacy interactive `SyncConversation.chat()` compatibility routed through `MutationService`;
+- browser login/bootstrap, protocol recording, diagnostics and safe pre-commit continuation fallback.
+
+## Install
+
+### Source checkout
+
+```bash
+git clone https://github.com/chboishabba/reverse-engineered-chatgpt.git
+cd reverse-engineered-chatgpt
+python -m venv .venv
+. .venv/bin/activate
+pip install -e .
 ```
 
-The script creates (or reuses) a `.venv` virtual environment in the project
-root, upgrades `pip`, installs the package in editable mode, and then launches
-the interactive CLI module.
+For source/offline details, see [`docs/source-install.md`](docs/source-install.md).
 
-> [!NOTE]
-> The script relies on Bash and POSIX-style paths. Windows users can run it from
-> Windows Subsystem for Linux (WSL) or follow the same steps manually using
-> PowerShell (`python -m venv .venv`, `.venv\\Scripts\\Activate.ps1`, then
-> `pip install --upgrade pip` and `pip install -e .`) before starting the CLI
-> with `python -m re_gpt.cli`.
+### Tests
 
-### Running Tests
+```bash
+pytest -q
+```
 
-To run the test suite, use the `run_tests.sh` script:
+or use the repository helper:
 
-```sh
+```bash
 ./scripts/run_tests.sh
 ```
 
-This script will ensure the test dependencies are installed in the virtual
-environment and then execute the tests. The asset download tests use an inline
-HTML fixture, so no extra files are required in the repository root.
-### Configuration
+## Authentication
 
-Copy `config.example.ini` to `config.ini` and update the placeholder values or
-store your token in a `~/.chatgpt_session` file:
+The client uses authenticated ChatGPT web-session state. Existing configuration/session-token sources remain supported, and a browser-authenticated profile can be used for login/bootstrap when necessary.
 
-```sh
-cp config.example.ini config.ini
+Normal reads and writes do **not** need to load the conversation DOM once usable authenticated session state exists.
+
+Browser session snapshots are local operational state. Shareable protocol/experiment receipts are deliberately redacted and do not include raw bearer tokens, cookie values, sentinel values, signed blob URLs, transcript bodies, or local attachment paths.
+
+## Quick start
+
+### Continue an existing conversation
+
+```bash
+python -m re_gpt.entrypoint \
+  --send <CONVERSATION_ID> \
+  --prompt 'Reply with only ACK' \
+  --follow
 ```
 
-Edit `config.ini` and replace `token` with your ChatGPT session token. Set
-`conversation_id` if you want to resume a specific chat, and optionally set
-`model` to the model slug you want for new conversations (for example, a 5.x-era
-slug from your account). You can also set `timezone` and `timezone_offset_min`
-to match your environment, and optionally set `user_agent` if you need to
-mirror a specific browser fingerprint. If a `config.ini` is not found,
-`get_session_token` will look for a token in `~/.chatgpt_session` instead.
-The CLI will try to detect a model slug from your most recent conversation and
-will ask before switching if it differs from what you configured.
+The public CLI defaults to direct async writes and allows DOM fallback only after an explicit **pre-commit** rejection. To require no DOM fallback:
 
-## Usage
+```bash
+python -m re_gpt.entrypoint \
+  --send <CONVERSATION_ID> \
+  --prompt 'Reply with only ACK' \
+  --no-dom-fallback \
+  --follow
+```
 
-### Basic example
+### Continue with attachments
+
+```bash
+python -m re_gpt.entrypoint \
+  --send <CONVERSATION_ID> \
+  --prompt 'Read the attachment and reply with only ACK' \
+  --attach ./probe.txt \
+  --follow
+```
+
+The direct attachment sequence is:
+
+```text
+POST /backend-api/files
+ -> signed blob PUT
+ -> POST /backend-api/files/process_upload_stream
+ -> POST /backend-api/f/conversation
+ -> exact graph reconciliation
+```
+
+Attachment success is not certified merely because upload HTTP calls succeeded; the expected attachment must bind to the committed canonical user node.
+
+### Create a new conversation
+
+```bash
+python -m re_gpt.entrypoint \
+  --new \
+  --prompt 'Reply with only NEW-ACK' \
+  --follow
+```
+
+The assigned `conversation_id` is captured from the direct response and then validated by an exact graph read before the result is considered canonical.
+
+### Branch from an exact node
+
+```bash
+python -m re_gpt.entrypoint \
+  --branch <CONVERSATION_ID> \
+  --parent-node <NODE_ID> \
+  --prompt 'Alternative branch prompt' \
+  --follow
+```
+
+### Regenerate
+
+```bash
+python -m re_gpt.entrypoint \
+  --regenerate <CONVERSATION_ID> \
+  --user-node <USER_NODE_ID> \
+  --follow
+```
+
+Regenerate uses the conversation protocol's `variant` action and targets the exact canonical user node. It does not synthesize a duplicate user message.
+
+### Edit and branch
+
+```bash
+python -m re_gpt.entrypoint \
+  --edit-branch <CONVERSATION_ID> \
+  --user-node <USER_NODE_ID> \
+  --prompt 'Replacement text' \
+  --follow
+```
+
+The service preflights the original user node, obtains its canonical parent, and creates the replacement as a sibling branch.
+
+## Python API
+
+Use `MutationService` for supported writes:
 
 ```python
-from re_gpt import SyncChatGPT
-from re_gpt.utils import get_session_token
+from re_gpt.mutation_service import MutationService
 
-session_token = get_session_token()
-conversation_id = None # conversation ID here
+service = MutationService()
 
+created = service.new_conversation("Reply with only ACK", follow=True)
+conversation_id = created["conversation_id"]
 
-with SyncChatGPT(session_token=session_token) as chatgpt:
-    prompt = input("Enter your prompt: ")
+continued = service.continue_thread(
+    conversation_id,
+    "Reply with only SECOND",
+    write_transport="async",
+    dom_fallback=True,
+    follow=True,
+)
 
-    if conversation_id:
-        conversation = chatgpt.get_conversation(conversation_id)
-    else:
-        conversation = chatgpt.create_new_conversation()
+branched = service.branch_from_node(
+    conversation_id,
+    parent_node_id="<NODE_ID>",
+    prompt="Alternative branch",
+    follow=True,
+)
 
-    for message in conversation.chat(prompt):
-        print(message["content"], flush=True, end="")
+regenerated = service.regenerate(
+    conversation_id,
+    user_node_id="<USER_NODE_ID>",
+    follow=True,
+)
 
+edited = service.edit_and_branch(
+    conversation_id,
+    user_node_id="<USER_NODE_ID>",
+    prompt="Replacement text",
+    follow=True,
+)
 ```
 
-### Run the interactive CLI
+Legacy `SyncConversation.chat()` remains available for compatibility, but it is now an adapter over `MutationService`, not a separate mutation implementation.
 
-1. Clone this repository and switch into the project directory:
-
-   ```bash
-   git clone https://github.com/Zai-Kun/reverse-engineered-chatgpt.git
-   cd reverse-engineered-chatgpt
-   ```
-
-2. Ensure the launcher script is executable and run it with `bash`:
-
-   ```bash
-   chmod +x scripts/run_app.sh  # required on Unix-like systems after cloning
-   bash scripts/run_app.sh
-   ```
-
-   > **Tip for Windows users:** Run the command from a Bash-compatible environment such as Git Bash or Windows Subsystem for Linux (WSL).
-
-3. When the CLI starts, it prints guidance on how to obtain your session token and prompts you to paste it. You can review the full instructions in the [Obtaining Session Token](#obtaining-session-token) section.
-
-After pasting your token, the launcher starts an interactive ChatGPT session where you can type prompts and read streamed responses directly from your terminal.
-
-### Automation-friendly CLI commands
-
-The CLI also exposes non-interactive helpers that are tailored for scripted or AI-assisted flows such as the `$chat-context-sync` example: request a conversation catalog, inspect metadata, and surface the most recent lines (optionally persisting the chat). All commands emit plain text so you can pipe them through `rg`, `awk`, or other tools.
-
-- `python -m re_gpt.cli --list`: Prints `CONVERSATION_ID<TAB>TITLE` for every saved chat so you can feed the IDs into downstream tooling.
-- `python -m re_gpt.cli --inspect <CONVERSATION_ID|TITLE>`: Shows stored metadata for a conversation including remote update time, when it was last seen, and how many messages are cached locally. If storage is empty, it will still query the remote catalog to surface timestamps.
-- `python -m re_gpt.cli --view "<CONVERSATION_ID|TITLE> [lines START[-END]] [since last update]"`: Streams the requested messages to stdout (no pager). Use the optional `lines` range or `since last update` tokens to limit the slice of messages you need to debug or sync with the UI.
-- `python -m re_gpt.cli --download <CONVERSATION_ID|TITLE|all|list>`: Mirrors the interactive `download` command and persists messages to SQLite cache. JSON file export is opt-in via `--export-json`.
-
-These helpers rely on the same `config.ini`/`~/.chatgpt_session` setup as the interactive CLI; they establish their own session and exit once the requested data has been emitted.
-
-A typical automation flow looks like:
-
-1. Run `python -m re_gpt.cli --list` and choose candidate conversation IDs.
-2. Use `python -m re_gpt.cli --inspect <ID>` to confirm when the remote conversation last changed and how many messages are already cached.
-3. Emit the latest messages with `--view "<ID> since last update"` (or limit to a line range) for human verification.
-4. Use `scripts/list_sync_candidates.py` plus `scripts/pull_to_structurer.py` to ingest directly into your canonical SQLite archive (no JSON intermediate by default).
-
-When you also maintain a SQLite archive (for example `~/.chat_archive.sqlite`),
-you can list only conversations that are missing from the archive or have a newer remote update:
+## Interactive CLI
 
 ```bash
-python scripts/list_sync_candidates.py \
-  --archive-db ~/.chat_archive.sqlite \
-  --format summary
+python -m re_gpt.cli
 ```
 
-Use `--format ids` to print one conversation ID per line for targeted pulls:
+The existing conversation browser/view/download experience is retained. Its actual chat mutation path is installed through the same API-first `MutationService` compatibility layer used elsewhere.
+
+## MCP
 
 ```bash
-python scripts/list_sync_candidates.py \
-  --archive-db ~/.chat_archive.sqlite \
-  --format ids > /tmp/stale_ids.txt
-python scripts/pull_to_structurer.py --mode pull --engine async --ids-file /tmp/stale_ids.txt
+python -m re_gpt.mcp_server
 ```
 
-You can also scope checks/pulls to an explicit mixed selector set (IDs and/or titles):
+Mutation tools:
+
+- `chatgpt_continue`
+- `chatgpt_new`
+- `chatgpt_branch`
+- `chatgpt_regenerate`
+- `chatgpt_edit_branch`
+- `chatgpt_operation_status`
+- `chatgpt_reconcile` for explicit existing-tail reconciliation
+
+Read/diagnostic tools include `chatgpt_view`, `chatgpt_list`, and `chatgpt_live_status`.
+
+## Mutation states
+
+`MutationService` writes durable operation records. Important states are:
+
+| State | Meaning |
+| --- | --- |
+| `complete` | Canonical committed turn and assistant result are observed. |
+| `committed` | User mutation is canonical; assistant completion is not yet proven. |
+| `committed_pending` | Committed, with assistant/attachment reconciliation still pending. |
+| `commit_unknown` | The write may have committed but proof is unavailable. **Do not resend automatically.** |
+| `failed_precommit` | Explicit rejection before a conversation POST could commit. |
+| `attachment_failed_precommit` | Attachment staging failed before conversation POST. |
+
+## Exact reads
+
+`GraphBroker` tries exact graph acquisition adapters in this order unless an adapter is explicitly skipped:
+
+```text
+async -> sync -> browser
+```
+
+The first validated graph wins. Browser-rendered state is useful diagnostic evidence, but it is not the canonical mutation receipt.
+
+## Browser and accessibility tooling
+
+The browser remains first-class infrastructure for cases where graphical web state is genuinely required:
+
+- login/session bootstrap;
+- protocol discovery and drift diagnosis;
+- redaction-first request/response structure capture;
+- accessibility-compatible continuation fallback after an explicit pre-commit direct rejection;
+- same-origin/browser exact-read fallback;
+- acceptance testing.
+
+The steady-state architecture is deliberately not “open ChatGPT and scrape/drive the composer for every call.”
+
+See:
+
+- [`docs/user-guide.md`](docs/user-guide.md) — full user guide and examples;
+- [`docs/read-plane.md`](docs/read-plane.md) — exact-read architecture;
+- [`docs/browser-mutation-service.md`](docs/browser-mutation-service.md) — mutation/exactly-once architecture;
+- [`docs/accessibility-browser.md`](docs/accessibility-browser.md) — browser transport and accessibility role;
+- [`docs/accessibility-capture.md`](docs/accessibility-capture.md) — redaction-first protocol capture;
+- [`docs/interfaces.md`](docs/interfaces.md) — external interface contract.
+
+## Archive / automation helpers
+
+Existing list/view/download/archive helpers remain available through the legacy CLI and scripts. The default conversation persistence path is SQLite; JSON exports remain opt-in.
+
+Examples:
 
 ```bash
-cat >/tmp/chat_selectors.txt <<'EOF'
-id:6963a49a-b484-8324-89d7-8f2b456011a9
-title:Browne v Dunn Parsing
-EOF
-
-python scripts/list_sync_candidates.py \
-  --archive-db ~/.chat_archive.sqlite \
-  --selectors-file /tmp/chat_selectors.txt \
-  --title-match exact \
-  --stale-threshold-sec 60 \
-  --format summary
+python -m re_gpt.cli --list
+python -m re_gpt.cli --inspect <CONVERSATION_ID>
+python -m re_gpt.cli --view '<CONVERSATION_ID> since last update'
+python -m re_gpt.cli --download <CONVERSATION_ID>
 ```
 
-### DOM relay for long conversations
-
-When backend POST requests are rejected but you still need to drive an existing
-ChatGPT thread automatically, use the browser-profile DOM relay instead of the
-reverse-engineered conversation POST path.
-
-1. Seed a persistent Chromium profile once:
-
-   ```bash
-   cd /home/c/Documents/code/ITIR-suite/reverse-engineered-chatgpt
-   /home/c/Documents/code/ITIR-suite/.venv/bin/python setup_browser_profile.py
-   ```
-
-2. Submit through the real ChatGPT composer:
-
-   ```bash
-   printf '%s\n' "Reply with the next action items." | \
-     /home/c/Documents/code/ITIR-suite/.venv/bin/python chatgpt_dom_relay.py \
-     --headed 6a33ae58-cb84-83ec-b187-ddab3179ccbb
-   ```
-
-`--headed` is required when Cloudflare challenges headless Chromium. The
-relay starts that browser minimized and keeps the long conversation out of
-the foreground.
-
-The scripts use the installed Chrome channel because the persistent profile
-must be opened by the same Chrome family that created it.
-
-3. Optionally resolve short aliases from `chatgpt_threads.json` in the project
-   root or `~/.chatgpt_threads.json`:
-
-   ```json
-   {
-     "ns": "6a33ae58-cb84-83ec-b187-ddab3179ccbb",
-     "ym": "6a3ca60a-fe1c-83ec-867b-ac0c6698acd8"
-   }
-   ```
-
-   Then call:
-
-   ```bash
-   printf '%s\n' "Status update?" | \
-     /home/c/Documents/code/ITIR-suite/.venv/bin/python chatgpt_dom_relay.py \
-     --headed ns
-   ```
-
-`chatgpt_dom_relay.py` opens the real conversation page in a persistent browser
-profile, types into the live composer, clicks send, waits for the assistant
-reply to stabilize, and prints the latest assistant turn. This is intended for
-the "long conversation is laggy, but browser-auth still works" case; it does
-not depend on the blocked `/backend-api/conversation` POST path.
-
-### Codex/ChatGPT feedback loop
-
-Codex CLI already exposes the machine-readable handoff surfaces needed for a
-bounded loop: `--json` emits the Codex session id and
-`--output-last-message` writes the final response. The bridge uses those files
-instead of copying terminal or browser UI text:
-
-```bash
-/home/c/Documents/code/ITIR-suite/.venv/bin/python \
-  scripts/codex_chatgpt_loop.py \
-  --repo /home/c/Documents/code/ITIR-suite \
-  --thread 6a4dda85-fe34-83ec-aee0-5987219cbc82 \
-  --prompt-file /path/to/codex-task.txt \
-  --rounds 2
-```
-
-Each loop is durable under `.autonomous-orchestrator/codex-chatgpt-loops/`:
-the state file records the Codex session id, each Codex final message, and each
-ChatGPT response. The next round resumes the same Codex session with the
-ChatGPT response as external feedback. Use `--headless` only where the
-profile/environment can pass Cloudflare; headed Chrome is the reliable mode
-for this profile.
-
-The AO runner already provides the supervisor primitives: child process
-launch, rolling output, heartbeat, timeout, and durable state. It does not
-currently perform this external handoff itself. Treat the bridge as one
-bounded implementation lane under AO/LRD rather than making the shared AO
-runtime depend on ChatGPT-specific browser state.
-
-The current Codex/ChatGPT pairings are stored in
-`codex_chatgpt_threads.json`. To fetch the latest GPT response and feed it
-back into an existing Codex session without sending another GPT message:
-
-```bash
-/home/c/Documents/code/ITIR-suite/.venv/bin/python \
-  scripts/codex_chatgpt_loop.py \
-  --pair ns \
-  --feedback-only
-
-/home/c/Documents/code/ITIR-suite/.venv/bin/python \
-  scripts/codex_chatgpt_loop.py \
-  --pair ym \
-  --feedback-only
-```
-
-The browser copy-button selectors are not needed for this loop. The relay
-extracts the assistant message text from the rendered turn nodes and writes it
-to JSON, which is more stable than clicking a copy control whose markup can
-change.
-
-```bash
-python scripts/pull_to_structurer.py \
-  --mode pull \
-  --engine async \
-  --selectors-file /tmp/chat_selectors.txt \
-  --title-match exact \
-  --max-pages 5 \
-  --no-skip-existing \
-  --json
-```
-
-For title-only selection, pass `--titles` / `--titles-file`. For ID-only selection,
-pass `--ids` / `--ids-file`.
-
-If image assets require share-link resolution (`https://chatgpt.com/s/m_...`), set:
-
-```bash
-export RE_GPT_SHARED_ASSET_URLS="https://chatgpt.com/s/m_698eb5ffaeb881918520bbf34f205162"
-```
-
-Multiple URLs are supported (comma-separated). The asset resolver will use these
-as a fallback when `asset/get` and `backend-api/files/.../download` do not return
-a direct download URL.
-
-For canonical single-DB ingestion and sync/async benchmarking, use:
-
-```bash
-python scripts/pull_to_structurer.py --mode bench --limit 20 --json
-python scripts/pull_to_structurer.py --mode pull --engine async --limit 200 --rate-limit-rps 3 --concurrency 8
-```
-
-These flows fetch live conversations and ingest directly into `~/.chat_archive.sqlite` without writing intermediate JSON by default.
-
-For a concrete benchmark + targeted stale/missing pull example, see:
-`../docs/planning/chat_archive_pull_ingest_results_20260213.md`.
-
-For a repeatable baseline you can tweak, run `./scripts/context_sync.sh <conversation-id-or-title>`; it executes `--list`, `--inspect`, `--download`, and `--view` in order while letting you adjust the target, line range, or `rg` pattern from the top of the script. Each helper call is wrapped in `timeout 5s` to abort the newer CLI runs that tend to hang so you get a fresh failure instead of an indefinite wait.
-
-The script relies on the CLI helpers implemented in `re_gpt/cli.py`:
-
-- `run_noninteractive_view` builds the message filters and prints the requested slice of a conversation (used by `--view`).
-- `run_inspect_command` pulls cached metadata from `ConversationStorage` and formats it for `--inspect`.
-- `handle_download_command` already powers `download` in the interactive loop, so the script can persist JSON assets without additional glue.
-
-If you extend the script, these internal helpers are the extension points to reuse; they share the same storage/timeout handling used by the interactive CLI.
-
-### Resume a previous conversation interactively
-
-```python
-from re_gpt import SyncChatGPT
-from re_gpt.utils import get_session_token
-
-session_token = get_session_token()
-
-with SyncChatGPT(session_token=session_token) as chatgpt:
-    conversations = chatgpt.list_all_conversations()
-    for idx, conv in enumerate(conversations):
-        print(f"{idx}: {conv['title']}")
-
-    selected = int(input("Select conversation number: "))
-    conversation = chatgpt.get_conversation(conversations[selected]["id"])
-
-    prompt = input("Enter your prompt: ")
-    for message in conversation.chat(prompt):
-        print(message["content"], flush=True, end="")
-```
-
-See [examples/select_chat.py](examples/select_chat.py) for the full script.
-
-
-### Basic async example
-
-```python
-import asyncio
-import sys
-
-from re_gpt import AsyncChatGPT
-from re_gpt.utils import get_session_token
-
-session_token = get_session_token()
-conversation_id = conversation_id = None # conversation ID here
-
-if sys.version_info >= (3, 8) and sys.platform.lower().startswith("win"):
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
-
-async def main():
-    async with AsyncChatGPT(session_token=session_token) as chatgpt:
-        prompt = input("Enter your prompt: ")
-
-        if conversation_id:
-            conversation = chatgpt.get_conversation(conversation_id)
-        else:
-            conversation = chatgpt.create_new_conversation()
-
-        async for message in conversation.chat(prompt):
-            print(message["content"], flush=True, end="")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-### Send messages programmatically
-
-Both the synchronous and asynchronous clients stream assistant replies by
-`POST`ing conversation payloads to the ChatGPT `conversation` endpoint.  The
-`SyncConversation.chat` and `AsyncConversation.chat` helpers take care of
-constructing the JSON body, attaching the chat requirements token and decoding
-the streamed response chunks for you.
-
-```python
-from re_gpt import SyncChatGPT
-from re_gpt.utils import get_session_token
-
-session_token = get_session_token()
-
-with SyncChatGPT(session_token=session_token) as chatgpt:
-    conversation = chatgpt.create_new_conversation()
-    for message in conversation.chat("Explain HTTP POST streaming"):
-        print(message["content"], end="", flush=True)
-```
-
-The asynchronous API exposes the same behaviour through
-`AsyncConversation.chat` which awaits the POST response while yielding
-assistant messages:
-
-```python
-import asyncio
-
-from re_gpt import AsyncChatGPT
-from re_gpt.utils import get_session_token
-
-
-async def main():
-    async with AsyncChatGPT(session_token=get_session_token()) as chatgpt:
-        conversation = chatgpt.create_new_conversation()
-        async for message in conversation.chat("List POST parameters"):
-            print(message["content"], end="", flush=True)
-
-
-asyncio.run(main())
-```
-
-### Chat from the terminal
-
-If you would rather talk to ChatGPT directly from a shell, run the synchronous
-example script.  It keeps prompting for user input, streams the assistant’s
-reply, and works for both new and existing conversations:
-
-```bash
-python examples/basic_example.py
-```
-
-Update the `conversation_id` constant in the script (or leave it as `None` to
-start fresh) before running it.  The more featureful
-[`examples/complex_example.py`](examples/complex_example.py) variant colours the
-terminal output, saves the latest `conversation_id` back to `config.ini`, and
-prints the existing message history each time the script starts.
-
-To resume an archived conversation with a full-screen selector, use the paging
-helper:
-
-```bash
-python examples/select_chat.py --limit 5
-```
-
-`select_chat.py` lists your conversations page-by-page.  Pick a number to open a
-chat, press `n` for the next page, `p` for the previous page, or `q` to exit.
-The script writes fetched metadata to `conversations.json`, downloads the full
-message history to `conversation_<id>.json`, and paginates messages twenty at a
-time before handing you back to the live chat loop.
-
-## More Examples
-
-For a more complex example, check out the [examples](/examples) folder in the repository.
-
-### Obtaining The Session Token
-
-1. Go to <https://chatgpt.com/chat> and log in or sign up.
-2. Open the developer tools in your browser.
-3. Go to the `Application` tab and open the `Cookies` section for `https://chatgpt.com`.
-4. Copy the value for `__Secure-next-auth.session-token` from the `chatgpt.com` cookies and save it.
-
-## TODO
-
-- [x] Add more examples
-- [ ] Add better error handling
-- [x] Implement a function to retrieve all ChatGPT chats
-- [ ] Improve documentation
-
-## Contributing
-
-Contributions are what makes the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
-
-If you have a suggestion that would make this better, please fork the repo and create a pull request.
-Don't forget to give the project a star! Thanks again!
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+## Development boundaries
+
+When adding another mutation operation:
+
+1. observe the operation with the redaction-first browser protocol tooling if its current wire semantics are not already established;
+2. encode graph coordinates explicitly rather than relying on transcript position or rendered DOM order;
+3. perform at most one mutation dispatch;
+4. classify 4xx pre-commit rejection separately from post-dispatch ambiguity;
+5. reconcile from the exact graph;
+6. persist through `MutationService` / `ConversationStorage` / `AttachmentArchive`;
+7. expose the operation consistently through Python, CLI and MCP.
+
+## Roadmap
+
+The core transport-discovery milestone is complete. Current work is primarily hardening rather than making basic programmatic use possible:
+
+- broader live acceptance matrix for graph mutations and attachment combinations;
+- session expiry/refresh lifecycle and an explicit bootstrap command;
+- protocol drift detection;
+- adapter health/backoff and latency measurements;
+- broader attachment types/sizes and archive provenance;
+- continued reduction of legacy direct-client mutation code once compatibility consumers have migrated.
 
 ## License
 
-Distributed under the Apache License 2.0. See [`LICENSE`](https://github.com/Zai-Kun/reverse-engineered-chatgpt/blob/main/LICENSE) for more information.
-
-## Contact/Bug report
-
-Zai-Kun - [Discord Server](https://discord.gg/ymcqxudVJG)
-
-Repo Link: <https://github.com/Zai-Kun/reverse-engineered-chatgpt>
-
-## Acknowledgments
-
-- [sudoAlphaX (for writing this readme)](https://github.com/sudoAlphaX)
-
-- [yifeikong (curl-cffi module)](https://github.com/yifeikong/curl_cffi)
-
-- [acheong08 (implementation to obtain arkose_token)](https://github.com/acheong08/funcaptcha)
-
-- [pyca (cryptography module)](https://github.com/pyca/cryptography/)
-
-- [Legrandin (pycryptodome module)](https://github.com/Legrandin/pycryptodome/)
-
-- [othneildrew (README Template)](https://github.com/othneildrew)
-
-<!-- MARKDOWN LINKS & IMAGES -->
-
-[forks-badge]: https://img.shields.io/github/forks/Zai-Kun/reverse-engineered-chatgpt
-[forks-url]: https://github.com/Zai-Kun/reverse-engineered-chatgpt/network/members
-[stars-badge]: https://img.shields.io/github/stars/Zai-Kun/reverse-engineered-chatgpt
-[stars-url]: https://github.com/Zai-Kun/reverse-engineered-chatgpt/stargazers
-[issues-badge]: https://img.shields.io/github/issues/Zai-Kun/reverse-engineered-chatgpt
-[issues-url]: https://github.com/Zai-Kun/reverse-engineered-chatgpt/issues
-[discussions-badge]: https://img.shields.io/github/discussions/Zai-Kun/reverse-engineered-chatgpt
-[discussions-url]: https://github.com/Zai-Kun/reverse-engineered-chatgpt/discussions
-[python-badge]: https://img.shields.io/badge/Python-blue?logo=python&logoColor=yellow
-[python-url]: https://www.python.org/
-[license-badge]: https://img.shields.io/github/license/Zai-Kun/reverse-engineered-chatgpt
-[license-url]: https://github.com/Zai-Kun/reverse-engineered-chatgpt/blob/main/LICENSE
+MIT. See [`LICENSE`](LICENSE).
