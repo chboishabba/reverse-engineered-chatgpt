@@ -58,6 +58,16 @@ def _prompt_from_args(args: argparse.Namespace) -> str:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    # Output-directory creation is deliberately pre-actuation.  If this fails,
+    # no browser mutation has been attempted and a normal nonzero exit is safe.
+    if args.output is not None:
+        try:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"error: cannot prepare output directory: {exc}", file=sys.stderr)
+            return 1
+
     try:
         prompt = _prompt_from_args(args)
         if args.operation != "attachment-continue":
@@ -76,16 +86,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         rendered = serialize_experiment_receipt(receipt)
     except KeyboardInterrupt:
         return 130
-    except Exception as exc:  # noqa: BLE001 - failures here are pre-receipt/pre-actuation boundaries.
+    except Exception as exc:  # noqa: BLE001 - capture orchestrator owns post-actuation ambiguity.
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    if args.output is not None:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(rendered, encoding="utf-8")
-    else:
+    if args.output is None:
         sys.stdout.write(rendered)
-    return 0
+        return 0
+
+    try:
+        args.output.write_text(rendered, encoding="utf-8")
+        return 0
+    except Exception as exc:  # noqa: BLE001 - mutation may already exist; preserve evidence.
+        sys.stdout.write(rendered)
+        print(
+            f"warning: capture completed but receipt file write failed ({exc.__class__.__name__}); "
+            "receipt emitted to stdout; do not rerun the mutation solely because of this write failure",
+            file=sys.stderr,
+        )
+        return 2
 
 
 if __name__ == "__main__":
