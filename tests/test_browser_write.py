@@ -16,7 +16,7 @@ class _Completed:
         self.stderr = stderr
 
 
-def test_submit_prompt_uses_accessibility_browser_auto_transport(monkeypatch, tmp_path: Path) -> None:
+def test_submit_prompt_uses_dom_only_mutation_runner(monkeypatch, tmp_path: Path) -> None:
     calls: list[tuple[list[str], str]] = []
 
     def fake_run(command, *, input, text, capture_output, check):
@@ -25,29 +25,39 @@ def test_submit_prompt_uses_accessibility_browser_auto_transport(monkeypatch, tm
             0,
             json.dumps(
                 {
-                    "latest_assistant": "done",
+                    "mutation_state": "submission_observed",
+                    "latest_assistant": "",
                     "resolved_thread_id": "abc",
-                    "transport": "api",
+                    "transport": "dom",
                     "browser_mode": "displayless",
+                    "authenticated": True,
+                    "hydrated": True,
                 }
             ),
         )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    result = submit_prompt(
-        "abc",
-        "hello",
-        profile_dir=tmp_path / "profile",
-    )
+    result = submit_prompt("abc", "hello", profile_dir=tmp_path / "profile")
 
-    assert result["latest_assistant"] == "done"
-    assert result["browser_mode"] == "displayless"
-    assert len(calls) == 1
+    assert result["mutation_state"] == "submission_observed"
+    assert result["transport"] == "dom"
     command, stdin_text = calls[0]
     assert stdin_text == "hello"
-    assert command[:3] == [command[0], "-m", "re_gpt.accessibility_browser"]
-    assert command[command.index("--transport") + 1] == "auto"
-    assert command[command.index("--browser-mode") + 1] == "displayless"
+    assert command[:3] == [command[0], "-m", "re_gpt.mutation_browser"]
+    assert "--transport" not in command
+    assert "--follow" not in command
+
+
+def test_submit_prompt_follow_is_explicit(monkeypatch) -> None:
+    observed: list[list[str]] = []
+
+    def fake_run(command, *, input, text, capture_output, check):
+        observed.append(command)
+        return _Completed(0, json.dumps({"latest_assistant": "done"}))
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    submit_prompt("abc", "hello", follow=True)
+    assert "--follow" in observed[0]
 
 
 def test_submit_prompt_can_select_unified_headless(monkeypatch) -> None:
@@ -55,17 +65,7 @@ def test_submit_prompt_can_select_unified_headless(monkeypatch) -> None:
 
     def fake_run(command, *, input, text, capture_output, check):
         observed.append(command[command.index("--browser-mode") + 1])
-        return _Completed(
-            0,
-            json.dumps(
-                {
-                    "latest_assistant": "done",
-                    "resolved_thread_id": "abc",
-                    "transport": "dom",
-                    "browser_mode": "headless",
-                }
-            ),
-        )
+        return _Completed(0, json.dumps({"transport": "dom", "browser_mode": "headless"}))
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     submit_prompt("abc", "hello", browser_mode="headless")
