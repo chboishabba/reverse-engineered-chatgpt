@@ -18,31 +18,20 @@ _UUID_RE = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
     re.IGNORECASE,
 )
-_STATUS_RE = re.compile(r"(?:HTTP\s+)?(?P<status>[1-5][0-9]{2})", re.IGNORECASE)
+_STATUS_RE = re.compile(
+    r"(?:\bHTTP[/\s0-9.]*\s|\bstatus[\s:=]+)(?P<status>[1-5][0-9]{2})\b",
+    re.IGNORECASE,
+)
 
-_DEVICE_HEADER_NAMES = frozenset({
-    "oai-did",
-    "oai-device-id",
-    "x-openai-device-id",
-    "openai-device-id",
-})
-_ROUTE_HEADER_NAMES = frozenset({
-    "x-openai-target-path",
-    "x-openai-target-route",
-    "oai-session-id",
-})
+_DEVICE_HEADER_NAMES = frozenset({"oai-did", "oai-device-id", "x-openai-device-id", "openai-device-id"})
+_ROUTE_HEADER_NAMES = frozenset({"x-openai-target-path", "x-openai-target-route", "oai-session-id"})
 _SENTINEL_HEADER_NAMES = frozenset({
     "openai-sentinel-chat-requirements-token",
     "openai-sentinel-arkose-token",
     "openai-sentinel-proof-token",
     "openai-sentinel-turnstile-token",
 })
-_ROUTE_COOKIE_NAMES = frozenset({
-    "oai-chat-web-route",
-    "__cf_bm",
-    "cf_clearance",
-    "_cfuvid",
-})
+_ROUTE_COOKIE_NAMES = frozenset({"oai-chat-web-route", "__cf_bm", "cf_clearance", "_cfuvid"})
 
 
 def normalize_protocol_path(url_or_path: str) -> str:
@@ -81,19 +70,14 @@ def sanitize_headers(headers: Mapping[str, Any] | None) -> dict[str, Any]:
         "has_authorization": "authorization" in lower_names,
         "has_device_id": bool(lower_names & _DEVICE_HEADER_NAMES),
         "has_route_headers": bool(lower_names & _ROUTE_HEADER_NAMES),
-        "has_sentinel_token": bool(
-            (lower_names & _SENTINEL_HEADER_NAMES)
-            or any(name.startswith("openai-sentinel-") for name in lower_names)
-        ),
+        "has_sentinel_token": bool((lower_names & _SENTINEL_HEADER_NAMES) or any(name.startswith("openai-sentinel-") for name in lower_names)),
         "has_origin": "origin" in lower_names,
         "has_referer": "referer" in lower_names,
         "has_content_type": "content-type" in lower_names,
     }
 
 
-def sanitize_cookies(
-    cookies: Iterable[Any] | Mapping[str, Any] | None,
-) -> dict[str, Any]:
+def sanitize_cookies(cookies: Iterable[Any] | Mapping[str, Any] | None) -> dict[str, Any]:
     names: set[str] = set()
     domains: set[str] = set()
     if cookies is None:
@@ -110,7 +94,6 @@ def sanitize_cookies(
             iterable = list(cookies)
         except Exception:
             iterable = []
-
     for item in iterable:
         if isinstance(item, str):
             if item.strip():
@@ -126,7 +109,6 @@ def sanitize_cookies(
             names.add(str(name))
         if domain:
             domains.add(str(domain))
-
     sorted_names = sorted(names)
     lower_names = {name.lower() for name in sorted_names}
     return {
@@ -154,27 +136,16 @@ def _schema_of_value(value: Any, *, depth: int, max_depth: int) -> Any:
         return {
             "type": "object",
             "keys": sorted(str(k) for k in value.keys()),
-            "fields": {
-                str(k): _schema_of_value(v, depth=depth + 1, max_depth=max_depth)
-                for k, v in sorted(value.items(), key=lambda item: str(item[0]))
-            },
+            "fields": {str(k): _schema_of_value(v, depth=depth + 1, max_depth=max_depth) for k, v in sorted(value.items(), key=lambda item: str(item[0]))},
         }
     if isinstance(value, (list, tuple)):
         if not value:
             return {"type": "array", "count": 0, "item": None}
-        return {
-            "type": "array",
-            "count": len(value),
-            "item": _schema_of_value(value[0], depth=depth + 1, max_depth=max_depth),
-        }
+        return {"type": "array", "count": len(value), "item": _schema_of_value(value[0], depth=depth + 1, max_depth=max_depth)}
     return type(value).__name__
 
 
-def sanitize_json_schema(
-    payload: Any,
-    *,
-    max_depth: int = 2,
-) -> tuple[list[str], dict[str, Any]]:
+def sanitize_json_schema(payload: Any, *, max_depth: int = 2) -> tuple[list[str], dict[str, Any]]:
     """Extract top-level keys and value-free nested schema from a JSON payload."""
     parsed = payload
     if isinstance(payload, (bytes, bytearray)):
@@ -190,7 +161,6 @@ def sanitize_json_schema(
             parsed = json.loads(stripped)
         except Exception:
             return [], {"type": "non_json_text"}
-
     if isinstance(parsed, Mapping):
         keys = sorted(str(k) for k in parsed.keys())
         schema = _schema_of_value(parsed, depth=0, max_depth=max_depth)
@@ -208,7 +178,6 @@ def sanitize_sse_event_shapes(chunks: Iterable[str | bytes]) -> dict[str, Any]:
     event_key_sets: set[str] = set()
     assistant_events = 0
     user_events = 0
-
     for chunk in chunks:
         text = chunk.decode("utf-8", errors="ignore") if isinstance(chunk, (bytes, bytearray)) else str(chunk)
         for raw_line in text.splitlines():
@@ -236,7 +205,6 @@ def sanitize_sse_event_shapes(chunks: Iterable[str | bytes]) -> dict[str, Any]:
                         assistant_events += 1
                     elif role == "user":
                         user_events += 1
-
     return {
         "data_event_count": data_lines,
         "done_seen": done_seen,
@@ -313,10 +281,7 @@ def build_protocol_observation(
 ) -> ProtocolObservation:
     header_meta = sanitize_headers(headers)
     cookie_meta = sanitize_cookies(cookies)
-    domains = sorted(
-        set(cookie_meta["cookie_domains"])
-        | {str(d) for d in (cookie_domains or ()) if d}
-    )
+    domains = sorted(set(cookie_meta["cookie_domains"]) | {str(d) for d in (cookie_domains or ()) if d})
     body_keys, body_schema = sanitize_json_schema(payload) if payload is not None else ([], {})
     sse_shape = sanitize_sse_event_shapes(sse_chunks) if sse_chunks is not None else {}
     return ProtocolObservation(
