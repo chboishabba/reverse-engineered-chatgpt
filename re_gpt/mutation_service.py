@@ -756,8 +756,11 @@ class MutationService:
         if not _node_exists_with_role(before, user_node_id, "user"):
             raise ValueError(f"user node not found: {user_node_id}")
         parent_node_id = _node_parent(before, user_node_id)
-        if not parent_node_id:
-            raise ValueError(f"user node has no branchable parent: {user_node_id}")
+        if not parent_node_id or parent_node_id == "client-created-root":
+            raise ValueError(
+                f"user node {user_node_id} has no branchable parent in this conversation "
+                f"(root turn cannot be branched within the same conversation; use new_conversation instead)"
+            )
         return self._run_graph_mutation(
             "edit_branch",
             conversation_id=conversation,

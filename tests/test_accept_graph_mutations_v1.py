@@ -66,7 +66,7 @@ def test_acceptance_runs_graph_mutations_in_dependency_order() -> None:
         ("new", "Reply with only NEW-N1"),
         ("branch", "c-new", "a-new", "Reply with only BRANCH-N1"),
         ("regenerate", "c-new", "u-new"),
-        ("edit", "c-new", "u-new", "Reply with only EDIT-N1"),
+        ("edit", "c-new", "u-branch", "Reply with only EDIT-N1"),
     ]
     assert result["conversation_id"] == "c-new"
     assert result["all_complete"] is True
