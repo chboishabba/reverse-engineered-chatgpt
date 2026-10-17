@@ -10,6 +10,18 @@ from .stream_runtime import current_stream_state, stream_runtime
 _INSTALLED = False
 
 
+def _merge_stream_summary(result: dict[str, Any], summary: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(result) | dict(summary)
+    if result.get("stream_terminal_observed"):
+        merged["stream_terminal_observed"] = True
+        merged["stream_terminal_reason"] = result.get("stream_terminal_reason") or summary.get("stream_terminal_reason")
+    if result.get("stream_event_counts"):
+        merged["stream_event_counts"] = result.get("stream_event_counts")
+    if result.get("assistant_stream_text"):
+        merged["assistant_stream_text"] = result.get("assistant_stream_text")
+    return merged
+
+
 def install_stream_first_follow() -> None:
     global _INSTALLED
     if _INSTALLED:
@@ -26,10 +38,10 @@ def install_stream_first_follow() -> None:
             if progress_callback is not None and active.progress_callback is None:
                 active.progress_callback = progress_callback
             result = original_submit(*args, **kwargs)
-            return dict(result) | active.summary()
+            return _merge_stream_summary(dict(result), active.summary())
         with stream_runtime(progress_callback) as state:
             result = original_submit(*args, **kwargs)
-            return dict(result) | state.summary()
+            return _merge_stream_summary(dict(result), state.summary())
 
     stream_submit._re_gpt_stream_first = True
     async_mutation_probe.submit_async_prompt_once = stream_submit
@@ -44,10 +56,10 @@ def install_stream_first_follow() -> None:
             if progress_callback is not None and active.progress_callback is None:
                 active.progress_callback = progress_callback
             result = original_graph_submit(operation, *args, **kwargs)
-            return dict(result) | active.summary()
+            return _merge_stream_summary(dict(result), active.summary())
         with stream_runtime(progress_callback) as state:
             result = original_graph_submit(operation, *args, **kwargs)
-            return dict(result) | state.summary()
+            return _merge_stream_summary(dict(result), state.summary())
 
     stream_graph_submit._re_gpt_stream_first = True
     direct_graph_mutation.submit_direct_graph_mutation_once = stream_graph_submit
@@ -78,7 +90,7 @@ def install_stream_first_follow() -> None:
         no_poll["reconcile_interval"] = 0.0
         with stream_runtime(progress_callback, follow_requested=True) as state:
             result = original_continue(self, *args, **no_poll)
-            return dict(result) | state.summary() | {
+            return _merge_stream_summary(dict(result), state.summary()) | {
                 "follow_mode": "stream_terminal_single_reconcile",
                 "terminal_reconcile_count": 1,
                 "reconcile_poll_count": 0,
@@ -100,7 +112,7 @@ def install_stream_first_follow() -> None:
         no_poll["reconcile_interval"] = 0.0
         with stream_runtime(None, follow_requested=True) as state:
             result = original_run_graph(self, operation, *args, **no_poll)
-            return dict(result) | state.summary() | {
+            return _merge_stream_summary(dict(result), state.summary()) | {
                 "follow_mode": "stream_terminal_single_reconcile",
                 "terminal_reconcile_count": 1,
                 "reconcile_poll_count": 0,
