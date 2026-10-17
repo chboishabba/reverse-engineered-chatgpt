@@ -2,6 +2,9 @@
 
 Adapters are acquisition mechanisms only. The first valid graph wins; callers
 remain responsible for persistence and mutation-receipt classification.
+
+Persistent health affects only exact-read adapter admission. It never schedules,
+retries, or replays mutation POSTs.
 """
 
 from __future__ import annotations
@@ -12,14 +15,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from .adapter_health import AdapterHealthStore
 from .async_bridge import run_async_sync
 from .async_chatgpt import AsyncChatGPT
 from .browser_observer import fetch_conversation_same_origin
 from .browser_session_replay import load_browser_session_snapshot
-from .protocol_observation import (
-    build_protocol_observation,
-    observation_from_exception,
-)
+from .protocol_observation import build_protocol_observation, observation_from_exception
+from .storage import DEFAULT_DB_PATH
 from .sync_chatgpt import SyncChatGPT
 from .utils import get_default_model, get_default_user_agent, get_session_token
 
@@ -46,6 +48,8 @@ class GraphAcquisitionFailed(RuntimeError):
         self,
         attempts: Sequence[dict[str, Any]],
         observations: Sequence[dict[str, Any]] = (),
+        *,
+        health_skipped_adapters: Sequence[str] = (),
     ) -> None:
         self.attempts = tuple(dict(item) for item in attempts)
         self.observations = tuple(dict(item) for item in observations)
@@ -53,9 +57,11 @@ class GraphAcquisitionFailed(RuntimeError):
         self.rejected_adapters = tuple(
             str(item["adapter"]) for item in self.attempts if item.get("rejected")
         )
+        self.health_skipped_adapters = tuple(str(item) for item in health_skipped_adapters)
         super().__init__(
             "no exact-thread graph adapter succeeded; attempted="
             + ",".join(self.attempted_adapters)
+            + ("; cooling=" + ",".join(self.health_skipped_adapters) if self.health_skipped_adapters else "")
         )
 
 
@@ -69,6 +75,8 @@ class GraphAcquisitionResult:
     attempted_adapters: tuple[str, ...]
     rejected_adapters: tuple[str, ...]
     observations: tuple[dict[str, Any], ...] = ()
+    health_skipped_adapters: tuple[str, ...] = ()
+    adapter_health: dict[str, dict[str, Any]] | None = None
 
 
 def validate_exact_graph(graph: Any) -> dict[str, Any]:
@@ -222,11 +230,14 @@ def fetch_exact_graph(
     browser_timeout: int = 60,
     adapter_order: Sequence[str] = DEFAULT_ADAPTER_ORDER,
     adapter_fetchers: Mapping[str, Callable[[str], Any]] | None = None,
+    health_db_path: Path | str | None = DEFAULT_DB_PATH,
+    health_now: Callable[[], float] = time.time,
 ) -> GraphAcquisitionResult:
-    """Return the first validated exact-thread graph from the configured adapters.
+    """Return the first validated exact-thread graph from configured adapters.
 
-    A rejected adapter is attempted once and then abandoned for this broker call.
-    Failures are represented only by redacted class/status/timing metadata.
+    Each admitted adapter is attempted at most once. Persistent health may skip
+    direct read contexts still inside cooldown, but never retries or replays any
+    mutation. Browser remains the terminal fallback when configured.
     """
 
     conversation_id = str(conversation_id or "").strip()
@@ -243,40 +254,54 @@ def fetch_exact_graph(
         browser_timeout=browser_timeout,
     ))
 
-    attempts: list[dict[str, Any]] = []
-    observations: list[dict[str, Any]] = []
-    rejected_adapters: list[str] = []
-    seen: set[str] = set()
-    seq = 0
+    health = AdapterHealthStore(health_db_path, now=health_now) if health_db_path is not None else None
+    try:
+        effective_order: Sequence[str] = adapter_order
+        health_skipped: tuple[str, ...] = ()
+        if health is not None:
+            effective_order, health_skipped = health.rank_adapters(adapter_order)
 
-    for adapter in adapter_order:
-        if adapter in seen:
-            continue
-        seen.add(adapter)
-        fetcher = fetchers.get(adapter)
-        if fetcher is None:
-            continue
-        seq += 1
-        started = time.perf_counter()
-        try:
-            graph, diagnostic = _normalize_fetch_result(fetcher(conversation_id))
-        except Exception as exc:  # noqa: BLE001 - broker intentionally isolates adapter failures.
-            elapsed_ms = (time.perf_counter() - started) * 1000.0
-            rejected = _is_request_context_rejection(exc)
-            if rejected:
-                rejected_adapters.append(adapter)
-            status = _status_from_exception(exc)
-            attempts.append(
-                _safe_attempt(
+        attempts: list[dict[str, Any]] = []
+        observations: list[dict[str, Any]] = []
+        rejected_adapters: list[str] = []
+        seen: set[str] = set()
+        seq = 0
+
+        for adapter in effective_order:
+            if adapter in seen:
+                continue
+            seen.add(adapter)
+            fetcher = fetchers.get(adapter)
+            if fetcher is None:
+                continue
+            seq += 1
+            started = time.perf_counter()
+            try:
+                graph, diagnostic = _normalize_fetch_result(fetcher(conversation_id))
+            except Exception as exc:  # noqa: BLE001 - broker intentionally isolates adapter failures.
+                elapsed_ms = (time.perf_counter() - started) * 1000.0
+                rejected = _is_request_context_rejection(exc)
+                if rejected:
+                    rejected_adapters.append(adapter)
+                status = _status_from_exception(exc)
+                response_class = exc.__class__.__name__
+                attempts.append(_safe_attempt(
                     adapter,
                     elapsed_ms=elapsed_ms,
                     status=status,
-                    response_class=exc.__class__.__name__,
+                    response_class=response_class,
                     rejected=rejected,
-                )
-            )
-            observations.append(
-                observation_from_exception(
+                ))
+                if health is not None:
+                    health.record_attempt(
+                        adapter,
+                        elapsed_ms=elapsed_ms,
+                        status=status,
+                        response_class=response_class,
+                        rejected=rejected,
+                        success=False,
+                    )
+                observations.append(observation_from_exception(
                     exc,
                     transport=adapter,
                     operation="exact_read",
@@ -284,46 +309,57 @@ def fetch_exact_graph(
                     path=f"/backend-api/conversation/{conversation_id}",
                     sequence_index=seq,
                     elapsed_ms=elapsed_ms,
-                ).to_dict()
-            )
-            continue
+                ).to_dict())
+                continue
 
-        elapsed_ms = (time.perf_counter() - started) * 1000.0
-        status = diagnostic.get("status")
-        resolved_status = int(status) if isinstance(status, int) else 200
-        resolved_class = str(diagnostic.get("response_class") or "ok")
-        attempts.append(
-            _safe_attempt(
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            status = diagnostic.get("status")
+            resolved_status = int(status) if isinstance(status, int) else 200
+            resolved_class = str(diagnostic.get("response_class") or "ok")
+            attempts.append(_safe_attempt(
                 adapter,
                 elapsed_ms=elapsed_ms,
                 status=resolved_status,
                 response_class=resolved_class,
                 rejected=False,
+            ))
+            if health is not None:
+                health.record_attempt(
+                    adapter,
+                    elapsed_ms=elapsed_ms,
+                    status=resolved_status,
+                    response_class=resolved_class,
+                    rejected=False,
+                    success=True,
+                )
+            obs = build_protocol_observation(
+                transport=adapter,
+                operation="exact_read",
+                method=str(diagnostic.get("method") or "GET"),
+                path=str(diagnostic.get("route") or f"/backend-api/conversation/{conversation_id}"),
+                status=resolved_status,
+                response_class=resolved_class,
+                headers={name: "<redacted>" for name in diagnostic.get("header_names") or ()},
+                cookies=diagnostic.get("cookie_names") or (),
+                cookie_domains=diagnostic.get("cookie_domains") or (),
+                sequence_index=seq,
+                elapsed_ms=elapsed_ms,
+            ).to_dict()
+            observations.append(obs)
+            return GraphAcquisitionResult(
+                graph=graph,
+                adapter=adapter,
+                elapsed_ms=elapsed_ms,
+                diagnostic=diagnostic,
+                attempts=tuple(attempts),
+                attempted_adapters=tuple(item["adapter"] for item in attempts),
+                rejected_adapters=tuple(rejected_adapters),
+                observations=tuple(observations),
+                health_skipped_adapters=tuple(health_skipped),
+                adapter_health=health.snapshot() if health is not None else None,
             )
-        )
-        obs = build_protocol_observation(
-            transport=adapter,
-            operation="exact_read",
-            method=str(diagnostic.get("method") or "GET"),
-            path=str(diagnostic.get("route") or f"/backend-api/conversation/{conversation_id}"),
-            status=resolved_status,
-            response_class=resolved_class,
-            headers={name: "<redacted>" for name in diagnostic.get("header_names") or ()},
-            cookies=diagnostic.get("cookie_names") or (),
-            cookie_domains=diagnostic.get("cookie_domains") or (),
-            sequence_index=seq,
-            elapsed_ms=elapsed_ms,
-        ).to_dict()
-        observations.append(obs)
-        return GraphAcquisitionResult(
-            graph=graph,
-            adapter=adapter,
-            elapsed_ms=elapsed_ms,
-            diagnostic=diagnostic,
-            attempts=tuple(attempts),
-            attempted_adapters=tuple(item["adapter"] for item in attempts),
-            rejected_adapters=tuple(rejected_adapters),
-            observations=tuple(observations),
-        )
 
-    raise GraphAcquisitionFailed(attempts, observations)
+        raise GraphAcquisitionFailed(attempts, observations, health_skipped_adapters=health_skipped)
+    finally:
+        if health is not None:
+            health.close()
