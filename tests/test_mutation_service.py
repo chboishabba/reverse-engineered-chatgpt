@@ -10,7 +10,7 @@ def _chat(prompt: str, *, assistant: str | None = None):
             "message": {
                 "author": {"role": "user"},
                 "content": {"parts": [prompt]},
-                "create_time": 100.0,
+                "create_time": 9999999999.0,
             },
         }
     }
@@ -20,7 +20,7 @@ def _chat(prompt: str, *, assistant: str | None = None):
             "message": {
                 "author": {"role": "assistant"},
                 "content": {"parts": [assistant]},
-                "create_time": 101.0,
+                "create_time": 10000000000.0,
             },
         }
     return {"mapping": mapping}
