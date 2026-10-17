@@ -1,6 +1,6 @@
 """Attachment staging and canonical graph receipts.
 
-The browser DOM is authoritative only for pre-submit staging.  Durable attachment
+The browser DOM is authoritative only for pre-submit staging. Durable attachment
 success is certified from the validated conversation graph after the user node
 commits.
 """
@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 ATTACH_INPUT_SELECTOR = 'input[aria-label="Attach files"]'
-REMOVE_HINTS = ("remove attachment", "remove file", "delete attachment", "delete file")
 
 
 @dataclass(frozen=True)
@@ -83,13 +82,10 @@ def _attachment_scope_script() -> str:
 
 
 async def stage_attachments(relay, attachments: Sequence[LocalAttachment]) -> list[AttachmentReadyReceipt]:
-    """Select files through ChatGPT's native file input and wait for DOM readiness."""
-
     if not attachments:
         return []
     locator = relay.page.locator(f"{ATTACH_INPUT_SELECTOR}:visible").first
     if not await locator.count():
-        # File inputs can be intentionally visually hidden while remaining usable.
         locator = relay.page.locator(ATTACH_INPUT_SELECTOR).first
     if not await locator.count():
         raise RuntimeError('native ChatGPT attachment input not found: input[aria-label="Attach files"]')
@@ -102,13 +98,12 @@ async def stage_attachments(relay, attachments: Sequence[LocalAttachment]) -> li
         latest = []
         for item in attachments:
             raw = await relay.page.evaluate(script, item.filename)
-            receipt = AttachmentReadyReceipt(
+            latest.append(AttachmentReadyReceipt(
                 filename=item.filename,
                 rendered=bool(isinstance(raw, dict) and raw.get("rendered")),
                 uploading=bool(not isinstance(raw, dict) or raw.get("uploading")),
                 removable=bool(isinstance(raw, dict) and raw.get("removable")),
-            )
-            latest.append(receipt)
+            ))
         if latest and all(receipt.ready for receipt in latest):
             return latest
         await relay.page.wait_for_timeout(200)
@@ -123,17 +118,7 @@ def _first(mapping: Mapping[str, Any], keys: Iterable[str]) -> Any:
     return None
 
 
-def canonical_attachments_for_user_node(chat: Mapping[str, Any], user_node_id: str) -> list[CanonicalAttachment]:
-    mapping = chat.get("mapping")
-    if not isinstance(mapping, Mapping):
-        return []
-    node = mapping.get(user_node_id)
-    if not isinstance(node, Mapping):
-        return []
-    message = node.get("message")
-    if not isinstance(message, Mapping):
-        return []
-
+def _candidate_mappings(message: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     candidates: list[Mapping[str, Any]] = []
     metadata = message.get("metadata")
     if isinstance(metadata, Mapping):
@@ -148,10 +133,23 @@ def canonical_attachments_for_user_node(chat: Mapping[str, Any], user_node_id: s
         raw = content.get("attachments")
         if isinstance(raw, list):
             candidates.extend(item for item in raw if isinstance(item, Mapping))
+    return candidates
+
+
+def canonical_attachments_for_node(chat: Mapping[str, Any], node_id: str) -> list[CanonicalAttachment]:
+    mapping = chat.get("mapping")
+    if not isinstance(mapping, Mapping):
+        return []
+    node = mapping.get(node_id)
+    if not isinstance(node, Mapping):
+        return []
+    message = node.get("message")
+    if not isinstance(message, Mapping):
+        return []
 
     result: list[CanonicalAttachment] = []
     seen: set[tuple[str, str]] = set()
-    for item in candidates:
+    for item in _candidate_mappings(message):
         file_id = str(_first(item, ("id", "file_id", "fileId")) or "").strip()
         pointer = _first(item, ("asset_pointer", "pointer", "url"))
         pointer = str(pointer).strip() if pointer else None
@@ -169,7 +167,21 @@ def canonical_attachments_for_user_node(chat: Mapping[str, Any], user_node_id: s
         if key in seen or not (file_id or filename):
             continue
         seen.add(key)
-        result.append(CanonicalAttachment(user_node_id, file_id, filename, mime, size, pointer))
+        result.append(CanonicalAttachment(str(node_id), file_id, filename, mime, size, pointer))
+    return result
+
+
+def canonical_attachments_for_user_node(chat: Mapping[str, Any], user_node_id: str) -> list[CanonicalAttachment]:
+    return canonical_attachments_for_node(chat, user_node_id)
+
+
+def iter_canonical_attachments(chat: Mapping[str, Any]) -> list[CanonicalAttachment]:
+    mapping = chat.get("mapping")
+    if not isinstance(mapping, Mapping):
+        return []
+    result: list[CanonicalAttachment] = []
+    for node_id in mapping:
+        result.extend(canonical_attachments_for_node(chat, str(node_id)))
     return result
 
 
