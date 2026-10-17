@@ -8,6 +8,7 @@ only makes a second trigger unsafe.
 from __future__ import annotations
 
 import contextlib
+import time
 from dataclasses import asdict
 from typing import Any
 
@@ -22,21 +23,30 @@ from .dom_commit import (
 )
 
 FLOATING_NEW_CHAT_DIALOG = 'section[role="dialog"][aria-label="New chat"]'
+FLOATING_NEW_CHAT_OVERLAY = '.codex-dialog-overlay[data-state="open"]'
 FLOATING_NEW_CHAT_MINIMIZE = 'button[aria-label="Minimize chat"]'
 
 
-async def dismiss_floating_new_chat(page) -> bool:
-    """Minimize ChatGPT's known floating New chat overlay if it is open."""
+async def dismiss_floating_new_chat(page, *, settle_ms: int = 0) -> bool:
+    """Minimize ChatGPT's known floating New chat overlay if it appears."""
 
-    dialog = page.locator(f"{FLOATING_NEW_CHAT_DIALOG}:visible").first
-    if not await dialog.count():
-        return False
-    minimize = dialog.locator(f"{FLOATING_NEW_CHAT_MINIMIZE}:visible").first
-    if not await minimize.count():
-        return False
-    await minimize.click()
-    await page.wait_for_timeout(100)
-    return True
+    deadline = time.monotonic() + max(0, settle_ms) / 1000.0
+    while True:
+        dialog = page.locator(f"{FLOATING_NEW_CHAT_DIALOG}:visible").first
+        overlay = page.locator(f"{FLOATING_NEW_CHAT_OVERLAY}:visible").first
+        if await dialog.count():
+            minimize = dialog.locator(f"{FLOATING_NEW_CHAT_MINIMIZE}:visible").first
+        elif await overlay.count():
+            minimize = page.locator(f"{FLOATING_NEW_CHAT_MINIMIZE}:visible").first
+        else:
+            minimize = None
+        if minimize is not None and await minimize.count():
+            await minimize.click()
+            await page.wait_for_timeout(100)
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        await page.wait_for_timeout(100)
 
 
 async def submit_prompt_once(relay, prompt: str) -> dict[str, Any]:
@@ -46,7 +56,9 @@ async def submit_prompt_once(relay, prompt: str) -> dict[str, Any]:
     if not prompt:
         raise ValueError("prompt is empty")
 
-    await dismiss_floating_new_chat(relay.page)
+    # Attachment staging can cause the floating dialog to animate in just
+    # before focus; give that known transient a short chance to appear.
+    await dismiss_floating_new_chat(relay.page, settle_ms=750)
     composer = await relay._locate_visible(EDITOR_TEXT_SELECTORS)
     await composer.click()
     await relay.page.keyboard.insert_text(prompt)

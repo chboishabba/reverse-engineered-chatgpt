@@ -54,3 +54,21 @@ def test_dismiss_floating_new_chat_leaves_absent_dialog_untouched() -> None:
 
     assert asyncio.run(dismiss_floating_new_chat(page)) is False
     assert page.waits == []
+
+
+def test_dismiss_floating_new_chat_handles_overlay_before_its_dialog_is_exposed() -> None:
+    minimize = _Locator(present=True)
+    overlay = _Locator(present=True)
+
+    class DelayedDialogPage(_Page):
+        def locator(self, selector):
+            if "codex-dialog-overlay" in selector:
+                return overlay
+            if "Minimize chat" in selector:
+                return minimize
+            return _Locator(present=False)
+
+    page = DelayedDialogPage(_Locator(present=False))
+
+    assert asyncio.run(dismiss_floating_new_chat(page)) is True
+    assert minimize.clicked == 1
