@@ -14,6 +14,7 @@ import argparse
 import asyncio
 import contextlib
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -76,7 +77,7 @@ class AccessibilityBrowserRelay(ChatGPTDomRelay):
         self._attached = bool(self.cdp_endpoint)
         super().__init__(
             profile_dir=profile_dir,
-            headed=browser_mode in {"displayless", "headed"},
+            headed=browser_mode == "headed",
             timeout_ms=timeout_ms,
             idle_ms=idle_ms,
         )
@@ -94,6 +95,8 @@ class AccessibilityBrowserRelay(ChatGPTDomRelay):
         ]
 
         if self.browser_mode == "displayless":
+            env = dict(os.environ)
+            env.pop("DISPLAY", None)
             return {
                 "headless": False,
                 "channel": "chrome",
@@ -102,6 +105,7 @@ class AccessibilityBrowserRelay(ChatGPTDomRelay):
                     "--ozone-platform=headless",
                     "--ozone-override-screen-size=1440,960",
                 ],
+                "env": env,
                 "viewport": {"width": 1440, "height": 960},
             }
 

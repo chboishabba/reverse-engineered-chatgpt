@@ -1057,19 +1057,16 @@ class SyncChatGPT(AsyncChatGPT):
             return access_token
 
         if response_json.get("WARNING_BANNER"):
-            bootstrap_html = self._bootstrap_frontend_cookies()
-            access_token = extract_access_token_from_bootstrap_html(bootstrap_html)
-            if access_token:
-                return access_token
-            response = self._request_auth_session()
             try:
-                response.raise_for_status()
-            except Exception as e:
-                raise InvalidSessionToken from e
-            response_json = response.json()
-            access_token = response_json.get("accessToken")
-            if access_token:
-                return access_token
+                from .browser_session_replay import load_browser_session_snapshot
+                snapshot = load_browser_session_snapshot()
+                if snapshot and snapshot.access_token:
+                    return snapshot.access_token
+            except Exception:
+                pass
+            raise InvalidSessionToken(
+                "accessToken missing in auth response; session expired or unauthenticated"
+            )
 
         raise UnexpectedResponseError(
             "accessToken missing in auth response", response.text

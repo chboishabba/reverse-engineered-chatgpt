@@ -506,6 +506,14 @@ class AsyncChatGPT:
         self.session_token = session_token
         self.auth_token = auth_token
         self.session = None
+        if browser_session is None and session_token is None and auth_token is None:
+            try:
+                from .browser_session_replay import load_browser_session_snapshot
+                snapshot = load_browser_session_snapshot()
+                if snapshot and snapshot.access_token:
+                    browser_session = snapshot
+            except Exception:
+                pass
         self.browser_session = browser_session
         self._replayed_browser_snapshot = None
 
@@ -1049,26 +1057,16 @@ class AsyncChatGPT:
             return access_token
 
         if response_json.get("WARNING_BANNER"):
-            bootstrap_html = await self._bootstrap_frontend_cookies()
-            access_token = extract_access_token_from_bootstrap_html(bootstrap_html)
-            if access_token:
-                return access_token
-            bootstrap_html, bootstrap_cookies = await asyncio.to_thread(
-                self._bootstrap_frontend_cookies_sync_fallback
-            )
-            self._merge_cookie_container(bootstrap_cookies)
-            access_token = extract_access_token_from_bootstrap_html(bootstrap_html)
-            if access_token:
-                return access_token
-            response = await self._request_auth_session()
             try:
-                response.raise_for_status()
-            except Exception as e:
-                raise InvalidSessionToken from e
-            response_json = response.json()
-            access_token = response_json.get("accessToken")
-            if access_token:
-                return access_token
+                from .browser_session_replay import load_browser_session_snapshot
+                snapshot = load_browser_session_snapshot()
+                if snapshot and snapshot.access_token:
+                    return snapshot.access_token
+            except Exception:
+                pass
+            raise InvalidSessionToken(
+                "accessToken missing in auth response; session expired or unauthenticated"
+            )
 
         raise UnexpectedResponseError(
             "accessToken missing in auth response", response.text
