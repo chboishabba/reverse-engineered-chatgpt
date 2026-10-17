@@ -202,8 +202,8 @@ def save_browser_session_snapshot(
     target = resolve_snapshot_path(profile_dir=profile_dir or snapshot.profile_dir, snapshot_path=snapshot_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     serialized = json.dumps(snapshot.to_dict(), indent=2, sort_keys=True)
-    tmp_path = target.with_suffix(".tmp")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    tmp_path = target.with_name(f".{target.name}.{os.getpid()}.{time.time_ns()}.tmp")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     fd = os.open(tmp_path, flags, 0o600)
@@ -212,13 +212,13 @@ def save_browser_session_snapshot(
             handle.write(serialized)
             handle.flush()
             os.fsync(handle.fileno())
+        tmp_path.replace(target)
     except Exception:
         try:
             tmp_path.unlink()
         except OSError:
             pass
         raise
-    tmp_path.replace(target)
     try:
         os.chmod(target, 0o600)
     except OSError:
