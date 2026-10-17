@@ -11,7 +11,6 @@ ambiguous. Canonical success requires external graph verification.
 from __future__ import annotations
 
 import argparse
-import asyncio
 from dataclasses import dataclass, field
 import inspect
 import json
@@ -21,6 +20,7 @@ import time
 import uuid
 from typing import Any, Callable, Mapping
 
+from .async_bridge import run_async_sync
 from .async_chatgpt import AsyncChatGPT, CHATGPT_API
 from .browser_session_replay import (
     BrowserSessionSnapshot,
@@ -181,6 +181,7 @@ async def probe_async_continue_once(
     observations: list[ProtocolObservation] = []
     stage_times: dict[str, float] = {"probe_start": time.time()}
     seq = 0
+    post_dispatched = False
 
     snapshot = browser_session
     if snapshot is None and (profile_dir is not None or client_factory is AsyncChatGPT):
@@ -224,7 +225,6 @@ async def probe_async_continue_once(
             stage_times["authenticated"] = time.time()
             conv = client.get_conversation(conversation_id)
 
-            # Stage 1: build payload (fetches parent conversation graph if needed)
             seq += 1
             build_started = time.perf_counter()
             try:
@@ -272,7 +272,6 @@ async def probe_async_continue_once(
                 )
             )
 
-            # Stage 2: sentinel requirements token (replayed from browser session if fresh, else direct)
             seq += 1
             sentinel_started = time.perf_counter()
             headers = dict(client.build_request_headers())
@@ -349,7 +348,6 @@ async def probe_async_continue_once(
                     headers["openai-sentinel-chat-requirements-token"] = sentinel_token
                 url = CHATGPT_API.format("conversation")
 
-            # Stage 3: single-attempt conversation POST
             seq += 1
             post_started = time.perf_counter()
             chunks: list[bytes | str] = []
@@ -358,6 +356,7 @@ async def probe_async_continue_once(
                 chunks.append(chunk)
 
             try:
+                post_dispatched = True
                 response = await client.session.post(
                     url=url,
                     headers=headers,
@@ -408,10 +407,16 @@ async def probe_async_continue_once(
             )
             observations.append(post_obs)
 
-            if status >= 400:
+            if 400 <= status < 500:
                 raise ExplicitAsyncWriteRejection(
                     f"async conversation POST rejected with HTTP {status}",
                     stage="conversation_post",
+                    status=status,
+                    observations=tuple(observations),
+                )
+            if status >= 500:
+                raise AmbiguousAsyncWriteError(
+                    f"async conversation POST returned HTTP {status}; outcome is ambiguous",
                     status=status,
                     observations=tuple(observations),
                 )
@@ -445,6 +450,11 @@ async def probe_async_continue_once(
     except (ExplicitAsyncWriteRejection, AmbiguousAsyncWriteError):
         raise
     except Exception as exc:
+        if post_dispatched:
+            raise AmbiguousAsyncWriteError(
+                f"async conversation POST dispatched; post-dispatch failure {exc.__class__.__name__}",
+                observations=tuple(observations),
+            ) from exc
         seq += 1
         obs = observation_from_exception(
             exc,
@@ -481,8 +491,8 @@ def submit_async_prompt_once(
     verify_callback: Callable[[str, str], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Synchronous wrapper for one-attempt async HTTP mutation probe."""
-    result = asyncio.run(
-        probe_async_continue_once(
+    result = run_async_sync(
+        lambda: probe_async_continue_once(
             conversation_id,
             prompt,
             session_token=session_token,
@@ -520,13 +530,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--profile-dir", type=Path)
     parser.add_argument("--browser-mode", default="displayless")
     parser.add_argument("--cdp-endpoint")
+    parser.add_argument("--browser-timeout", type=int, default=30)
+    parser.add_argument("--no-browser-bootstrap", action="store_true")
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
     try:
-        payload = submit_async_prompt_once(
+        result = submit_async_prompt_once(
             args.conversation_id,
             args.prompt,
             session_token=args.key,
@@ -534,40 +546,27 @@ def main() -> int:
             profile_dir=args.profile_dir,
             browser_mode=args.browser_mode,
             cdp_endpoint=args.cdp_endpoint,
+            browser_timeout=args.browser_timeout,
+            allow_browser_bootstrap=not args.no_browser_bootstrap,
         )
-    except AmbiguousAsyncWriteError as exc:
-        print(
-            json.dumps(
-                {
-                    "state": "commit_unknown",
-                    "error_class": exc.__class__.__name__,
-                    "status": exc.status,
-                    "protocol_observations": [obs.to_dict() for obs in exc.observations],
-                },
-                indent=2,
-                sort_keys=True,
-            )
-        )
-        return 2
+    except KeyboardInterrupt:
+        return 130
     except ExplicitAsyncWriteRejection as exc:
-        print(
-            json.dumps(
-                {
-                    "state": "failed_precommit",
-                    "stage": exc.stage,
-                    "error_class": exc.__class__.__name__,
-                    "status": exc.status,
-                    "protocol_observations": [obs.to_dict() for obs in exc.observations],
-                },
-                indent=2,
-                sort_keys=True,
-            )
-        )
-        return 1
-    except Exception as exc:  # noqa: BLE001
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    print(json.dumps(payload, indent=2, sort_keys=True))
+        print(json.dumps({
+            "state": "rejected_precommit",
+            "stage": exc.stage,
+            "status": exc.status,
+            "protocol_observations": [obs.to_dict() for obs in exc.observations],
+        }, indent=2, sort_keys=True))
+        return 2
+    except AmbiguousAsyncWriteError as exc:
+        print(json.dumps({
+            "state": "ambiguous_post",
+            "status": exc.status,
+            "protocol_observations": [obs.to_dict() for obs in exc.observations],
+        }, indent=2, sort_keys=True))
+        return 3
+    print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
 
