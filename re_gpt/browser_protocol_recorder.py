@@ -33,11 +33,7 @@ from .protocol_observation import (
 )
 
 _CHATGPT_HOSTS = frozenset({"chatgpt.com", "www.chatgpt.com"})
-_PROTOCOL_PATH_PREFIXES = (
-    "/api/",
-    "/backend-api/",
-    "/backend-anon/",
-)
+_PROTOCOL_PATH_PREFIXES = ("/api/", "/backend-api/", "/backend-anon/")
 
 
 def is_chatgpt_protocol_url(url: str) -> bool:
@@ -66,16 +62,9 @@ def _infer_bootstrap_stage(path: str, method: str) -> str | None:
         return "conversation_prepare"
     if "files" in norm or "upload" in norm or "attachments" in norm:
         return "attachment_staging"
-    if norm in {
-        "/backend-api/conversation",
-        "/backend-api/f/conversation",
-        "/backend-anon/conversation",
-    } and method.upper() == "POST":
+    if norm in {"/backend-api/conversation", "/backend-api/f/conversation", "/backend-anon/conversation"} and method.upper() == "POST":
         return "conversation_post"
-    if (
-        norm.startswith("/backend-api/conversation/")
-        or norm.startswith("/backend-api/f/conversation/")
-    ) and method.upper() == "GET":
+    if (norm.startswith("/backend-api/conversation/") or norm.startswith("/backend-api/f/conversation/")) and method.upper() == "GET":
         return "conversation_get"
     return None
 
@@ -101,7 +90,11 @@ def _classify_response(status: int | None, response_headers: Mapping[str, Any] |
 
 
 class BrowserProtocolRecorder:
-    """Attach to a Playwright page, record protocol observations, and cache session artifacts."""
+    """Attach to a Playwright page and collect bounded redacted observations.
+
+    Session snapshot persistence is explicit. Passing a profile directory only
+    identifies an optional snapshot source/destination; it never enables writes.
+    """
 
     def __init__(
         self,
@@ -118,7 +111,7 @@ class BrowserProtocolRecorder:
         self._static_cookies = cookies
         self.profile_dir = Path(profile_dir).expanduser() if profile_dir is not None else None
         self.snapshot_path = Path(snapshot_path).expanduser() if snapshot_path is not None else None
-        self.save_session_snapshot = save_session_snapshot or (profile_dir is not None) or (snapshot_path is not None)
+        self.save_session_snapshot = bool(save_session_snapshot)
         self._records: list[ProtocolObservation] = []
         self._pending_starts: dict[int, float] = {}
         self._pending_requests: dict[int, Any] = {}
@@ -215,12 +208,7 @@ class BrowserProtocolRecorder:
         started = self._pending_starts.pop(id(request), None)
         self._pending_requests.pop(id(request), None)
         elapsed_ms = (time.perf_counter() - started) * 1000.0 if started is not None else None
-        self.record_exchange(
-            request=request,
-            response=None,
-            elapsed_ms=elapsed_ms,
-            response_class="request_failed",
-        )
+        self.record_exchange(request=request, response=None, elapsed_ms=elapsed_ms, response_class="request_failed")
 
     def record_exchange(
         self,
@@ -231,14 +219,9 @@ class BrowserProtocolRecorder:
         elapsed_ms: float | None = None,
         response_class: str | None = None,
     ) -> ProtocolObservation | None:
-        url = (
-            getattr(request, "url", None)
-            or (getattr(response, "url", None) if response is not None else "")
-            or ""
-        )
+        url = getattr(request, "url", None) or (getattr(response, "url", None) if response is not None else "") or ""
         if not is_chatgpt_protocol_url(url):
             return None
-
         method = str(getattr(request, "method", "GET") or "GET").upper()
         req_headers = getattr(request, "headers", None)
         if callable(req_headers):
@@ -249,7 +232,6 @@ class BrowserProtocolRecorder:
                 post_data = post_data()
             except Exception:
                 post_data = None
-
         self._capture_request_artifacts(url, method, req_headers, post_data)
 
         status: int | None = None
@@ -294,11 +276,7 @@ class BrowserProtocolRecorder:
             return self.observations
         self._active = False
         if hasattr(self.page, "remove_listener"):
-            for event, handler in (
-                ("request", self._on_request),
-                ("response", self._on_response),
-                ("requestfailed", self._on_request_failed),
-            ):
+            for event, handler in (("request", self._on_request), ("response", self._on_response), ("requestfailed", self._on_request_failed)):
                 try:
                     self.page.remove_listener(event, handler)
                 except Exception:
@@ -306,12 +284,7 @@ class BrowserProtocolRecorder:
         for req_id, pending_req in list(self._pending_requests.items()):
             started = self._pending_starts.pop(req_id, None)
             elapsed_ms = (time.perf_counter() - started) * 1000.0 if started is not None else None
-            self.record_exchange(
-                request=pending_req,
-                response=None,
-                elapsed_ms=elapsed_ms,
-                response_class="in_flight",
-            )
+            self.record_exchange(request=pending_req, response=None, elapsed_ms=elapsed_ms, response_class="in_flight")
         self._pending_requests.clear()
         return self.observations
 
@@ -327,16 +300,8 @@ class BrowserProtocolRecorder:
         headers = dict(prior.headers if prior else {})
         headers.update(self._captured_headers)
         access_token = self._captured_access_token or (prior.access_token if prior else None)
-        account_id = (
-            headers.get("chatgpt-account-id")
-            or cookie_lookup.get("_account")
-            or (prior.account_id if prior else None)
-        )
-        device_id = (
-            headers.get("oai-did")
-            or cookie_lookup.get("oai-did")
-            or (prior.device_id if prior else None)
-        )
+        account_id = headers.get("chatgpt-account-id") or cookie_lookup.get("_account") or (prior.account_id if prior else None)
+        device_id = headers.get("oai-did") or cookie_lookup.get("oai-did") or (prior.device_id if prior else None)
         user_agent = headers.get("user-agent") or (prior.user_agent if prior else None)
         sentinel = dict(prior.sentinel if prior else {})
         if self._captured_sentinel.get("chat_requirements_token"):
@@ -368,16 +333,18 @@ class BrowserProtocolRecorder:
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
+        # Detach listeners before the first await so no new capture task can race
+        # with the drain below.
+        self.stop()
+        if self._capture_tasks:
+            await asyncio.gather(*tuple(self._capture_tasks), return_exceptions=True)
+            self._capture_tasks.clear()
         context = getattr(self.page, "context", None)
         if context is not None and hasattr(context, "cookies"):
             try:
                 self._static_cookies = await context.cookies("https://chatgpt.com")
             except Exception:
                 pass
-        if self._capture_tasks:
-            await asyncio.gather(*self._capture_tasks, return_exceptions=True)
-            self._capture_tasks.clear()
-        self.stop()
         if self.save_session_snapshot:
             snap = self.build_session_snapshot()
             if snap is not None:
@@ -388,9 +355,7 @@ class BrowserProtocolRecorder:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Record redacted ChatGPT same-origin protocol observations during one bounded browser action"
-    )
+    parser = argparse.ArgumentParser(description="Record redacted ChatGPT same-origin protocol observations during one bounded browser action")
     parser.add_argument("conversation_id")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--read", action="store_true", help="Record same-origin exact read")
@@ -410,7 +375,6 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("conversation_id must contain a valid UUID")
     if getattr(args, "session", False):
         from .browser_session_replay import capture_browser_session_snapshot_async
-
         snap = await capture_browser_session_snapshot_async(
             profile_dir=args.profile_dir,
             browser_mode=args.browser_mode,
@@ -419,11 +383,7 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
             idle_ms=args.idle_ms,
             save=True,
         )
-        return {
-            "conversation_id": conversation_id,
-            "operation": "session_capture",
-            "session_snapshot": snap.to_redacted_summary(),
-        }
+        return {"conversation_id": conversation_id, "operation": "session_capture", "session_snapshot": snap.to_redacted_summary()}
     operation = "exact_read" if args.read else "dom_status"
     async with AccessibilityBrowserRelay(
         profile_dir=args.profile_dir,
@@ -432,23 +392,14 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
         timeout_ms=max(1, args.timeout) * 1000,
         idle_ms=args.idle_ms,
     ) as relay:
-        async with BrowserProtocolRecorder(
-            relay.page,
-            operation=operation,
-            profile_dir=args.profile_dir,
-        ) as recorder:
+        async with BrowserProtocolRecorder(relay.page, operation=operation) as recorder:
             if args.read:
                 action_result = await _same_origin_read(relay, conversation_id)
                 summary = {"diagnostic": action_result.get("diagnostic", {})}
             else:
                 action_result = await _dom_status(relay, conversation_id)
                 summary = {"observation": action_result.get("observation", {})}
-        return {
-            "conversation_id": conversation_id,
-            "operation": operation,
-            "observations": recorder.to_dicts(),
-            **summary,
-        }
+        return {"conversation_id": conversation_id, "operation": operation, "observations": recorder.to_dicts(), **summary}
 
 
 def main() -> int:
