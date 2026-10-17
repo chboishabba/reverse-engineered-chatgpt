@@ -141,7 +141,7 @@ def test_summarize_protocol_stages_preserves_order_without_values() -> None:
             "sequence_index": 1,
             "bootstrap_stage": None,
             "method": "POST",
-            "path": "/backend-api/files",
+            "path": "/backend-api/files?secret=QUERY-SECRET-SHOULD-NOT-LEAK",
             "status": 201,
             "response_class": "json_ok",
             "body_keys": ["file_name"],
@@ -150,10 +150,12 @@ def test_summarize_protocol_stages_preserves_order_without_values() -> None:
     summary = summarize_protocol_stages(observations)
     assert [item["sequence_index"] for item in summary] == [1, 2]
     assert summary[0]["stage"] == "unclassified"
+    assert summary[0]["path"] == "/backend-api/files"
     assert summary[1]["stage"] == "conversation_post"
     rendered = json.dumps(summary)
     assert "session-token" not in rendered
     assert "authorization" not in rendered
+    assert "QUERY-SECRET-SHOULD-NOT-LEAK" not in rendered
 
 
 def test_experiment_receipt_serialization_drops_paths_and_secret_values(tmp_path: Path) -> None:
