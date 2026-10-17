@@ -201,23 +201,35 @@ def latest_assistant_from_sse(raw: str) -> str:
 def clear_stale_profile_locks(profile_dir: Path) -> None:
     """Remove Chromium singleton links only when their owner is gone."""
     lock_path = profile_dir / "SingletonLock"
-    if not lock_path.is_symlink():
-        return
-    target = os.readlink(lock_path)
-    match = PROFILE_LOCK_PID_RE.search(target)
-    if not match:
-        return
-    pid = int(match.group("pid"))
+    is_link = False
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        for name in ("SingletonCookie", "SingletonLock", "SingletonSocket"):
-            with contextlib.suppress(FileNotFoundError):
-                (profile_dir / name).unlink()
-    except PermissionError as exc:
-        raise RuntimeError(
-            f"Chromium profile appears to be in use by PID {pid}; close that browser first."
-        ) from exc
+        is_link = lock_path.is_symlink()
+    except OSError:
+        pass
+    if not is_link and not lock_path.exists():
+        return
+    pid = None
+    if is_link:
+        try:
+            target = os.readlink(lock_path)
+            match = PROFILE_LOCK_PID_RE.search(target)
+            if match:
+                pid = int(match.group("pid"))
+        except OSError:
+            pass
+    if pid is not None:
+        try:
+            os.kill(pid, 0)
+            return
+        except ProcessLookupError:
+            pass
+        except PermissionError as exc:
+            raise RuntimeError(
+                f"Chromium profile appears to be in use by PID {pid}; close that browser first."
+            ) from exc
+    for name in ("SingletonCookie", "SingletonLock", "SingletonSocket"):
+        with contextlib.suppress(FileNotFoundError, OSError):
+            (profile_dir / name).unlink()
 
 
 class ChatGPTDomRelay:
