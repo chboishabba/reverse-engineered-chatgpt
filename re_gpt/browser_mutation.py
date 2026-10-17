@@ -49,6 +49,18 @@ async def dismiss_floating_new_chat(page, *, settle_ms: int = 0) -> bool:
         await page.wait_for_timeout(100)
 
 
+async def focus_composer(relay, composer) -> None:
+    """Focus the composer, retrying once only after the known overlay appears."""
+
+    await dismiss_floating_new_chat(relay.page, settle_ms=750)
+    try:
+        await composer.click(timeout=min(2_000, relay.timeout_ms))
+    except Exception:
+        if not await dismiss_floating_new_chat(relay.page, settle_ms=750):
+            raise
+        await composer.click()
+
+
 async def submit_prompt_once(relay, prompt: str) -> dict[str, Any]:
     """Insert and trigger a prompt once, returning after browser submission evidence."""
 
@@ -56,11 +68,8 @@ async def submit_prompt_once(relay, prompt: str) -> dict[str, Any]:
     if not prompt:
         raise ValueError("prompt is empty")
 
-    # Attachment staging can cause the floating dialog to animate in just
-    # before focus; give that known transient a short chance to appear.
-    await dismiss_floating_new_chat(relay.page, settle_ms=750)
     composer = await relay._locate_visible(EDITOR_TEXT_SELECTORS)
-    await composer.click()
+    await focus_composer(relay, composer)
     await relay.page.keyboard.insert_text(prompt)
 
     # Readiness is rechecked after insertion by requiring a usable send control.

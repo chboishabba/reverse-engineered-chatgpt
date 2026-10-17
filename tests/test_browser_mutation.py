@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
-from re_gpt.browser_mutation import dismiss_floating_new_chat
+from re_gpt import browser_mutation
+from re_gpt.browser_mutation import dismiss_floating_new_chat, focus_composer
 
 
 class _Locator:
@@ -72,3 +73,29 @@ def test_dismiss_floating_new_chat_handles_overlay_before_its_dialog_is_exposed(
 
     assert asyncio.run(dismiss_floating_new_chat(page)) is True
     assert minimize.clicked == 1
+
+
+def test_focus_composer_retries_once_after_known_overlay_is_dismissed(monkeypatch) -> None:
+    class Composer:
+        def __init__(self):
+            self.clicks = 0
+
+        async def click(self, **_kwargs):
+            self.clicks += 1
+            if self.clicks == 1:
+                raise RuntimeError("overlay intercepted focus")
+
+    composer = Composer()
+    relay = type("Relay", (), {"page": object(), "timeout_ms": 60_000})()
+    calls = []
+
+    async def dismiss(_page, *, settle_ms=0):
+        calls.append(settle_ms)
+        return bool(calls and len(calls) == 2)
+
+    monkeypatch.setattr(browser_mutation, "dismiss_floating_new_chat", dismiss)
+
+    asyncio.run(focus_composer(relay, composer))
+
+    assert composer.clicks == 2
+    assert calls == [750, 750]
