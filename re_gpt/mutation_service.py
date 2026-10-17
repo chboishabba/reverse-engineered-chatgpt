@@ -126,7 +126,7 @@ class MutationService:
             return operations.update(
                 operation_id,
                 state=state,
-                committed_at=now,
+                committed_at=op.get("committed_at") or now,
                 completed_at=now if state == "complete" else None,
                 user_node_id=user_node_id,
                 assistant_node_id=assistant_node_id,
@@ -177,14 +177,15 @@ class MutationService:
             conversation_id = str(
                 browser.get("resolved_thread_id") or browser.get("conversation_id") or conversation
             ).strip()
+            stage_times = browser.get("stage_times") if isinstance(browser.get("stage_times"), dict) else {}
             now = time.time()
             operations.update(
                 operation_id,
                 state="submission_observed",
                 conversation_id=conversation_id,
-                authenticated_at=now if browser.get("authenticated") else None,
-                hydrated_at=now if browser.get("hydrated") else None,
-                submitted_at=now,
+                authenticated_at=stage_times.get("authenticated") or (now if browser.get("authenticated") else None),
+                hydrated_at=stage_times.get("hydrated") or (now if browser.get("hydrated") else None),
+                submitted_at=stage_times.get("submission_observed") or now,
                 transport="dom",
             )
 
@@ -213,7 +214,10 @@ class MutationService:
         if follow and last.get("state") == "committed_pending":
             deadline = time.monotonic() + max(0.0, follow_timeout)
             while time.monotonic() < deadline:
-                time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
+                remaining = max(0.0, deadline - time.monotonic())
+                if remaining <= 0:
+                    break
+                time.sleep(min(1.0, remaining))
                 refreshed = self.reconcile(
                     operation_id,
                     prompt=prompt,
