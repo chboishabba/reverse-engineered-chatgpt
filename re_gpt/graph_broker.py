@@ -230,7 +230,7 @@ def fetch_exact_graph(
     browser_timeout: int = 60,
     adapter_order: Sequence[str] = DEFAULT_ADAPTER_ORDER,
     adapter_fetchers: Mapping[str, Callable[[str], Any]] | None = None,
-    health_db_path: Path | str | None = DEFAULT_DB_PATH,
+    health_db_path: Path | str | None = None,
     health_now: Callable[[], float] = time.time,
 ) -> GraphAcquisitionResult:
     """Return the first validated exact-thread graph from configured adapters.
@@ -238,12 +238,17 @@ def fetch_exact_graph(
     Each admitted adapter is attempted at most once. Persistent health may skip
     direct read contexts still inside cooldown, but never retries or replays any
     mutation. Browser remains the terminal fallback when configured.
+
+    Real/default adapters use the canonical DB for health automatically. Injected
+    adapters are isolated unless their caller explicitly supplies health_db_path,
+    keeping tests and experiments deterministic.
     """
 
     conversation_id = str(conversation_id or "").strip()
     if not conversation_id:
         raise ValueError("conversation_id must be provided")
 
+    injected_fetchers = adapter_fetchers is not None
     fetchers = dict(adapter_fetchers or _build_default_fetchers(
         session_token=session_token,
         model=model,
@@ -253,8 +258,11 @@ def fetch_exact_graph(
         cdp_endpoint=cdp_endpoint,
         browser_timeout=browser_timeout,
     ))
+    resolved_health_db = health_db_path
+    if resolved_health_db is None and not injected_fetchers:
+        resolved_health_db = DEFAULT_DB_PATH
 
-    health = AdapterHealthStore(health_db_path, now=health_now) if health_db_path is not None else None
+    health = AdapterHealthStore(resolved_health_db, now=health_now) if resolved_health_db is not None else None
     try:
         effective_order: Sequence[str] = adapter_order
         health_skipped: tuple[str, ...] = ()
