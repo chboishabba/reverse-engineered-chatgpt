@@ -8,6 +8,7 @@ The current product architecture is API-first. Direct async `curl_cffi` owns nor
 - [Mutation service](browser-mutation-service.md) — exactly-once write boundary, canonical graph reconciliation and browser fallback policy.
 - [Read plane](read-plane.md) — exact-graph acquisition and adapter ordering.
 - [Session/protocol resilience](session-protocol-resilience.md) — first-class session status/bootstrap/refresh/doctor plus redacted protocol compatibility fingerprints.
+- [Adapter/attachment resilience](adapter-attachment-resilience.md) — D2 read-adapter backoff/latency telemetry and live attachment robustness matrix.
 - [Interface contract](interfaces.md) — public product/data surfaces.
 
 ## Accessibility / browser tooling
@@ -33,4 +34,4 @@ regenerate from exact user node
 edit-and-branch from exact user node
 ```
 
-All of those converge on `MutationService -> GraphBroker -> canonical SQLite persistence`. Milestone D1 adds explicit session lifecycle diagnosis and protocol-drift classification without weakening exactly-once semantics. The remaining roadmap is attachment/adapter hardening, archive provenance, and eventual removal of obsolete compatibility internals.
+All of those converge on `MutationService -> GraphBroker -> canonical SQLite persistence`. Milestone D1 adds explicit session lifecycle diagnosis and protocol-drift classification. Milestone D2 hardens read-adapter health/backoff and attachment matching while leaving mutation exactly-once semantics unchanged. Remaining roadmap work is primarily archive provenance and eventual removal of obsolete compatibility internals.
