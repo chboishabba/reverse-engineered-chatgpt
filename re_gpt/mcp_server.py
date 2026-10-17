@@ -1,7 +1,7 @@
 """Native MCP surface for re-gpt.
 
 The MCP server calls :class:`MutationService` directly; it never shells out to
-the human CLI.  Durable operation status comes from the shared SQLite archive.
+the human CLI. Durable operation status comes from the shared SQLite archive.
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from .mutation_service import MutationService
-from .operation_store import MutationOperationStore
 from .storage import DEFAULT_DB_PATH
 
 mcp = FastMCP("re-gpt")
@@ -27,18 +26,22 @@ def _service(db_path: str | None = None) -> MutationService:
 def chatgpt_continue(
     conversation_id: str,
     prompt: str,
+    attachments: list[str] | None = None,
     follow: bool = False,
     db_path: str | None = None,
 ) -> dict[str, Any]:
-    """Continue an existing ChatGPT thread through the browser-owned DOM path."""
-
-    return _service(db_path).continue_thread(conversation_id, prompt, follow=follow)
+    """Continue an existing thread, optionally selecting local files through the native attachment input."""
+    return _service(db_path).continue_thread(
+        conversation_id,
+        prompt,
+        attachments=attachments or (),
+        follow=follow,
+    )
 
 
 @mcp.tool()
 def chatgpt_operation_status(operation_id: str, db_path: str | None = None) -> dict[str, Any]:
-    """Read durable mutation status without launching a browser."""
-
+    """Read durable mutation and attachment status without launching a browser."""
     result = _service(db_path).operation_status(operation_id)
     if result is None:
         raise ValueError(f"unknown mutation operation {operation_id}")
@@ -52,33 +55,23 @@ def chatgpt_reconcile(
     not_before: float = 0.0,
     db_path: str | None = None,
 ) -> dict[str, Any]:
-    """Re-pull the canonical graph for a previously submitted operation."""
-
+    """Re-pull the canonical graph for a previously submitted operation; never resubmits it."""
     return _service(db_path).reconcile(operation_id, prompt=prompt, not_before=not_before)
 
 
 @mcp.tool()
 def chatgpt_view(conversation_id: str, db_path: str | None = None) -> dict[str, Any]:
-    """Return one archived conversation and its stored messages."""
-
     path = Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH
     connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
     try:
-        conversation = connection.execute(
-            "SELECT * FROM conversations WHERE conversation_id = ?",
-            (conversation_id,),
-        ).fetchone()
+        conversation = connection.execute("SELECT * FROM conversations WHERE conversation_id = ?", (conversation_id,)).fetchone()
         if conversation is None:
             raise ValueError(f"conversation not archived: {conversation_id}")
-        messages = connection.execute(
-            """
+        messages = connection.execute("""
             SELECT message_index, author, content, create_time, message_key
-            FROM messages WHERE conversation_id = ?
-            ORDER BY message_index ASC
-            """,
-            (conversation_id,),
-        ).fetchall()
+            FROM messages WHERE conversation_id = ? ORDER BY message_index ASC
+        """, (conversation_id,)).fetchall()
         return {"conversation": dict(conversation), "messages": [dict(row) for row in messages]}
     finally:
         connection.close()
@@ -86,21 +79,14 @@ def chatgpt_view(conversation_id: str, db_path: str | None = None) -> dict[str, 
 
 @mcp.tool()
 def chatgpt_list(limit: int = 50, db_path: str | None = None) -> list[dict[str, Any]]:
-    """List recently seen archived conversations."""
-
     path = Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH
     connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
     try:
-        rows = connection.execute(
-            """
+        rows = connection.execute("""
             SELECT conversation_id, title, remote_update_time, last_seen_at, cached_message_count
-            FROM conversations
-            ORDER BY COALESCE(remote_update_time, last_seen_at, 0) DESC
-            LIMIT ?
-            """,
-            (max(1, min(int(limit), 500)),),
-        ).fetchall()
+            FROM conversations ORDER BY COALESCE(remote_update_time, last_seen_at, 0) DESC LIMIT ?
+        """, (max(1, min(int(limit), 500)),)).fetchall()
         return [dict(row) for row in rows]
     finally:
         connection.close()

@@ -7,12 +7,12 @@ import sqlite3
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
+from .attachments import CanonicalAttachment, LocalAttachment
 from .storage import DEFAULT_DB_PATH
 
-
-TERMINAL_STATES = {"complete", "failed_precommit", "commit_unknown", "committed_pending"}
+TERMINAL_STATES = {"complete", "failed_precommit", "attachment_failed_precommit"}
 
 
 class MutationOperationStore:
@@ -24,19 +24,13 @@ class MutationOperationStore:
         self.connection.execute("PRAGMA journal_mode=WAL;")
         self._init_schema()
 
-    def __enter__(self) -> "MutationOperationStore":
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> None:
-        self.close()
-
-    def close(self) -> None:
-        self.connection.close()
+    def __enter__(self): return self
+    def __exit__(self, exc_type, exc, tb): self.close()
+    def close(self) -> None: self.connection.close()
 
     def _init_schema(self) -> None:
         with self.connection:
-            self.connection.execute(
-                """
+            self.connection.execute("""
                 CREATE TABLE IF NOT EXISTS mutation_attempts (
                     operation_id TEXT PRIMARY KEY,
                     operation TEXT NOT NULL,
@@ -48,6 +42,7 @@ class MutationOperationStore:
                     started_at REAL NOT NULL,
                     authenticated_at REAL,
                     hydrated_at REAL,
+                    attachment_ready_at REAL,
                     submitted_at REAL,
                     committed_at REAL,
                     completed_at REAL,
@@ -56,84 +51,95 @@ class MutationOperationStore:
                     error_class TEXT,
                     error_detail TEXT
                 )
-                """
-            )
-            self.connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_mutation_attempts_conversation ON mutation_attempts(conversation_id, started_at)"
-            )
+            """)
+            # Forward-compatible migration for PR38 databases created before attachments.
+            columns = {row[1] for row in self.connection.execute("PRAGMA table_info(mutation_attempts)")}
+            if "attachment_ready_at" not in columns:
+                self.connection.execute("ALTER TABLE mutation_attempts ADD COLUMN attachment_ready_at REAL")
+            self.connection.execute("CREATE INDEX IF NOT EXISTS idx_mutation_attempts_conversation ON mutation_attempts(conversation_id, started_at)")
+            self.connection.execute("""
+                CREATE TABLE IF NOT EXISTS mutation_attachments (
+                    operation_id TEXT NOT NULL,
+                    ordinal INTEGER NOT NULL,
+                    source_path TEXT NOT NULL,
+                    filename TEXT NOT NULL,
+                    mime_type TEXT,
+                    size_bytes INTEGER NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    canonical_file_id TEXT,
+                    canonical_pointer TEXT,
+                    canonical_node_id TEXT,
+                    PRIMARY KEY (operation_id, ordinal),
+                    FOREIGN KEY (operation_id) REFERENCES mutation_attempts(operation_id) ON DELETE CASCADE
+                )
+            """)
 
     @staticmethod
     def digest_prompt(prompt: str) -> str:
         return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
-    def create(
-        self,
-        *,
-        operation: str,
-        conversation_id: str | None,
-        prompt: str,
-        requested_parent_node_id: str | None = None,
-    ) -> dict[str, Any]:
+    def create(self, *, operation: str, conversation_id: str | None, prompt: str, requested_parent_node_id: str | None = None) -> dict[str, Any]:
         operation_id = str(uuid.uuid4())
         now = time.time()
         with self.connection:
-            self.connection.execute(
-                """
+            self.connection.execute("""
                 INSERT INTO mutation_attempts (
                     operation_id, operation, conversation_id, requested_parent_node_id,
                     prompt_digest, transport, state, started_at
                 ) VALUES (?, ?, ?, ?, ?, 'dom', 'created', ?)
-                """,
-                (
-                    operation_id,
-                    operation,
-                    conversation_id,
-                    requested_parent_node_id,
-                    self.digest_prompt(prompt),
-                    now,
-                ),
-            )
+            """, (operation_id, operation, conversation_id, requested_parent_node_id, self.digest_prompt(prompt), now))
         return self.get(operation_id) or {}
 
     def update(self, operation_id: str, *, state: str | None = None, **fields: Any) -> dict[str, Any]:
         allowed = {
-            "conversation_id", "authenticated_at", "hydrated_at", "submitted_at",
-            "committed_at", "completed_at", "user_node_id", "assistant_node_id",
-            "error_class", "error_detail", "transport",
+            "conversation_id", "authenticated_at", "hydrated_at", "attachment_ready_at",
+            "submitted_at", "committed_at", "completed_at", "user_node_id",
+            "assistant_node_id", "error_class", "error_detail", "transport",
         }
-        values: dict[str, Any] = {k: v for k, v in fields.items() if k in allowed}
-        if state is not None:
-            values["state"] = state
-        if not values:
-            return self.get(operation_id) or {}
+        values = {k: v for k, v in fields.items() if k in allowed}
+        if state is not None: values["state"] = state
+        if not values: return self.get(operation_id) or {}
         assignments = ", ".join(f"{key} = ?" for key in values)
-        params = [*values.values(), operation_id]
         with self.connection:
-            self.connection.execute(
-                f"UPDATE mutation_attempts SET {assignments} WHERE operation_id = ?",
-                params,
-            )
+            self.connection.execute(f"UPDATE mutation_attempts SET {assignments} WHERE operation_id = ?", [*values.values(), operation_id])
         return self.get(operation_id) or {}
+
+    def record_local_attachments(self, operation_id: str, attachments: Sequence[LocalAttachment]) -> None:
+        with self.connection:
+            for index, item in enumerate(attachments):
+                self.connection.execute("""
+                    INSERT OR REPLACE INTO mutation_attachments (
+                        operation_id, ordinal, source_path, filename, mime_type,
+                        size_bytes, sha256, canonical_file_id, canonical_pointer, canonical_node_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
+                """, (operation_id, index, str(item.path), item.filename, item.mime_type, item.size, item.sha256))
+
+    def record_canonical_attachments(self, operation_id: str, attachments: Sequence[CanonicalAttachment]) -> None:
+        with self.connection:
+            for index, item in enumerate(attachments):
+                self.connection.execute("""
+                    UPDATE mutation_attachments
+                    SET canonical_file_id = ?, canonical_pointer = ?, canonical_node_id = ?
+                    WHERE operation_id = ? AND ordinal = ?
+                """, (item.file_id or None, item.pointer, item.node_id, operation_id, index))
+
+    def attachment_rows(self, operation_id: str) -> list[dict[str, Any]]:
+        rows = self.connection.execute("SELECT * FROM mutation_attachments WHERE operation_id = ? ORDER BY ordinal", (operation_id,)).fetchall()
+        return [dict(row) for row in rows]
 
     def mark_error(self, operation_id: str, state: str, exc: BaseException) -> dict[str, Any]:
         return self.update(
-            operation_id,
-            state=state,
-            error_class=exc.__class__.__name__,
-            error_detail=str(exc),
+            operation_id, state=state, error_class=exc.__class__.__name__, error_detail=str(exc),
             completed_at=time.time() if state in TERMINAL_STATES else None,
         )
 
     def get(self, operation_id: str) -> dict[str, Any] | None:
-        row = self.connection.execute(
-            "SELECT * FROM mutation_attempts WHERE operation_id = ?",
-            (operation_id,),
-        ).fetchone()
-        return dict(row) if row else None
+        row = self.connection.execute("SELECT * FROM mutation_attempts WHERE operation_id = ?", (operation_id,)).fetchone()
+        if not row: return None
+        result = dict(row)
+        result["attachments"] = self.attachment_rows(operation_id)
+        return result
 
     def recent(self, limit: int = 50) -> list[dict[str, Any]]:
-        rows = self.connection.execute(
-            "SELECT * FROM mutation_attempts ORDER BY started_at DESC LIMIT ?",
-            (int(limit),),
-        ).fetchall()
-        return [dict(row) for row in rows]
+        rows = self.connection.execute("SELECT operation_id FROM mutation_attempts ORDER BY started_at DESC LIMIT ?", (int(limit),)).fetchall()
+        return [self.get(str(row[0])) for row in rows if self.get(str(row[0])) is not None]

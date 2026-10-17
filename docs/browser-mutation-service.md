@@ -1,6 +1,6 @@
 # Browser-owned mutation service
 
-`re-gpt --send` now treats the browser as the mutation owner and the validated ChatGPT graph as the commit authority.
+`re-gpt --send` treats the browser as the mutation owner and the validated ChatGPT graph as the commit authority.
 
 ## Production path
 
@@ -9,39 +9,72 @@ CLI / MCP
   -> MutationService
   -> authenticated browser profile
   -> target thread hydration
-  -> real composer (never #pending-conversation-input)
+  -> real ProseMirror composer
+  -> optional native file-input staging
   -> one DOM trigger
   -> browser submission evidence
   -> validated graph pull
-  -> canonical user node receipt
-  -> ConversationStorage + mutation_attempts SQLite
+  -> canonical user-node + attachment receipt
+  -> ConversationStorage / shared SQLite
 ```
 
-The historical handcrafted same-origin conversation POST remains diagnostic/research code in `re_gpt.accessibility_browser`. The production `re-gpt` write path does not try it before DOM submission.
+The historical handcrafted same-origin conversation POST remains diagnostic/research code in `re_gpt.accessibility_browser`. The production write path never tries it first.
 
-## Commit semantics
+## Existing-thread readiness
 
-Browser evidence is deliberately weaker than commit evidence.
+A thread is mutation-ready only when:
 
-- `submission_observed`: the real page emitted at least one signal that makes a second trigger unsafe.
-- `commit_unknown`: the browser may have submitted, but a validated graph pull has not certified the new user node. Do not resend automatically.
-- `committed_pending`: the validated graph contains the exact new user node, but no settled assistant child is present yet.
-- `complete`: the validated graph contains the new user node and an assistant child with text.
-
-Repeated identical prompts are classified using the mutation start time, so an old matching user node cannot certify a new send.
-
-## Readiness
-
-An existing thread is ready only after all of these are true:
-
-1. the URL is the requested `/c/<uuid>` thread;
+1. the URL is the requested `/c/<uuid>`;
 2. `/api/auth/session` exposes an access token;
-3. thread history or thread metadata has hydrated;
-4. `#pending-conversation-input` is not visible;
-5. the real editor is visible;
-6. a send control exists and is not `aria-busy`.
+3. the existing thread has hydrated;
+4. `#pending-conversation-input` is absent;
+5. a real `.ProseMirror[contenteditable="true"]` editor is visible;
+6. the send control exists and is not `aria-busy`.
 
-After prompt insertion the send control must become enabled before the single trigger is attempted.
+The pending textarea is a loading-state control and is deliberately excluded from production editor selectors.
+
+## Mutation states
+
+Browser evidence is weaker than canonical commit evidence.
+
+- `failed_precommit`: the DOM mutation was never observed; retry is safe after fixing the cause.
+- `attachment_failed_precommit`: native file staging failed before any message submission evidence; retry is safe.
+- `submission_observed`: the browser emitted evidence that makes a second trigger unsafe.
+- `commit_unknown`: reconciliation did not prove the user node. This includes sync 429/CF failures. **Do not resend.** Reconcile later.
+- `committed`: the validated graph contains the exact new user node.
+- `committed_pending`: the user node is canonical but the assistant and/or canonical attachment metadata has not settled yet.
+- `complete`: the canonical graph contains the user node, all expected attachments (if any), and an assistant child with text.
+
+A sync 429 is a read-plane failure, not evidence that the browser mutation failed. `commit_unknown` is recoverable and intentionally has no completion timestamp.
+
+## Attachments
+
+The preferred path is the browser-native input:
+
+```text
+input[aria-label="Attach files"]
+```
+
+`--attach` is repeatable and files are selected in one `set_input_files(...)` operation when possible:
+
+```bash
+re-gpt --send <thread-id> \
+  --attach spec.md \
+  --attach data.csv \
+  --prompt 'Implement the attached specification using the supplied data.'
+```
+
+Pre-submit readiness is DOM-based, not endpoint-based. For each expected filename the active composer must show a filename-associated representation and no active upload/progress state. A remove/delete control is recorded as supporting evidence but is not required when filename rendering and upload completion are clear.
+
+After Send, DOM staging is no longer sufficient. Canonical success requires the new user graph node to contain every expected filename, a compatible MIME type when known, and a file ID or asset pointer.
+
+The shared SQLite DB stores:
+
+- `mutation_attachments`: local source path, filename, MIME, size, SHA-256, canonical file ID/pointer/node ID for the mutation operation;
+- `conversation_attachments`: graph-wide canonical conversation/message-node attachment metadata and optional local path/hash binding;
+- transcript bodies remain only in the canonical conversation/message archive.
+
+The existing asset hydrator continues to download canonical file pointers as binary assets; no internal upload endpoint is synthesized.
 
 ## CLI
 
@@ -49,13 +82,11 @@ After prompt insertion the send control must become enabled before the single tr
 re-gpt --send <thread-id> --prompt 'Reply exactly ACK.'
 ```
 
-The command returns as soon as the canonical user node is proven. If the assistant is still running it reports `committed_pending` and exits successfully because the user mutation is already durable and must not be resent.
+By default the browser process returns after submission evidence and `MutationService` performs canonical reconciliation outside the browser lifecycle. Once the canonical user node exists, `committed`/`committed_pending` is success and the message must never be resent.
 
 Use `--follow` to keep reconciling for an assistant child up to `--follow-timeout`.
 
 ## MCP
-
-Install the optional MCP dependency and run the native stdio server:
 
 ```bash
 pip install -e '.[browser,mcp]'
@@ -64,23 +95,33 @@ re-gpt-mcp
 
 Tools:
 
-- `chatgpt_continue`
+- `chatgpt_continue(conversation_id, prompt, attachments=[...])`
 - `chatgpt_operation_status`
 - `chatgpt_reconcile`
 - `chatgpt_view`
 - `chatgpt_list`
 
-MCP calls `MutationService` directly; it does not shell out to the human CLI. Operation status is read from SQLite and therefore survives browser/process restarts.
+MCP calls `MutationService` directly rather than shelling out to the human CLI.
 
-## Durable state
+## Legacy direct POST
 
-`mutation_attempts` stores operation IDs, stage timestamps, graph node IDs, state, transport, and errors. It stores only a SHA-256 prompt digest before a graph node exists; transcript text remains in the canonical conversation/message archive.
+`tests/test_send_message.py` is now an opt-in diagnostic and is skipped unless:
 
-## Remaining live acceptance work
+```bash
+REGPT_LEGACY_DIRECT_POST=1 pytest -m legacy_direct_post
+```
 
-The next execution-bound gate is empirical rather than architectural:
+A 429 in that probe is useful CF/bot-detection evidence only; it is not a production DOM failure.
 
-- repeat ACK on short, medium, and long existing threads;
-- verify unauthenticated and pending-composer negative cases;
-- collect stage timing distributions and tune condition budgets from those observations;
-- then probe native attachment selection and the remaining new/branch/regenerate/edit UI operations one at a time, each with the same validated-graph receipt rule.
+## Remaining live acceptance gate
+
+The structural existing-thread + attachment tranche is implemented. The remaining gate is live execution against the owned authenticated profile:
+
+- repeat text-only ACK on short, medium, and ~700-node threads;
+- verify unauthenticated, wrong-profile, pending-composer and busy-composer negatives;
+- submit one disposable text/Markdown attachment and verify its canonical file ID/node receipt;
+- submit multiple attachments;
+- exercise sync 429 after browser submission and verify durable `commit_unknown` without a second browser trigger;
+- populate hydration, attachment-ready, submit->commit and assistant-completion timing distributions.
+
+Only after this matrix should graph mutations (new thread, branch, regenerate, edit-and-branch) be promoted through the same receipt boundary.

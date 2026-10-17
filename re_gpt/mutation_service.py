@@ -1,8 +1,8 @@
 """Reusable browser-owned mutation service.
 
-The browser may provide submission evidence, but only the validated ChatGPT
-conversation graph can certify a commit.  CLI and MCP both use this service so
-there is one exactly-once mutation implementation.
+Browser evidence makes a second trigger unsafe; only the validated conversation
+graph certifies commit. Reconciliation failures (including sync 429/CF) never
+cause an automatic resend.
 """
 
 from __future__ import annotations
@@ -10,8 +10,10 @@ from __future__ import annotations
 import functools
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
+from .attachment_archive import AttachmentArchive
+from .attachments import LocalAttachment, match_expected_attachments
 from .browser_write import BrowserWriteError, submit_prompt
 from .mutation_receipt import classify_prompt_mutation
 from .operation_store import MutationOperationStore
@@ -48,6 +50,27 @@ def _assistant_child_id(chat: dict[str, Any], user_node_id: str) -> str | None:
     return candidates[-1][1]
 
 
+def _is_sync_rate_limit(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return "429" in text or "too many requests" in text or "rate limit" in text
+
+
+def _stored_expected_attachments(op: dict[str, Any]) -> list[LocalAttachment]:
+    expected: list[LocalAttachment] = []
+    for row in op.get("attachments") or []:
+        try:
+            expected.append(LocalAttachment(
+                path=Path(str(row["source_path"])),
+                filename=str(row["filename"]),
+                mime_type=str(row["mime_type"]) if row.get("mime_type") else None,
+                size=int(row["size_bytes"]),
+                sha256=str(row["sha256"]),
+            ))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return expected
+
+
 class MutationService:
     def __init__(
         self,
@@ -71,21 +94,16 @@ class MutationService:
         default_model = self.model or get_default_model()
         user_agent = get_default_user_agent()
         with ConversationStorage(db_path=self.db_path, write_json=self.export_json) as storage, SyncChatGPT(
-            session_token=token,
-            default_model=default_model,
-            user_agent=user_agent,
+            session_token=token, default_model=default_model, user_agent=user_agent,
         ) as chatgpt:
             chat = fetch_validated_conversation(chatgpt, conversation_id)
             messages = extract_ordered_messages(chat)
             asset_fetcher = None
             if hasattr(chatgpt, "download_asset"):
                 asset_fetcher = functools.partial(chatgpt.download_asset, conversation_id=conversation_id)
-            persisted = storage.persist_chat(
-                conversation_id,
-                chat,
-                messages,
-                asset_fetcher=asset_fetcher,
-            )
+            persisted = storage.persist_chat(conversation_id, chat, messages, asset_fetcher=asset_fetcher)
+        with AttachmentArchive(self.db_path) as attachment_archive:
+            canonical_attachment_count = attachment_archive.persist_graph(conversation_id, chat)
         return {
             "chat": chat,
             "new_messages": persisted.new_messages,
@@ -93,6 +111,7 @@ class MutationService:
             "json_path": str(persisted.json_path) if persisted.json_path else None,
             "asset_count": len(persisted.asset_paths),
             "asset_errors": len(persisted.asset_errors),
+            "canonical_attachment_count": canonical_attachment_count,
         }
 
     def reconcile(
@@ -101,6 +120,7 @@ class MutationService:
         *,
         prompt: str,
         not_before: float,
+        expected_attachments: Sequence[LocalAttachment] | None = None,
     ) -> dict[str, Any]:
         with MutationOperationStore(self.db_path) as operations:
             op = operations.get(operation_id)
@@ -109,32 +129,54 @@ class MutationService:
             conversation_id = str(op.get("conversation_id") or "").strip()
             if not conversation_id:
                 raise RuntimeError("operation has no conversation id to reconcile")
+            expected = list(expected_attachments) if expected_attachments is not None else _stored_expected_attachments(op)
 
             pulled = self._pull_and_persist(conversation_id)
-            receipt = classify_prompt_mutation(
-                pulled["chat"],
-                prompt,
-                not_before=not_before,
-            )
+            receipt = classify_prompt_mutation(pulled["chat"], prompt, not_before=not_before)
             if not receipt.prompt_committed:
                 return operations.update(operation_id, state="commit_unknown")
 
             user_node_id = receipt.user_node_ids[-1]
+            committed_at = op.get("committed_at") or time.time()
+            operations.update(operation_id, state="committed", committed_at=committed_at, user_node_id=user_node_id)
+
+            attachment_ids: list[str] = []
+            if expected:
+                attachment_ok, canonical = match_expected_attachments(pulled["chat"], user_node_id, expected)
+                if not attachment_ok:
+                    return operations.update(
+                        operation_id,
+                        state="committed_pending",
+                        committed_at=committed_at,
+                        user_node_id=user_node_id,
+                    ) | {"attachment_ids": []}
+                operations.record_canonical_attachments(operation_id, canonical)
+                attachment_ids = [entry.file_id for entry in canonical if entry.file_id]
+                with AttachmentArchive(self.db_path) as archive:
+                    for local, remote in zip(expected, canonical):
+                        archive.bind_local_copy(
+                            conversation_id,
+                            user_node_id,
+                            remote.file_id,
+                            remote.filename,
+                            str(local.path),
+                            local.sha256,
+                        )
+
             assistant_node_id = _assistant_child_id(pulled["chat"], user_node_id)
             now = time.time()
             state = "complete" if assistant_node_id and receipt.assistant_text else "committed_pending"
             stored = operations.update(
                 operation_id,
                 state=state,
-                committed_at=op.get("committed_at") or now,
+                committed_at=committed_at,
                 completed_at=now if state == "complete" else None,
                 user_node_id=user_node_id,
                 assistant_node_id=assistant_node_id,
             )
             return stored | {
-                # Transcript text is returned ephemerally from the canonical graph;
-                # it is not duplicated into mutation_attempts.
                 "assistant_text": receipt.assistant_text,
+                "attachment_ids": attachment_ids,
                 "new_messages": pulled["new_messages"],
                 "total_messages": pulled["total_messages"],
             }
@@ -144,6 +186,7 @@ class MutationService:
         conversation: str,
         prompt: str,
         *,
+        attachments: Sequence[Path | str] = (),
         profile_dir: Path | str | None = None,
         browser_mode: str = "displayless",
         cdp_endpoint: str | None = None,
@@ -156,17 +199,19 @@ class MutationService:
         prompt = prompt.strip()
         if not prompt:
             raise ValueError("prompt is empty")
+        local_attachments = [LocalAttachment.from_path(path) for path in attachments]
         started_at = time.time()
 
         with MutationOperationStore(self.db_path) as operations:
             op = operations.create(operation="continue", conversation_id=conversation, prompt=prompt)
             operation_id = str(op["operation_id"])
+            operations.record_local_attachments(operation_id, local_attachments)
             operations.update(operation_id, state="browser_starting")
-
             try:
                 browser = submit_prompt(
                     conversation,
                     prompt,
+                    attachments=[item.path for item in local_attachments],
                     profile_dir=profile_dir,
                     browser_mode=browser_mode,
                     cdp_endpoint=cdp_endpoint,
@@ -174,12 +219,11 @@ class MutationService:
                     follow=False,
                 )
             except (BrowserWriteError, OSError, ValueError) as exc:
-                operations.mark_error(operation_id, "failed_precommit", exc)
+                state = "attachment_failed_precommit" if local_attachments and "attachment" in str(exc).lower() else "failed_precommit"
+                operations.mark_error(operation_id, state, exc)
                 raise
 
-            conversation_id = str(
-                browser.get("resolved_thread_id") or browser.get("conversation_id") or conversation
-            ).strip()
+            conversation_id = str(browser.get("resolved_thread_id") or browser.get("conversation_id") or conversation).strip()
             stage_times = browser.get("stage_times") if isinstance(browser.get("stage_times"), dict) else {}
             now = time.time()
             operations.update(
@@ -188,12 +232,11 @@ class MutationService:
                 conversation_id=conversation_id,
                 authenticated_at=stage_times.get("authenticated") or (now if browser.get("authenticated") else None),
                 hydrated_at=stage_times.get("hydrated") or (now if browser.get("hydrated") else None),
+                attachment_ready_at=stage_times.get("attachment_ready"),
                 submitted_at=stage_times.get("submission_observed") or now,
                 transport="dom",
             )
 
-        # Canonical reconciliation is outside the browser lifecycle.  Never
-        # trigger the prompt again if this stage fails or remains ambiguous.
         last: dict[str, Any] | None = None
         for attempt in range(max(1, reconcile_attempts)):
             try:
@@ -201,10 +244,16 @@ class MutationService:
                     operation_id,
                     prompt=prompt,
                     not_before=started_at - 5.0,
+                    expected_attachments=local_attachments,
                 )
-            except Exception as exc:  # mutation may already be durable remotely
+            except Exception as exc:
                 with MutationOperationStore(self.db_path) as operations:
-                    last = operations.mark_error(operation_id, "commit_unknown", exc)
+                    last = operations.update(
+                        operation_id,
+                        state="commit_unknown",
+                        error_class="SyncRateLimited" if _is_sync_rate_limit(exc) else exc.__class__.__name__,
+                        error_detail=str(exc),
+                    )
                 break
             if last.get("state") in {"complete", "committed_pending"}:
                 break
@@ -214,20 +263,29 @@ class MutationService:
         if last is None:
             last = self.operation_status(operation_id) or {"operation_id": operation_id, "state": "commit_unknown"}
 
-        if follow and last.get("state") == "committed_pending":
+        if follow and last.get("state") in {"committed", "committed_pending", "commit_unknown"}:
             deadline = time.monotonic() + max(0.0, follow_timeout)
             while time.monotonic() < deadline:
                 remaining = max(0.0, deadline - time.monotonic())
                 if remaining <= 0:
                     break
                 time.sleep(min(1.0, remaining))
-                refreshed = self.reconcile(
-                    operation_id,
-                    prompt=prompt,
-                    not_before=started_at - 5.0,
-                )
-                last = refreshed
-                if refreshed.get("state") == "complete":
+                try:
+                    last = self.reconcile(
+                        operation_id,
+                        prompt=prompt,
+                        not_before=started_at - 5.0,
+                        expected_attachments=local_attachments,
+                    )
+                except Exception as exc:
+                    with MutationOperationStore(self.db_path) as operations:
+                        last = operations.update(
+                            operation_id,
+                            state="commit_unknown",
+                            error_class="SyncRateLimited" if _is_sync_rate_limit(exc) else exc.__class__.__name__,
+                            error_detail=str(exc),
+                        )
+                    continue
+                if last.get("state") == "complete":
                     break
-
         return last

@@ -21,31 +21,42 @@ def test_submit_prompt_uses_dom_only_mutation_runner(monkeypatch, tmp_path: Path
 
     def fake_run(command, *, input, text, capture_output, check):
         calls.append((command, input))
-        return _Completed(
-            0,
-            json.dumps(
-                {
-                    "mutation_state": "submission_observed",
-                    "latest_assistant": "",
-                    "resolved_thread_id": "abc",
-                    "transport": "dom",
-                    "browser_mode": "displayless",
-                    "authenticated": True,
-                    "hydrated": True,
-                }
-            ),
-        )
+        return _Completed(0, json.dumps({
+            "mutation_state": "submission_observed",
+            "latest_assistant": "",
+            "resolved_thread_id": "abc",
+            "transport": "dom",
+            "browser_mode": "displayless",
+            "authenticated": True,
+            "hydrated": True,
+        }))
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     result = submit_prompt("abc", "hello", profile_dir=tmp_path / "profile")
-
     assert result["mutation_state"] == "submission_observed"
-    assert result["transport"] == "dom"
     command, stdin_text = calls[0]
     assert stdin_text == "hello"
     assert command[:3] == [command[0], "-m", "re_gpt.mutation_browser"]
     assert "--transport" not in command
     assert "--follow" not in command
+
+
+def test_submit_prompt_forwards_repeatable_attachments(monkeypatch, tmp_path: Path) -> None:
+    observed: list[list[str]] = []
+
+    def fake_run(command, *, input, text, capture_output, check):
+        observed.append(command)
+        return _Completed(0, json.dumps({"mutation_state": "submission_observed"}))
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    one = tmp_path / "one.md"
+    two = tmp_path / "two.csv"
+    submit_prompt("abc", "hello", attachments=[one, two])
+    command = observed[0]
+    indices = [i for i, item in enumerate(command) if item == "--attach"]
+    assert len(indices) == 2
+    assert command[indices[0] + 1].endswith("one.md")
+    assert command[indices[1] + 1].endswith("two.csv")
 
 
 def test_submit_prompt_follow_is_explicit(monkeypatch) -> None:
