@@ -886,47 +886,48 @@ class MutationService:
 
         last: dict[str, Any] | None = None
         rejected_read_adapters: set[str] = set()
-        for attempt in range(max(1, reconcile_attempts)):
-            try:
-                last = self.reconcile(
-                    operation_id,
-                    prompt=prompt,
-                    not_before=started_at - 5.0,
-                    expected_attachments=local_attachments,
-                    skip_read_adapters=tuple(sorted(rejected_read_adapters)),
-                    profile_dir=profile_dir,
-                    browser_mode=browser_mode,
-                    cdp_endpoint=cdp_endpoint,
-                    browser_timeout=browser_timeout,
-                )
-                rejected_read_adapters.update(last.get("rejected_read_adapters") or ())
-            except GraphAcquisitionFailed as exc:
-                rejected_read_adapters.update(exc.rejected_adapters)
-                with MutationOperationStore(self.db_path) as operations:
-                    last = operations.update(
+        if reconcile_attempts > 0:
+            for attempt in range(reconcile_attempts):
+                try:
+                    last = self.reconcile(
                         operation_id,
-                        state="commit_unknown",
-                        error_class="GraphAcquisitionFailed",
-                        error_detail=str(exc),
-                    ) | {
-                        "attempted_read_adapters": list(exc.attempted_adapters),
-                        "rejected_read_adapters": list(exc.rejected_adapters),
-                        "read_observations": list(exc.observations),
-                    }
-                break
-            except Exception as exc:  # noqa: BLE001 - preserve durable post-submit state.
-                with MutationOperationStore(self.db_path) as operations:
-                    last = operations.update(
-                        operation_id,
-                        state="commit_unknown",
-                        error_class=exc.__class__.__name__,
-                        error_detail=str(exc),
+                        prompt=prompt,
+                        not_before=started_at - 5.0,
+                        expected_attachments=local_attachments,
+                        skip_read_adapters=tuple(sorted(rejected_read_adapters)),
+                        profile_dir=profile_dir,
+                        browser_mode=browser_mode,
+                        cdp_endpoint=cdp_endpoint,
+                        browser_timeout=browser_timeout,
                     )
-                break
-            if last.get("state") in {"complete", "committed_pending"}:
-                break
-            if attempt + 1 < max(1, reconcile_attempts):
-                time.sleep(max(0.0, reconcile_interval))
+                    rejected_read_adapters.update(last.get("rejected_read_adapters") or ())
+                except GraphAcquisitionFailed as exc:
+                    rejected_read_adapters.update(exc.rejected_adapters)
+                    with MutationOperationStore(self.db_path) as operations:
+                        last = operations.update(
+                            operation_id,
+                            state="commit_unknown",
+                            error_class="GraphAcquisitionFailed",
+                            error_detail=str(exc),
+                        ) | {
+                            "attempted_read_adapters": list(exc.attempted_adapters),
+                            "rejected_read_adapters": list(exc.rejected_adapters),
+                            "read_observations": list(exc.observations),
+                        }
+                    break
+                except Exception as exc:  # noqa: BLE001 - preserve durable post-submit state.
+                    with MutationOperationStore(self.db_path) as operations:
+                        last = operations.update(
+                            operation_id,
+                            state="commit_unknown",
+                            error_class=exc.__class__.__name__,
+                            error_detail=str(exc),
+                        )
+                    break
+                if last.get("state") in {"complete", "committed_pending"}:
+                    break
+                if attempt + 1 < reconcile_attempts:
+                    time.sleep(max(0.0, reconcile_interval))
 
         if last is None:
             last = self.operation_status(operation_id) or {"operation_id": operation_id, "state": "commit_unknown"}

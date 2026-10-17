@@ -17,6 +17,7 @@ from .cli import main as legacy_main
 from .mutation_service import MutationService
 from .revive import revive_thread
 from .fleet import FleetOrchestrator
+from .gap_comparator import ExactGapComparator
 from .storage import ConversationStorage, DEFAULT_DB_PATH, extract_ordered_messages
 from .sync_chatgpt import SyncChatGPT
 from .utils import get_default_model, get_default_user_agent, get_session_token
@@ -86,6 +87,7 @@ def build_write_parser() -> argparse.ArgumentParser:
     mutation.add_argument("--fleet-revive-fatigued", action="store_true", help="Automatically revive all fatigued lead threads across all clusters.")
     mutation.add_argument("--fleet-alpha", action="store_true", help="Rank and display high-alpha mathematical & foundational continuations across recent threads.")
     mutation.add_argument("--pnf-fleet", action="store_true", help="Compile PNF semantic factor and world model state for recent threads via slr prod compiler.")
+    mutation.add_argument("--compare-gap", metavar="CONVERSATION", help="Compare a conversation's PNF multiset against a formal specification file.")
     mutation.add_argument("--inspect-thread", metavar="CONVERSATION", help="Inspect a thread's title, turns, and recent messages.")
     mutation.add_argument("--branch", metavar="CONVERSATION", help="Create a user branch from --parent-node.")
     mutation.add_argument("--regenerate", metavar="CONVERSATION", help="Regenerate from an exact --user-node.")
@@ -95,6 +97,7 @@ def build_write_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-score", type=float, default=25.0, help="Minimum score threshold for --fleet-alpha.")
     parser.add_argument("--pnf-limit", type=int, default=200, help="Number of recent threads to compile PNF for (default: 200).")
     parser.add_argument("--pnf-output", type=Path, default=None, help="Output directory for .slro, .slrw and summary files.")
+    parser.add_argument("--formal-file", type=Path, help="Path to formal Agda/Lean file for --compare-gap.")
     parser.add_argument("--parent-node", help="Exact graph node used as the parent for --branch.")
     parser.add_argument("--user-node", help="Exact user node for --regenerate or --edit-branch.")
     parser.add_argument("--prompt")
@@ -253,6 +256,13 @@ def write_main(argv: list[str] | None = None) -> int:
             )
             print(orchestrator.inspect_thread(args.inspect_thread, n_turns=args.turns))
             return 0
+        elif args.compare_gap:
+            if not args.formal_file:
+                raise ValueError("--compare-gap requires --formal-file")
+            comparator = ExactGapComparator()
+            report = comparator.compare(args.compare_gap, args.formal_file)
+            print(report.render_markdown())
+            return 0
         elif args.send:
             result = service.continue_thread(
                 args.send,
@@ -318,7 +328,7 @@ def write_main(argv: list[str] | None = None) -> int:
 def main() -> int:
     graph_flags = (
         "--send", "--new", "--revive", "--fleet", "--fleet-revive-fatigued",
-        "--fleet-alpha", "--pnf-fleet", "--inspect-thread", "--branch", "--regenerate", "--edit-branch",
+        "--fleet-alpha", "--pnf-fleet", "--compare-gap", "--inspect-thread", "--branch", "--regenerate", "--edit-branch",
     )
     legacy_flags = (
         "--list", "--view", "--inspect", "--download", "--latest", "--since-last",

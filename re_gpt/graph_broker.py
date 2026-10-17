@@ -9,6 +9,7 @@ retries, or replays mutation POSTs.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from dataclasses import dataclass
@@ -167,7 +168,7 @@ def _build_default_fetchers(
                 raw_headers = dict(client.build_request_headers())
                 raw_headers["Accept"] = "application/json"
                 raw_headers.pop("Content-Type", None)
-                graph = await client.fetch_conversation(conversation_id)
+                graph = await asyncio.wait_for(client.fetch_conversation(conversation_id), timeout=15.0)
                 obs = build_protocol_observation(
                     transport="async",
                     operation="exact_read",

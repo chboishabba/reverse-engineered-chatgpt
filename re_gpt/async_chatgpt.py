@@ -649,7 +649,7 @@ class AsyncChatGPT:
 
     async def __aenter__(self):
         self.session = AsyncSession(
-            impersonate="chrome142", timeout=99999, proxies=self.proxies
+            impersonate="chrome142", timeout=30.0, proxies=self.proxies
         )
         self._frontend_cookies = {}
         self._apply_browser_session()
