@@ -26,6 +26,8 @@ setup(
             "re-gpt-mutate = re_gpt.mutation_browser:main",
             "re-gpt-mcp = re_gpt.mcp_server:main",
             "re-gpt-metrics = re_gpt.mutation_metrics:main",
+            "re-gpt-session = re_gpt.resilience_cli:session_main",
+            "re-gpt-protocol = re_gpt.resilience_cli:protocol_main",
         ],
     },
 )
