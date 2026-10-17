@@ -1,8 +1,8 @@
 """Native MCP surface for re-gpt.
 
-The MCP server calls :class:`MutationService` directly; it never shells out to
-the human CLI. Durable operation status comes from the shared SQLite archive.
-DOM live status is explicitly provisional browser observation.
+All mutation tools call :class:`MutationService` directly. Durable operation
+status comes from the shared SQLite archive; browser/DOM observation remains a
+provisional diagnostic surface rather than canonical truth.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ def chatgpt_continue(
     dom_fallback: bool = True,
     db_path: str | None = None,
 ) -> dict[str, Any]:
-    """Continue an existing thread; defaults to direct async CFFI with pre-commit DOM fallback."""
+    """Continue an existing thread; direct async CFFI is primary, with safe pre-commit DOM fallback."""
     return _service(db_path).continue_thread(
         conversation_id,
         prompt,
@@ -42,6 +42,69 @@ def chatgpt_continue(
         follow=follow,
         write_transport=write_transport,
         dom_fallback=dom_fallback,
+    )
+
+
+@mcp.tool()
+def chatgpt_new(
+    prompt: str,
+    follow: bool = False,
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    """Create a new conversation through the direct async API and return its assigned conversation ID."""
+    return _service(db_path).new_conversation(prompt, follow=follow)
+
+
+@mcp.tool()
+def chatgpt_branch(
+    conversation_id: str,
+    parent_node_id: str,
+    prompt: str,
+    attachments: list[str] | None = None,
+    follow: bool = False,
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    """Create a user branch from an exact canonical graph parent node."""
+    return _service(db_path).branch_from_node(
+        conversation_id,
+        parent_node_id,
+        prompt,
+        attachments=attachments or (),
+        follow=follow,
+    )
+
+
+@mcp.tool()
+def chatgpt_regenerate(
+    conversation_id: str,
+    user_node_id: str,
+    follow: bool = False,
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    """Generate another assistant variant from an exact canonical user node."""
+    return _service(db_path).regenerate(
+        conversation_id,
+        user_node_id,
+        follow=follow,
+    )
+
+
+@mcp.tool()
+def chatgpt_edit_branch(
+    conversation_id: str,
+    user_node_id: str,
+    prompt: str,
+    attachments: list[str] | None = None,
+    follow: bool = False,
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    """Replace an exact user node's text by creating a sibling user branch."""
+    return _service(db_path).edit_and_branch(
+        conversation_id,
+        user_node_id,
+        prompt,
+        attachments=attachments or (),
+        follow=follow,
     )
 
 
@@ -65,7 +128,7 @@ def chatgpt_reconcile(
     browser_timeout: int = 60,
     db_path: str | None = None,
 ) -> dict[str, Any]:
-    """Acquire one validated exact graph through the broker and never resubmit."""
+    """Reconcile a tail-continuation operation from one validated exact graph and never resubmit."""
     return _service(db_path).reconcile(
         operation_id,
         prompt=prompt,
@@ -85,7 +148,7 @@ def chatgpt_live_status(
     cdp_endpoint: str | None = None,
     timeout: int = 60,
 ) -> dict[str, Any]:
-    """Observe current rendered thread state; this is provisional, not archive truth."""
+    """Observe current rendered thread state; provisional browser evidence only."""
     return observe_live_status(
         conversation_id,
         profile_dir=profile_dir,
