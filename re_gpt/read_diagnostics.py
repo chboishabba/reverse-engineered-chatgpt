@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import re
 import time
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -19,12 +18,11 @@ from .browser_observer import fetch_conversation_same_origin
 from .sync_chatgpt import SyncChatGPT
 from .utils import get_default_model, get_default_user_agent, get_session_token
 
-_STATUS_RE = re.compile(r"(?:HTTP\s+)?(?P<status>[1-5][0-9]{2})")
-_DEVICE_HEADER_NAMES = {
-    "oai-device-id",
-    "x-openai-device-id",
-    "openai-device-id",
-}
+from .protocol_observation import (
+    build_protocol_observation,
+    observation_from_exception,
+    status_from_exception,
+)
 
 
 def redacted_request_shape(
@@ -38,27 +36,27 @@ def redacted_request_shape(
     status: int | None = None,
     elapsed_ms: float | None = None,
     response_class: str,
+    operation: str = "exact_read",
+    payload: Any = None,
 ) -> dict[str, Any]:
-    names = sorted(str(name) for name in headers)
-    lower_names = {name.lower() for name in names}
-    return {
-        "adapter": adapter,
-        "method": method,
-        "route": route,
-        "header_names": names,
-        "cookie_names": sorted({str(name) for name in cookie_names if name}),
-        "cookie_domains": sorted({str(domain) for domain in cookie_domains if domain}),
-        "auth_header_present": "authorization" in lower_names,
-        "device_id_present": bool(lower_names & _DEVICE_HEADER_NAMES),
-        "status": status,
-        "elapsed_ms": elapsed_ms,
-        "response_class": response_class,
-    }
+    obs = build_protocol_observation(
+        transport=adapter,
+        operation=operation,
+        method=method,
+        path=route,
+        status=status,
+        response_class=response_class,
+        headers=headers,
+        cookies=cookie_names,
+        cookie_domains=cookie_domains,
+        payload=payload,
+        elapsed_ms=elapsed_ms,
+    )
+    return obs.to_dict()
 
 
 def _status_from_error(exc: BaseException) -> int | None:
-    match = _STATUS_RE.search(str(exc))
-    return int(match.group("status")) if match else None
+    return status_from_exception(exc)
 
 
 def _cookie_metadata(session: Any) -> tuple[list[str], list[str]]:
@@ -97,22 +95,25 @@ def _sync_probe(conversation_id: str, *, token: str | None, model: str | None, u
     cookie_domains: list[str] = []
     try:
         with SyncChatGPT(session_token=token, default_model=model, user_agent=user_agent) as client:
-            headers = client.build_request_headers()
+            raw_headers = dict(client.build_request_headers())
+            raw_headers["Accept"] = "application/json"
+            raw_headers.pop("Content-Type", None)
+            headers = raw_headers
             cookie_names, cookie_domains = _cookie_metadata(client.session)
             chat = client.fetch_conversation(conversation_id)
             _validate_graph(chat)
     except Exception as exc:  # noqa: BLE001 - diagnostics must preserve adapter failure class.
-        return redacted_request_shape(
-            adapter="sync",
+        return observation_from_exception(
+            exc,
+            transport="sync",
+            operation="exact_read",
             method="GET",
-            route=route,
+            path=route,
             headers=headers,
-            cookie_names=cookie_names,
+            cookies=cookie_names,
             cookie_domains=cookie_domains,
-            status=_status_from_error(exc),
             elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
-            response_class=exc.__class__.__name__,
-        )
+        ).to_dict()
     return redacted_request_shape(
         adapter="sync",
         method="GET",
@@ -134,22 +135,25 @@ async def _async_probe(conversation_id: str, *, token: str | None, model: str | 
     cookie_domains: list[str] = []
     try:
         async with AsyncChatGPT(session_token=token, default_model=model, user_agent=user_agent) as client:
-            headers = client.build_request_headers()
+            raw_headers = dict(client.build_request_headers())
+            raw_headers["Accept"] = "application/json"
+            raw_headers.pop("Content-Type", None)
+            headers = raw_headers
             cookie_names, cookie_domains = _cookie_metadata(client.session)
             chat = await client.fetch_conversation(conversation_id)
             _validate_graph(chat)
     except Exception as exc:  # noqa: BLE001
-        return redacted_request_shape(
-            adapter="async",
+        return observation_from_exception(
+            exc,
+            transport="async",
+            operation="exact_read",
             method="GET",
-            route=route,
+            path=route,
             headers=headers,
-            cookie_names=cookie_names,
+            cookies=cookie_names,
             cookie_domains=cookie_domains,
-            status=_status_from_error(exc),
             elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
-            response_class=exc.__class__.__name__,
-        )
+        ).to_dict()
     return redacted_request_shape(
         adapter="async",
         method="GET",
@@ -193,20 +197,31 @@ def diagnose_reads(
         )
     except Exception as exc:  # noqa: BLE001
         receipts.append(
-            redacted_request_shape(
-                adapter="browser",
+            observation_from_exception(
+                exc,
+                transport="browser",
+                operation="exact_read",
                 method="GET",
-                route="/backend-api/conversation/<id>",
+                path="/backend-api/conversation/<id>",
                 headers={},
-                status=_status_from_error(exc),
                 elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
-                response_class=exc.__class__.__name__,
-            )
+            ).to_dict()
         )
     else:
-        diagnostic = dict(browser.diagnostic)
-        diagnostic["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 3)
-        receipts.append(diagnostic)
+        raw_diag = dict(browser.diagnostic)
+        obs = build_protocol_observation(
+            transport=str(raw_diag.get("adapter") or "browser"),
+            operation="exact_read",
+            method=str(raw_diag.get("method") or "GET"),
+            path=str(raw_diag.get("route") or "/backend-api/conversation/<id>"),
+            status=raw_diag.get("status"),
+            response_class=str(raw_diag.get("response_class") or "ok"),
+            headers={name: "<redacted>" for name in raw_diag.get("header_names") or ()},
+            cookies=raw_diag.get("cookie_names") or (),
+            cookie_domains=raw_diag.get("cookie_domains") or (),
+            elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
+        )
+        receipts.append(obs.to_dict())
     return receipts
 
 

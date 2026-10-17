@@ -199,6 +199,7 @@ target/
 
 # Chat history / local DBs
 chatgpt_browser_profile/
+.re_gpt_session_snapshot.json
 chat*_history*.sqlite*
 chatgpt_history*.sqlite*
 codex_history*.sqlite*

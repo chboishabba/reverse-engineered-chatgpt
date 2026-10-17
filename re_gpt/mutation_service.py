@@ -1,66 +1,45 @@
-"""Reusable browser-owned mutation service.
+"""Durable mutation controller with adapter-independent graph reconciliation.
 
-Browser evidence makes a second trigger unsafe; only a validated conversation
-graph certifies commit. Direct-client rejection stops that context immediately;
-reconciliation may fall back to an authenticated browser same-origin GET but
-never resubmits the mutation.
+The browser DOM remains the default writer until an HTTP writer proves canonical
+success. Exact graph reads are acquired through the async-first broker and all
+accepted graphs share one persistence/receipt path.
 """
 
 from __future__ import annotations
 
-import functools
 import time
 from pathlib import Path
 from typing import Any, Sequence
 
+from .async_mutation_probe import (
+    AmbiguousAsyncWriteError,
+    ExplicitAsyncWriteRejection,
+    submit_async_prompt_once,
+)
 from .attachment_archive import AttachmentArchive
 from .attachments import LocalAttachment, match_expected_attachments
-from .browser_observer import fetch_conversation_same_origin
 from .browser_write import BrowserWriteError, submit_prompt
-from .mutation_receipt import classify_prompt_mutation
+from .graph_broker import GraphAcquisitionFailed, fetch_exact_graph
+from .mutation_receipt import classify_prompt_mutation, find_turn_assistant_nodes
 from .operation_store import MutationOperationStore
-from .read_plane import fetch_validated_conversation, install_validated_sync_read_plane
+from .read_plane import install_validated_sync_read_plane
 from .storage import ConversationStorage, DEFAULT_DB_PATH, extract_ordered_messages
-from .sync_chatgpt import SyncChatGPT
-from .utils import get_default_model, get_default_user_agent, get_session_token
 
 install_validated_sync_read_plane()
 
 
 class DirectClientRejected(RuntimeError):
-    """The direct exact-thread HTTP context was rejected; do not retry it blindly."""
+    """Backward-compatible alias for older callers; broker failures supersede it."""
 
 
 def _assistant_child_id(chat: dict[str, Any], user_node_id: str) -> str | None:
     mapping = chat.get("mapping")
     if not isinstance(mapping, dict):
         return None
-    candidates: list[tuple[float, str]] = []
-    for node_id, node in mapping.items():
-        if not isinstance(node, dict) or str(node.get("parent") or "") != user_node_id:
-            continue
-        message = node.get("message")
-        if not isinstance(message, dict):
-            continue
-        author = message.get("author")
-        if not isinstance(author, dict) or author.get("role") != "assistant":
-            continue
-        try:
-            created = float(message.get("create_time") or message.get("update_time") or 0.0)
-        except (TypeError, ValueError):
-            created = 0.0
-        candidates.append((created, str(node_id)))
+    candidates = find_turn_assistant_nodes(mapping, user_node_id)
     if not candidates:
         return None
-    candidates.sort()
-    return candidates[-1][1]
-
-
-def _is_direct_client_rejection(exc: BaseException) -> bool:
-    if isinstance(exc, DirectClientRejected):
-        return True
-    text = str(exc).lower()
-    return "429" in text or "too many requests" in text
+    return candidates[-1][2]
 
 
 def _stored_expected_attachments(op: dict[str, Any]) -> list[LocalAttachment]:
@@ -102,10 +81,11 @@ class MutationService:
         conversation_id: str,
         chat: dict[str, Any],
         *,
-        asset_fetcher=None,
         read_adapter: str,
         read_diagnostic: dict[str, Any] | None = None,
-        direct_client_rejected: bool = False,
+        attempted_read_adapters: Sequence[str] = (),
+        rejected_read_adapters: Sequence[str] = (),
+        read_observations: Sequence[dict[str, Any]] = (),
     ) -> dict[str, Any]:
         messages = extract_ordered_messages(chat)
         with ConversationStorage(db_path=self.db_path, write_json=self.export_json) as storage:
@@ -113,7 +93,7 @@ class MutationService:
                 conversation_id,
                 chat,
                 messages,
-                asset_fetcher=asset_fetcher,
+                asset_fetcher=None,
             )
         with AttachmentArchive(self.db_path) as attachment_archive:
             canonical_attachment_count = attachment_archive.persist_graph(conversation_id, chat)
@@ -127,54 +107,10 @@ class MutationService:
             "canonical_attachment_count": canonical_attachment_count,
             "read_adapter": read_adapter,
             "read_diagnostic": read_diagnostic or {},
-            "direct_client_rejected": direct_client_rejected,
+            "attempted_read_adapters": list(attempted_read_adapters),
+            "rejected_read_adapters": list(rejected_read_adapters),
+            "read_observations": [dict(item) for item in read_observations],
         }
-
-    def _pull_sync_and_persist(self, conversation_id: str) -> dict[str, Any]:
-        token = self.session_token or get_session_token()
-        default_model = self.model or get_default_model()
-        user_agent = get_default_user_agent()
-        with SyncChatGPT(
-            session_token=token,
-            default_model=default_model,
-            user_agent=user_agent,
-        ) as chatgpt:
-            chat = fetch_validated_conversation(chatgpt, conversation_id)
-            asset_fetcher = None
-            if hasattr(chatgpt, "download_asset"):
-                asset_fetcher = functools.partial(chatgpt.download_asset, conversation_id=conversation_id)
-            return self._persist_chat(
-                conversation_id,
-                chat,
-                asset_fetcher=asset_fetcher,
-                read_adapter="sync",
-                direct_client_rejected=False,
-            )
-
-    def _pull_browser_and_persist(
-        self,
-        conversation_id: str,
-        *,
-        profile_dir: Path | str | None = None,
-        browser_mode: str = "displayless",
-        cdp_endpoint: str | None = None,
-        browser_timeout: int = 60,
-        direct_client_rejected: bool = False,
-    ) -> dict[str, Any]:
-        result = fetch_conversation_same_origin(
-            conversation_id,
-            profile_dir=profile_dir,
-            browser_mode=browser_mode,
-            cdp_endpoint=cdp_endpoint,
-            timeout=browser_timeout,
-        )
-        return self._persist_chat(
-            conversation_id,
-            result.chat,
-            read_adapter="browser",
-            read_diagnostic=result.diagnostic,
-            direct_client_rejected=direct_client_rejected,
-        )
 
     def _pull_and_persist(
         self,
@@ -182,44 +118,39 @@ class MutationService:
         *,
         browser_fallback: bool = True,
         direct_allowed: bool = True,
+        skip_read_adapters: Sequence[str] = (),
         profile_dir: Path | str | None = None,
         browser_mode: str = "displayless",
         cdp_endpoint: str | None = None,
         browser_timeout: int = 60,
     ) -> dict[str, Any]:
+        # `direct_allowed` is retained for compatibility with callers from the
+        # pre-broker API. New code expresses quarantine with skip_read_adapters.
+        skip = {str(item) for item in skip_read_adapters}
+        order = [name for name in ("async", "sync", "browser") if name not in skip]
+        if not browser_fallback:
+            order = [name for name in order if name != "browser"]
         if not direct_allowed:
-            try:
-                return self._pull_browser_and_persist(
-                    conversation_id,
-                    profile_dir=profile_dir,
-                    browser_mode=browser_mode,
-                    cdp_endpoint=cdp_endpoint,
-                    browser_timeout=browser_timeout,
-                    direct_client_rejected=True,
-                )
-            except Exception as browser_exc:  # noqa: BLE001 - preserve the sticky rejection boundary.
-                raise DirectClientRejected(
-                    f"direct exact-thread client was already rejected; browser fallback failed ({browser_exc})"
-                ) from browser_exc
-
-        try:
-            return self._pull_sync_and_persist(conversation_id)
-        except Exception as sync_exc:
-            if not _is_direct_client_rejection(sync_exc) or not browser_fallback:
-                raise
-            try:
-                return self._pull_browser_and_persist(
-                    conversation_id,
-                    profile_dir=profile_dir,
-                    browser_mode=browser_mode,
-                    cdp_endpoint=cdp_endpoint,
-                    browser_timeout=browser_timeout,
-                    direct_client_rejected=True,
-                )
-            except Exception as browser_exc:  # noqa: BLE001 - preserve both transport failures.
-                raise DirectClientRejected(
-                    f"direct exact-thread client rejected ({sync_exc}); browser fallback failed ({browser_exc})"
-                ) from browser_exc
+            order = [name for name in order if name == "browser"]
+        result = fetch_exact_graph(
+            conversation_id,
+            session_token=self.session_token,
+            model=self.model,
+            profile_dir=profile_dir,
+            browser_mode=browser_mode,
+            cdp_endpoint=cdp_endpoint,
+            browser_timeout=browser_timeout,
+            adapter_order=tuple(order),
+        )
+        return self._persist_chat(
+            conversation_id,
+            result.graph,
+            read_adapter=result.adapter,
+            read_diagnostic=result.diagnostic,
+            attempted_read_adapters=result.attempted_adapters,
+            rejected_read_adapters=result.rejected_adapters,
+            read_observations=result.observations,
+        )
 
     def reconcile(
         self,
@@ -230,6 +161,7 @@ class MutationService:
         expected_attachments: Sequence[LocalAttachment] | None = None,
         browser_fallback: bool = True,
         direct_allowed: bool = True,
+        skip_read_adapters: Sequence[str] = (),
         profile_dir: Path | str | None = None,
         browser_mode: str = "displayless",
         cdp_endpoint: str | None = None,
@@ -248,6 +180,7 @@ class MutationService:
                 conversation_id,
                 browser_fallback=browser_fallback,
                 direct_allowed=direct_allowed,
+                skip_read_adapters=skip_read_adapters,
                 profile_dir=profile_dir,
                 browser_mode=browser_mode,
                 cdp_endpoint=cdp_endpoint,
@@ -256,7 +189,9 @@ class MutationService:
             read_bits = {
                 "read_adapter": pulled.get("read_adapter"),
                 "read_diagnostic": pulled.get("read_diagnostic", {}),
-                "direct_client_rejected": bool(pulled.get("direct_client_rejected")),
+                "attempted_read_adapters": pulled.get("attempted_read_adapters", []),
+                "rejected_read_adapters": pulled.get("rejected_read_adapters", []),
+                "read_observations": pulled.get("read_observations", []),
             }
             receipt = classify_prompt_mutation(pulled["chat"], prompt, not_before=not_before)
             if not receipt.prompt_committed:
@@ -333,6 +268,7 @@ class MutationService:
         browser_mode: str = "displayless",
         cdp_endpoint: str | None = None,
         browser_timeout: int = 60,
+        write_transport: str = "dom",
         reconcile_attempts: int = 3,
         reconcile_interval: float = 1.0,
         follow: bool = False,
@@ -341,47 +277,79 @@ class MutationService:
         prompt = prompt.strip()
         if not prompt:
             raise ValueError("prompt is empty")
+        if write_transport not in {"dom", "async"}:
+            raise ValueError(f"unsupported write_transport {write_transport!r}; expected 'dom' or 'async'")
         local_attachments = [LocalAttachment.from_path(path) for path in attachments]
+        if write_transport == "async" and local_attachments:
+            raise ValueError("async HTTP mutation probe does not synthesize attachment upload endpoints")
         started_at = time.time()
 
+        write_observations: list[dict[str, Any]] = []
         with MutationOperationStore(self.db_path) as operations:
             op = operations.create(operation="continue", conversation_id=conversation, prompt=prompt)
             operation_id = str(op["operation_id"])
             operations.record_local_attachments(operation_id, local_attachments)
-            operations.update(operation_id, state="browser_starting")
-            try:
-                browser = submit_prompt(
-                    conversation,
-                    prompt,
-                    attachments=[item.path for item in local_attachments],
-                    profile_dir=profile_dir,
-                    browser_mode=browser_mode,
-                    cdp_endpoint=cdp_endpoint,
-                    timeout=browser_timeout,
-                    follow=False,
-                )
-            except (BrowserWriteError, OSError, ValueError) as exc:
-                state = "attachment_failed_precommit" if local_attachments and "attachment" in str(exc).lower() else "failed_precommit"
-                operations.mark_error(operation_id, state, exc)
-                raise
 
-            conversation_id = str(browser.get("resolved_thread_id") or browser.get("conversation_id") or conversation).strip()
-            stage_times = browser.get("stage_times") if isinstance(browser.get("stage_times"), dict) else {}
+            if write_transport == "async":
+                operations.update(operation_id, state="async_starting", transport="async")
+                try:
+                    submission = submit_async_prompt_once(
+                        conversation,
+                        prompt,
+                        session_token=self.session_token,
+                        model=self.model,
+                        profile_dir=profile_dir,
+                        browser_mode=browser_mode,
+                        cdp_endpoint=cdp_endpoint,
+                        browser_timeout=browser_timeout,
+                    )
+                except ExplicitAsyncWriteRejection as exc:
+                    operations.mark_error(operation_id, "failed_precommit", exc)
+                    raise
+                except AmbiguousAsyncWriteError as exc:
+                    write_observations = [obs.to_dict() for obs in exc.observations]
+                    return operations.update(
+                        operation_id,
+                        state="commit_unknown",
+                        transport="async",
+                        error_class=exc.__class__.__name__,
+                        error_detail=str(exc),
+                    ) | {"write_observations": write_observations}
+            else:
+                operations.update(operation_id, state="browser_starting")
+                try:
+                    submission = submit_prompt(
+                        conversation,
+                        prompt,
+                        attachments=[item.path for item in local_attachments],
+                        profile_dir=profile_dir,
+                        browser_mode=browser_mode,
+                        cdp_endpoint=cdp_endpoint,
+                        timeout=browser_timeout,
+                        follow=follow,
+                    )
+                except (BrowserWriteError, OSError, ValueError) as exc:
+                    state = "attachment_failed_precommit" if local_attachments and "attachment" in str(exc).lower() else "failed_precommit"
+                    operations.mark_error(operation_id, state, exc)
+                    raise
+
+            write_observations = list(submission.get("protocol_observations") or [])
+            conversation_id = str(submission.get("resolved_thread_id") or submission.get("conversation_id") or conversation).strip()
+            stage_times = submission.get("stage_times") if isinstance(submission.get("stage_times"), dict) else {}
             now = time.time()
             operations.update(
                 operation_id,
                 state="submission_observed",
                 conversation_id=conversation_id,
-                authenticated_at=stage_times.get("authenticated") or (now if browser.get("authenticated") else None),
-                hydrated_at=stage_times.get("hydrated") or (now if browser.get("hydrated") else None),
+                authenticated_at=stage_times.get("authenticated") or (now if submission.get("authenticated") else None),
+                hydrated_at=stage_times.get("hydrated") or (now if submission.get("hydrated") else None),
                 attachment_ready_at=stage_times.get("attachment_ready"),
                 submitted_at=stage_times.get("submission_observed") or now,
-                transport="dom",
+                transport=write_transport,
             )
 
         last: dict[str, Any] | None = None
-        direct_context_rejected = False
-        terminal_read_rejection = False
+        rejected_read_adapters: set[str] = set()
         for attempt in range(max(1, reconcile_attempts)):
             try:
                 last = self.reconcile(
@@ -389,24 +357,33 @@ class MutationService:
                     prompt=prompt,
                     not_before=started_at - 5.0,
                     expected_attachments=local_attachments,
-                    direct_allowed=not direct_context_rejected,
+                    skip_read_adapters=tuple(sorted(rejected_read_adapters)),
                     profile_dir=profile_dir,
                     browser_mode=browser_mode,
                     cdp_endpoint=cdp_endpoint,
                     browser_timeout=browser_timeout,
                 )
-                direct_context_rejected = (
-                    direct_context_rejected or bool(last.get("direct_client_rejected"))
-                )
-            except Exception as exc:
-                rejected = _is_direct_client_rejection(exc)
-                direct_context_rejected = direct_context_rejected or rejected
-                terminal_read_rejection = rejected
+                rejected_read_adapters.update(last.get("rejected_read_adapters") or ())
+            except GraphAcquisitionFailed as exc:
+                rejected_read_adapters.update(exc.rejected_adapters)
                 with MutationOperationStore(self.db_path) as operations:
                     last = operations.update(
                         operation_id,
                         state="commit_unknown",
-                        error_class="DirectClientRejected" if rejected else exc.__class__.__name__,
+                        error_class="GraphAcquisitionFailed",
+                        error_detail=str(exc),
+                    ) | {
+                        "attempted_read_adapters": list(exc.attempted_adapters),
+                        "rejected_read_adapters": list(exc.rejected_adapters),
+                        "read_observations": list(exc.observations),
+                    }
+                break
+            except Exception as exc:  # noqa: BLE001 - preserve durable post-submit state.
+                with MutationOperationStore(self.db_path) as operations:
+                    last = operations.update(
+                        operation_id,
+                        state="commit_unknown",
+                        error_class=exc.__class__.__name__,
                         error_detail=str(exc),
                     )
                 break
@@ -418,10 +395,11 @@ class MutationService:
         if last is None:
             last = self.operation_status(operation_id) or {"operation_id": operation_id, "state": "commit_unknown"}
 
+        all_adapters_rejected = {"async", "sync", "browser"}.issubset(rejected_read_adapters)
         if (
             follow
-            and not terminal_read_rejection
-            and last.get("error_class") != "DirectClientRejected"
+            and not all_adapters_rejected
+            and last.get("error_class") != "GraphAcquisitionFailed"
             and last.get("state") in {"committed", "committed_pending", "commit_unknown"}
         ):
             deadline = time.monotonic() + max(0.0, follow_timeout)
@@ -429,40 +407,53 @@ class MutationService:
                 remaining = max(0.0, deadline - time.monotonic())
                 if remaining <= 0:
                     break
-                time.sleep(min(1.0, remaining))
+                time.sleep(min(2.0, remaining))
                 try:
                     last = self.reconcile(
                         operation_id,
                         prompt=prompt,
                         not_before=started_at - 5.0,
                         expected_attachments=local_attachments,
-                        direct_allowed=not direct_context_rejected,
+                        skip_read_adapters=tuple(sorted(rejected_read_adapters)),
                         profile_dir=profile_dir,
                         browser_mode=browser_mode,
                         cdp_endpoint=cdp_endpoint,
                         browser_timeout=browser_timeout,
                     )
-                    direct_context_rejected = (
-                        direct_context_rejected or bool(last.get("direct_client_rejected"))
-                    )
-                except Exception as exc:
-                    rejected = _is_direct_client_rejection(exc)
-                    direct_context_rejected = direct_context_rejected or rejected
+                    rejected_read_adapters.update(last.get("rejected_read_adapters") or ())
+                except GraphAcquisitionFailed as exc:
+                    rejected_read_adapters.update(exc.rejected_adapters)
                     with MutationOperationStore(self.db_path) as operations:
                         prior = operations.get(operation_id)
                         if prior and prior.get("state") in {"committed", "committed_pending", "complete"}:
-                            # A canonical receipt remains true even if a later follow read is rejected.
-                            last = prior
+                            last = (dict(last) if isinstance(last, dict) else {}) | prior
                         else:
                             last = operations.update(
                                 operation_id,
                                 state="commit_unknown",
-                                error_class="DirectClientRejected" if rejected else exc.__class__.__name__,
+                                error_class="GraphAcquisitionFailed",
+                                error_detail=str(exc),
+                            ) | {
+                                "attempted_read_adapters": list(exc.attempted_adapters),
+                                "rejected_read_adapters": list(exc.rejected_adapters),
+                                "read_observations": list(exc.observations),
+                            }
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    with MutationOperationStore(self.db_path) as operations:
+                        prior = operations.get(operation_id)
+                        if prior and prior.get("state") in {"committed", "committed_pending", "complete"}:
+                            last = (dict(last) if isinstance(last, dict) else {}) | prior
+                        else:
+                            last = operations.update(
+                                operation_id,
+                                state="commit_unknown",
+                                error_class=exc.__class__.__name__,
                                 error_detail=str(exc),
                             )
-                    if rejected:
-                        break
                     continue
                 if last.get("state") == "complete":
                     break
+        if write_observations and "write_observations" not in last:
+            last = dict(last) | {"write_observations": write_observations}
         return last

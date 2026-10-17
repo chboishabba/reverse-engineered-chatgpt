@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from re_gpt.graph_broker import GraphAcquisitionFailed, GraphAcquisitionResult
 from re_gpt.mutation_service import MutationService
 from re_gpt.operation_store import MutationOperationStore
 
@@ -38,6 +39,24 @@ def _browser_result():
     }
 
 
+def _broker_result(chat: dict, *, adapter: str = "async", rejected: tuple[str, ...] = ()):
+    attempts = tuple(
+        {"adapter": name, "status": 429, "response_class": "RuntimeError", "rejected": True, "elapsed_ms": 1.0}
+        for name in rejected
+    ) + (
+        {"adapter": adapter, "status": 200, "response_class": "ok", "rejected": False, "elapsed_ms": 2.0},
+    )
+    return GraphAcquisitionResult(
+        graph=chat,
+        adapter=adapter,
+        elapsed_ms=2.0,
+        diagnostic={"adapter": adapter, "status": 200},
+        attempts=attempts,
+        attempted_adapters=tuple(item["adapter"] for item in attempts),
+        rejected_adapters=rejected,
+    )
+
+
 def test_continue_returns_committed_pending_after_canonical_user_node(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("re_gpt.mutation_service.submit_prompt", lambda *args, **kwargs: _browser_result())
     service = MutationService(db_path=tmp_path / "history.sqlite3")
@@ -58,76 +77,50 @@ def test_continue_only_completes_when_assistant_child_is_in_graph(monkeypatch, t
     assert result["assistant_text"] == "ACK"
 
 
-def test_missing_canonical_user_node_never_retries_browser(monkeypatch, tmp_path) -> None:
-    calls = []
-    def fake_submit(*args, **kwargs):
-        calls.append(1)
-        return _browser_result()
-    monkeypatch.setattr("re_gpt.mutation_service.submit_prompt", fake_submit)
+def test_broker_result_is_persisted_through_shared_path(monkeypatch, tmp_path) -> None:
     service = MutationService(db_path=tmp_path / "history.sqlite3")
-    monkeypatch.setattr(service, "_pull_and_persist", lambda conversation_id, **kwargs: {"chat": {"mapping": {}}, "new_messages": 0, "total_messages": 0})
-    result = service.continue_thread("abc", "hello", reconcile_attempts=3, reconcile_interval=0)
-    assert result["state"] == "commit_unknown"
-    assert len(calls) == 1
+    broker = _broker_result(_chat("hello"), adapter="async")
+    monkeypatch.setattr("re_gpt.mutation_service.fetch_exact_graph", lambda *args, **kwargs: broker)
+
+    result = service._pull_and_persist("abc")
+
+    assert result["read_adapter"] == "async"
+    assert result["attempted_read_adapters"] == ["async"]
+    assert result["rejected_read_adapters"] == []
+    assert result["chat"]["mapping"]["u1"]["message"]["content"]["parts"] == ["hello"]
 
 
-def test_direct_client_rejection_falls_back_to_browser_reader(monkeypatch, tmp_path) -> None:
+def test_broker_rejections_are_exposed_on_success(monkeypatch, tmp_path) -> None:
     service = MutationService(db_path=tmp_path / "history.sqlite3")
-    calls = []
+    broker = _broker_result(_chat("hello"), adapter="browser", rejected=("async", "sync"))
+    monkeypatch.setattr("re_gpt.mutation_service.fetch_exact_graph", lambda *args, **kwargs: broker)
 
-    def sync_rejected(conversation_id):
-        calls.append(("sync", conversation_id))
-        raise RuntimeError("HTTP 429 Too Many Requests from direct client")
+    result = service._pull_and_persist("abc")
 
-    def browser_ok(conversation_id, **kwargs):
-        calls.append(("browser", conversation_id))
-        return {
-            "chat": _chat("hello"),
-            "new_messages": 1,
-            "total_messages": 1,
-            "read_adapter": "browser",
-            "direct_client_rejected": kwargs.get("direct_client_rejected", False),
-        }
-
-    monkeypatch.setattr(service, "_pull_sync_and_persist", sync_rejected)
-    monkeypatch.setattr(service, "_pull_browser_and_persist", browser_ok)
-    result = service._pull_and_persist("abc", browser_fallback=True)
     assert result["read_adapter"] == "browser"
-    assert result["direct_client_rejected"] is True
-    assert calls == [("sync", "abc"), ("browser", "abc")]
+    assert result["attempted_read_adapters"] == ["async", "sync", "browser"]
+    assert result["rejected_read_adapters"] == ["async", "sync"]
 
 
-def test_direct_rejection_is_sticky_across_reconcile_attempts(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr("re_gpt.mutation_service.submit_prompt", lambda *args, **kwargs: _browser_result())
+def test_all_graph_adapters_failing_after_send_never_resends(monkeypatch, tmp_path) -> None:
+    sends = []
+    monkeypatch.setattr("re_gpt.mutation_service.submit_prompt", lambda *args, **kwargs: sends.append(1) or _browser_result())
     service = MutationService(db_path=tmp_path / "history.sqlite3")
-    sync_calls = []
-    browser_calls = []
+    failure = GraphAcquisitionFailed((
+        {"adapter": "async", "status": 429, "response_class": "RuntimeError", "rejected": True, "elapsed_ms": 1.0},
+        {"adapter": "sync", "status": 429, "response_class": "RuntimeError", "rejected": True, "elapsed_ms": 1.0},
+        {"adapter": "browser", "status": 429, "response_class": "RuntimeError", "rejected": True, "elapsed_ms": 1.0},
+    ))
+    monkeypatch.setattr(service, "_pull_and_persist", lambda *args, **kwargs: (_ for _ in ()).throw(failure))
 
-    def sync_rejected(conversation_id):
-        sync_calls.append(conversation_id)
-        raise RuntimeError("HTTP 429 Too Many Requests from direct client")
+    result = service.continue_thread("abc", "hello", reconcile_attempts=3, reconcile_interval=0)
 
-    def browser_eventual(conversation_id, **kwargs):
-        browser_calls.append((conversation_id, kwargs.get("direct_client_rejected")))
-        chat = {"mapping": {}} if len(browser_calls) == 1 else _chat("hello")
-        return {
-            "chat": chat,
-            "new_messages": 0 if len(browser_calls) == 1 else 1,
-            "total_messages": 0 if len(browser_calls) == 1 else 1,
-            "read_adapter": "browser",
-            "read_diagnostic": {},
-            "direct_client_rejected": kwargs.get("direct_client_rejected", False),
-        }
-
-    monkeypatch.setattr(service, "_pull_sync_and_persist", sync_rejected)
-    monkeypatch.setattr(service, "_pull_browser_and_persist", browser_eventual)
-    result = service.continue_thread("abc", "hello", reconcile_attempts=2, reconcile_interval=0)
-    assert result["state"] == "committed_pending"
-    assert sync_calls == ["abc"]
-    assert browser_calls == [("abc", True), ("abc", True)]
+    assert result["state"] == "commit_unknown"
+    assert result["error_class"] == "GraphAcquisitionFailed"
+    assert sends == [1]
 
 
-def test_successful_reconcile_clears_stale_direct_rejection_error(monkeypatch, tmp_path) -> None:
+def test_successful_reconcile_clears_stale_read_error(monkeypatch, tmp_path) -> None:
     service = MutationService(db_path=tmp_path / "history.sqlite3")
     with MutationOperationStore(service.db_path) as operations:
         op = operations.create(operation="continue", conversation_id="abc", prompt="hello")
@@ -135,8 +128,8 @@ def test_successful_reconcile_clears_stale_direct_rejection_error(monkeypatch, t
         operations.update(
             operation_id,
             state="commit_unknown",
-            error_class="DirectClientRejected",
-            error_detail="HTTP 429",
+            error_class="GraphAcquisitionFailed",
+            error_detail="all adapters rejected",
         )
 
     monkeypatch.setattr(
@@ -146,55 +139,16 @@ def test_successful_reconcile_clears_stale_direct_rejection_error(monkeypatch, t
             "chat": _chat("hello", assistant="ACK"),
             "new_messages": 2,
             "total_messages": 2,
-            "read_adapter": "browser",
+            "read_adapter": "async",
             "read_diagnostic": {},
-            "direct_client_rejected": False,
+            "attempted_read_adapters": ["async"],
+            "rejected_read_adapters": [],
         },
     )
     result = service.reconcile(operation_id, prompt="hello", not_before=0)
     assert result["state"] == "complete"
     assert result["error_class"] is None
     assert result["error_detail"] is None
-
-
-def test_sync_429_after_dom_evidence_is_direct_client_rejection(monkeypatch, tmp_path) -> None:
-    calls = []
-    def fake_submit(*args, **kwargs):
-        calls.append(1)
-        return _browser_result()
-    monkeypatch.setattr("re_gpt.mutation_service.submit_prompt", fake_submit)
-    service = MutationService(db_path=tmp_path / "history.sqlite3")
-    def rejected(_conversation_id, **kwargs):
-        raise RuntimeError("HTTP 429 Too Many Requests from sync reconciliation")
-    monkeypatch.setattr(service, "_pull_and_persist", rejected)
-    result = service.continue_thread("abc", "hello", reconcile_attempts=1)
-    assert result["state"] == "commit_unknown"
-    assert result["error_class"] == "DirectClientRejected"
-    assert result["completed_at"] is None
-    assert len(calls) == 1
-
-
-def test_follow_does_not_retry_same_direct_client_context_after_rejection(monkeypatch, tmp_path) -> None:
-    pulls = []
-    monkeypatch.setattr("re_gpt.mutation_service.submit_prompt", lambda *args, **kwargs: _browser_result())
-    service = MutationService(db_path=tmp_path / "history.sqlite3")
-
-    def rejected(_conversation_id, **kwargs):
-        pulls.append(1)
-        raise RuntimeError("HTTP 429 Too Many Requests from sync reconciliation")
-
-    monkeypatch.setattr(service, "_pull_and_persist", rejected)
-    result = service.continue_thread(
-        "abc",
-        "hello",
-        reconcile_attempts=3,
-        reconcile_interval=0,
-        follow=True,
-        follow_timeout=0.01,
-    )
-    assert result["state"] == "commit_unknown"
-    assert result["error_class"] == "DirectClientRejected"
-    assert len(pulls) == 1
 
 
 def test_follow_rejection_does_not_erase_prior_canonical_commit(monkeypatch, tmp_path) -> None:
@@ -212,7 +166,9 @@ def test_follow_rejection_does_not_erase_prior_canonical_commit(monkeypatch, tmp
                     committed_at=1.0,
                     user_node_id="u1",
                 )
-        raise RuntimeError("HTTP 429 Too Many Requests from browser reconciliation")
+        raise GraphAcquisitionFailed((
+            {"adapter": "async", "status": 429, "response_class": "RuntimeError", "rejected": True, "elapsed_ms": 1.0},
+        ))
 
     monkeypatch.setattr(service, "reconcile", reconcile_once_then_reject)
     result = service.continue_thread(
@@ -239,3 +195,70 @@ def test_attachment_requires_canonical_metadata_before_complete(monkeypatch, tmp
     assert result["attachment_ids"] == ["file_123"]
     status = service.operation_status(result["operation_id"])
     assert status["attachments"][0]["canonical_file_id"] == "file_123"
+
+
+def test_continue_thread_async_write_transport_certifies_via_broker(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        "re_gpt.mutation_service.submit_async_prompt_once",
+        lambda *args, **kwargs: {
+            "resolved_thread_id": "abc",
+            "transport": "async",
+            "state": "submission_observed",
+            "protocol_observations": [{"transport": "async", "operation": "continue", "status": 200}],
+            "stage_times": {"authenticated": 10.0, "hydrated": 11.0, "submission_observed": 12.0},
+        },
+    )
+    service = MutationService(db_path=tmp_path / "history.sqlite3")
+    monkeypatch.setattr(
+        service,
+        "_pull_and_persist",
+        lambda conversation_id, **kwargs: {
+            "chat": _chat("hello", assistant="ACK"),
+            "new_messages": 2,
+            "total_messages": 2,
+            "read_adapter": "async",
+            "read_diagnostic": {},
+            "attempted_read_adapters": ["async"],
+            "rejected_read_adapters": [],
+            "read_observations": [{"transport": "async", "operation": "exact_read", "status": 200}],
+        },
+    )
+    result = service.continue_thread("abc", "hello", write_transport="async", reconcile_attempts=1)
+    assert result["state"] == "complete"
+    assert result["transport"] == "async"
+    assert result["read_adapter"] == "async"
+    assert result["read_observations"] == [{"transport": "async", "operation": "exact_read", "status": 200}]
+    assert result["write_observations"] == [{"transport": "async", "operation": "continue", "status": 200}]
+
+
+def test_continue_thread_ambiguous_async_write_never_falls_back_to_dom(monkeypatch, tmp_path: Path) -> None:
+    from re_gpt.async_mutation_probe import AmbiguousAsyncWriteError
+    from re_gpt.protocol_observation import build_protocol_observation
+
+    dom_calls: list[int] = []
+    monkeypatch.setattr(
+        "re_gpt.mutation_service.submit_prompt",
+        lambda *args, **kwargs: dom_calls.append(1) or _browser_result(),
+    )
+    obs = build_protocol_observation(
+        transport="async",
+        operation="continue",
+        method="POST",
+        path="/backend-api/conversation",
+        status=None,
+        response_class="TimeoutError",
+    )
+    monkeypatch.setattr(
+        "re_gpt.mutation_service.submit_async_prompt_once",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AmbiguousAsyncWriteError("ambiguous post", status=None, observations=(obs,))
+        ),
+    )
+    service = MutationService(db_path=tmp_path / "history.sqlite3")
+    result = service.continue_thread("abc", "hello", write_transport="async", reconcile_attempts=1)
+    assert result["state"] == "commit_unknown"
+    assert result["transport"] == "async"
+    assert result["error_class"] == "AmbiguousAsyncWriteError"
+    assert len(result["write_observations"]) == 1
+    assert dom_calls == []
+

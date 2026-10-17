@@ -12,6 +12,7 @@ from dataclasses import asdict
 from typing import Any
 
 from chatgpt_dom_relay import EDITOR_TEXT_SELECTORS
+from .attachments import dismiss_blocking_dialogs
 from .dom_commit import (
     DomSubmissionNotObserved,
     _main_text,
@@ -28,6 +29,7 @@ async def submit_prompt_once(relay, prompt: str) -> dict[str, Any]:
     if not prompt:
         raise ValueError("prompt is empty")
 
+    await dismiss_blocking_dialogs(relay)
     composer = await relay._locate_visible(EDITOR_TEXT_SELECTORS)
     await composer.click()
     await relay.page.keyboard.insert_text(prompt)

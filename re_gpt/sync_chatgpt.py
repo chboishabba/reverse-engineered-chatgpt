@@ -425,6 +425,7 @@ class SyncChatGPT(AsyncChatGPT):
         timezone_offset_min: Optional[int] = None,
         client_contextual_info: Optional[dict] = None,
         user_agent: Optional[str] = None,
+        browser_session: Any = None,
     ):
         """
         Initializes an instance of the class.
@@ -444,6 +445,7 @@ class SyncChatGPT(AsyncChatGPT):
             timezone_offset_min (Optional[int]): Timezone offset in minutes.
             client_contextual_info (Optional[dict]): Client context payload for chats.
             user_agent (Optional[str]): User agent string override.
+            browser_session (Any): Optional BrowserSessionSnapshot, dict, or profile/snapshot path to replay.
         """
         super().__init__(
             proxies=proxies,
@@ -457,6 +459,7 @@ class SyncChatGPT(AsyncChatGPT):
             timezone_offset_min=timezone_offset_min,
             client_contextual_info=client_contextual_info,
             user_agent=user_agent,
+            browser_session=browser_session,
         )
 
         # Browser-launched Cloudflare handling is disabled. In practice the
@@ -491,6 +494,7 @@ class SyncChatGPT(AsyncChatGPT):
             impersonate="chrome142", timeout=99999, proxies=self.proxies
         )
         self._frontend_cookies = {}
+        self._apply_browser_session()
         if self.session_token:
             self._frontend_cookies["__Secure-next-auth.session-token"] = (
                 self.session_token
@@ -526,7 +530,7 @@ class SyncChatGPT(AsyncChatGPT):
                 self.auth_cookie = self.fetch_free_mode_cookies()
             
         # automaticly check the status of websocket_mode
-        if not self.websocket_mode:
+        if not self.websocket_mode and getattr(self, "_replayed_browser_snapshot", None) is None:
             self.websocket_mode = self.check_websocket_availability()
             
         if self.websocket_mode:

@@ -37,7 +37,6 @@ def test_sync_probe_returns_receipt_when_client_init_fails(monkeypatch) -> None:
     class BrokenSync:
         def __init__(self, *args, **kwargs):
             raise RuntimeError("HTTP 429 Too Many Requests")
-
     monkeypatch.setattr(read_diagnostics, "SyncChatGPT", BrokenSync)
     receipt = read_diagnostics._sync_probe("abc", token="token", model=None, user_agent="ua")
     assert receipt["adapter"] == "sync"
@@ -50,17 +49,12 @@ def test_async_probe_returns_receipt_when_client_enter_fails(monkeypatch) -> Non
     class BrokenAsync:
         def __init__(self, *args, **kwargs):
             pass
-
         async def __aenter__(self):
             raise RuntimeError("HTTP 403 rejected")
-
         async def __aexit__(self, exc_type, exc, tb):
             return False
-
     monkeypatch.setattr(read_diagnostics, "AsyncChatGPT", BrokenAsync)
-    receipt = asyncio.run(
-        read_diagnostics._async_probe("abc", token="token", model=None, user_agent="ua")
-    )
+    receipt = asyncio.run(read_diagnostics._async_probe("abc", token="token", model=None, user_agent="ua"))
     assert receipt["adapter"] == "async"
     assert receipt["status"] == 403
     assert receipt["response_class"] == "RuntimeError"
@@ -71,11 +65,7 @@ def test_diagnose_reads_still_runs_browser_without_direct_token(monkeypatch) -> 
     monkeypatch.setattr(read_diagnostics, "get_session_token", lambda: (_ for _ in ()).throw(RuntimeError("no token")))
     monkeypatch.setattr(read_diagnostics, "get_default_model", lambda: None)
     monkeypatch.setattr(read_diagnostics, "get_default_user_agent", lambda: "ua")
-    monkeypatch.setattr(
-        read_diagnostics,
-        "_sync_probe",
-        lambda conversation_id, **kwargs: {"adapter": "sync", "token": kwargs["token"]},
-    )
+    monkeypatch.setattr(read_diagnostics, "_sync_probe", lambda conversation_id, **kwargs: {"adapter": "sync", "token": kwargs["token"]})
 
     async def fake_async(conversation_id, **kwargs):
         return {"adapter": "async", "token": kwargs["token"]}
@@ -96,6 +86,7 @@ def test_diagnose_reads_still_runs_browser_without_direct_token(monkeypatch) -> 
                 "device_id_present": False,
                 "status": 200,
                 "response_class": "ok",
+                "unexpected_raw_secret": "DO-NOT-LEAK",
             }
         ),
     )
@@ -104,3 +95,5 @@ def test_diagnose_reads_still_runs_browser_without_direct_token(monkeypatch) -> 
     assert receipts[0]["token"] is None
     assert receipts[1]["token"] is None
     assert receipts[2]["status"] == 200
+    assert "unexpected_raw_secret" not in receipts[2]
+    assert "DO-NOT-LEAK" not in json.dumps(receipts[2])

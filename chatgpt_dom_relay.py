@@ -162,14 +162,24 @@ def assistant_reply_after_prompt(snapshot: dict[str, Any], prompt: str) -> str |
 
 
 def assistant_reply_after_rendered_text(page_text: str, prompt: str) -> str | None:
-    """Return the assistant reply from ChatGPT's current labeled turn markup."""
-    marker = f"You said:\n{prompt.strip()}\nChatGPT said:"
-    start = page_text.rfind(marker)
-    if start < 0:
+    """Return the reply from the newest rendered user turn matching ``prompt``."""
+    clean = prompt.strip()
+    if not clean or not page_text:
         return None
-    reply = page_text[start + len(marker) :]
-    reply = reply.split("\nChatGPT can make mistakes.", 1)[0].strip()
-    return reply or None
+    for segment in reversed(page_text.split("You said:\n")[1:]):
+        if "\nChatGPT said:" not in segment:
+            continue
+        user_part, rest = segment.split("\nChatGPT said:", 1)
+        normalized = user_part.strip()
+        if not (
+            normalized == clean
+            or normalized.endswith(f"\n{clean}")
+            or f"\n{clean}\n" in f"\n{normalized}\n"
+        ):
+            continue
+        reply = rest.split("\nChatGPT can make mistakes.", 1)[0].strip()
+        return reply or None
+    return None
 
 
 def latest_assistant_from_sse(raw: str) -> str:
@@ -270,9 +280,6 @@ class ChatGPTDomRelay:
     async def open_thread(self, thread_id: str) -> None:
         url = build_conversation_url(thread_id)
         self._log(f"opening {url}")
-        # A long conversation may keep loading long after the composer exists.
-        # Returning at commit lets us interact with the real UI without waiting
-        # for every historical message and asset to finish loading.
         await self.page.goto(url, wait_until="commit", timeout=self.timeout_ms)
         await self.page.wait_for_timeout(500)
         current_url = self.page.url
@@ -443,8 +450,6 @@ class ChatGPTDomRelay:
         last_error: Exception | None = None
         while time.monotonic() < deadline:
             for selector in selectors:
-                # ChatGPT keeps hidden fallback textareas in the DOM. Select
-                # only the rendered control rather than the first DOM match.
                 locator = self.page.locator(f"{selector}:visible").first
                 try:
                     if await locator.count():
@@ -475,7 +480,6 @@ class ChatGPTDomRelay:
         latest: dict[str, Any] | None = None
         latest_signature = ""
         stable_since: float | None = None
-
         while time.monotonic() < deadline:
             snapshot = summarize_snapshot(await self.snapshot())
             reply = assistant_reply_after_prompt(snapshot, prompt)
@@ -490,14 +494,9 @@ class ChatGPTDomRelay:
                     latest_signature = signature
                     stable_since = time.monotonic()
                 elif stable_since is not None and (time.monotonic() - stable_since) * 1000 >= self.idle_ms:
-                    # ChatGPT's composer labels vary between releases. A
-                    # stable assistant turn with no visible stop control is
-                    # sufficient even when the send button is renamed or
-                    # temporarily disabled by the page.
                     if await self._send_button_ready() or not await self._stop_button_visible():
                         return latest
             await self.page.wait_for_timeout(700)
-
         if latest is not None:
             return latest
         raise TimeoutError("Timed out waiting for assistant response to complete.")
@@ -521,6 +520,7 @@ class ChatGPTDomRelay:
             except Exception:
                 continue
         return False
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -577,8 +577,6 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
     alias_paths = [*DEFAULT_ALIAS_PATHS, *args.alias_file]
     alias_map = load_alias_map(alias_paths)
     thread_id = resolve_thread_selector(args.selector, alias_map)
-    # Do not consume stdin for --print-latest. This matters when the command
-    # is launched by a shell wrapper or test runner with piped stdin.
     stdin_text = None if args.print_latest or sys.stdin.isatty() else sys.stdin.read()
     prompt_text = resolve_prompt_text(
         prompt=args.prompt,

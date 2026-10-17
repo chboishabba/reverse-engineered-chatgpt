@@ -123,9 +123,74 @@ async def _drag_drop_fallback(relay, attachments: Sequence[LocalAttachment]) -> 
         await relay.page.evaluate("(id) => { const el=document.getElementById(id); if (el) el.remove(); }", temp_id)
 
 
+async def dismiss_blocking_dialogs(relay) -> bool:
+    """Close transient modal dialogs (e.g. 'File added to chat only') that block composer clicks."""
+    try:
+        closed = await relay.page.evaluate(
+            """() => {
+              let acted = false;
+              const dialogs = Array.from(document.querySelectorAll('.codex-dialog[data-state="open"], [role="dialog"][data-state="open"]'));
+              for (const dialog of dialogs) {
+                const closeBtn = Array.from(dialog.querySelectorAll('button,[role="button"]')).find(btn => {
+                  const label = ((btn.getAttribute('aria-label') || '') + ' ' + (btn.getAttribute('title') || '') + ' ' + (btn.innerText || '')).toLowerCase();
+                  return label.includes('close') || label.includes('dismiss') || label.includes('got it');
+                });
+                if (closeBtn) {
+                  closeBtn.click();
+                  acted = true;
+                }
+              }
+              return acted;
+            }"""
+        )
+        overlay = relay.page.locator('.codex-dialog-overlay[data-state="open"]:visible').first
+        if await overlay.count():
+            await relay.page.keyboard.press("Escape")
+            closed = True
+        if closed:
+            await relay.page.wait_for_timeout(150)
+        return bool(closed)
+    except Exception:
+        return False
+
+
+async def _clear_existing_staged_chips(relay, attachments: Sequence[LocalAttachment]) -> None:
+    """Remove only exact-filename leftover chips from an earlier pre-commit draft."""
+    try:
+        names = [item.filename.lower() for item in attachments]
+        removed = await relay.page.evaluate(
+            r"""(targetNames) => {
+              const editor = document.querySelector('.ProseMirror[contenteditable="true"]');
+              const scope = (editor && (editor.closest('form') || editor.closest('[data-testid="composer-root"]'))) || document.body;
+              const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const exactFilename = (label, name) => {
+                const pattern = new RegExp(`(?:^|\\s)${escapeRegExp(name)}(?:$|\\s)`, 'i');
+                return pattern.test(label);
+              };
+              let count = 0;
+              for (const btn of Array.from(scope.querySelectorAll('button,[role="button"]'))) {
+                const label = ((btn.getAttribute('aria-label') || '') + ' ' + (btn.getAttribute('title') || '')).toLowerCase().trim();
+                const isRemove = label.includes('remove') || label.includes('delete');
+                if (isRemove && targetNames.some(name => exactFilename(label, name))) {
+                  btn.click();
+                  count += 1;
+                }
+              }
+              return count;
+            }""",
+            names,
+        )
+        if removed:
+            await relay.page.wait_for_timeout(200)
+    except Exception:
+        return
+
+
 async def stage_attachments(relay, attachments: Sequence[LocalAttachment]) -> list[AttachmentReadyReceipt]:
     if not attachments:
         return []
+    await dismiss_blocking_dialogs(relay)
+    await _clear_existing_staged_chips(relay, attachments)
     locator = relay.page.locator(f"{ATTACH_INPUT_SELECTOR}:visible").first
     if not await locator.count():
         locator = relay.page.locator(ATTACH_INPUT_SELECTOR).first
@@ -138,6 +203,7 @@ async def stage_attachments(relay, attachments: Sequence[LocalAttachment]) -> li
     latest: list[AttachmentReadyReceipt] = []
     script = _attachment_scope_script()
     while time.monotonic() < deadline:
+        await dismiss_blocking_dialogs(relay)
         latest = []
         for item in attachments:
             raw = await relay.page.evaluate(script, item.filename)
@@ -148,6 +214,8 @@ async def stage_attachments(relay, attachments: Sequence[LocalAttachment]) -> li
                 removable=bool(isinstance(raw, dict) and raw.get("removable")),
             ))
         if latest and all(receipt.ready for receipt in latest):
+            await relay.page.wait_for_timeout(250)
+            await dismiss_blocking_dialogs(relay)
             return latest
         await relay.page.wait_for_timeout(200)
     raise TimeoutError(f"timed out waiting for attachment readiness: {[asdict(r) for r in latest]}")

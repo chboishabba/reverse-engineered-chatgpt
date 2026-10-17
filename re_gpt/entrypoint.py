@@ -80,6 +80,7 @@ def build_write_parser() -> argparse.ArgumentParser:
     parser.add_argument("--browser-profile", type=Path, help="Persistent authenticated browser profile.")
     parser.add_argument("--browser-mode", choices=("displayless", "headless", "headed"), default="displayless")
     parser.add_argument("--cdp-endpoint", help="Attach to an already-running browser over CDP.")
+    parser.add_argument("--write-transport", choices=("dom", "async"), default="dom", help="Mutation transport: dom (default production) or async (opt-in HTTP probe).")
     parser.add_argument("--write-timeout", type=int, default=60, help="Browser readiness/attachment/submission budget in seconds.")
     parser.add_argument("--key", "-k", help="Session token used only for canonical reconciliation.")
     parser.add_argument("--model", "-m")
@@ -102,6 +103,7 @@ def write_main(argv: list[str] | None = None) -> int:
             browser_mode=args.browser_mode,
             cdp_endpoint=args.cdp_endpoint,
             browser_timeout=args.write_timeout,
+            write_transport=args.write_transport,
             follow=args.follow,
             follow_timeout=args.follow_timeout,
         )

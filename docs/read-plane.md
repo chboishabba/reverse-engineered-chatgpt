@@ -1,87 +1,91 @@
 # Canonical conversation read plane
 
-For an exact ChatGPT conversation ID or conversation URL, the primary supported read path is:
+For an exact ChatGPT conversation ID or conversation URL, canonical truth is the validated conversation graph plus the shared SQLite archive. No transport is canonical by identity.
+
+## Adapter-independent exact graph broker
+
+Mutation reconciliation uses:
 
 ```python
-chat = chatgpt.fetch_conversation(conversation_id)
+from re_gpt.graph_broker import fetch_exact_graph
+
+result = fetch_exact_graph(conversation_id)
 ```
 
-where `chatgpt` is `SyncChatGPT`.
-
-This is the validated synchronous fetch path that has successfully retrieved a complete conversation graph for archival. Exact-ID reads must not expand a failed fetch into remote catalog pagination.
-
-For mutation reconciliation there is now one bounded fallback:
+The current acquisition order is:
 
 ```text
-sync exact GET
-  -> accepted: validate graph -> persist
-  -> direct-client rejection (for example HTTP 429 / Too Many Requests)
-       -> authenticated browser same-origin exact GET
-       -> validate the same graph shape -> persist through the same SQLite path
-       -> if browser read also fails: commit_unknown / DirectClientRejected
+async curl_cffi exact GET
+  -> accepted: validate graph -> shared persistence/receipt path
+  -> rejected/fails: one bounded attempt only
+sync curl_cffi exact GET
+  -> accepted: same validation/persistence path
+  -> rejected/fails: one bounded attempt only
+browser same-origin exact GET
+  -> accepted: same validation/persistence path
+  -> otherwise: commit_unknown / acquisition failure
 ```
 
-The browser fallback is a structured conversation GET performed inside the authenticated Chrome origin. It is not a DOM transcript scrape and it does not create a second archive format. Both accepted adapters feed the same graph validation, `ConversationStorage`, attachment archive, and mutation-receipt logic.
+This ordering reflects live evidence from the API-first tranche: async exact reads succeeded on short, medium and long conversations while other request contexts could receive 429s. The broker contract, rather than the adapter name, is stable.
 
-A direct-client 429 is therefore classified as a request-context/direct-client rejection signal for this application, not as ordinary user-visible rate limiting. After such a rejection, the rejected direct context is not immediately retried in the same follow loop and no mutation is ever resent.
+Each successful result carries the validated graph, adapter used, timing, attempted adapters, rejected adapters, and redacted observations. Adapter failures never create a second archive format.
+
+A 429 / `Too Many Requests` is treated as rejection of that request context for the current operation. It does **not** establish account-wide throttling or conversation absence. The rejected adapter is not immediately retried in the same operation, and no post-submission read failure can trigger mutation resubmission.
+
+## Existing-thread API-first phase
+
+Text continuation now has a demonstrated direct async/CFFI transport path in addition to the DOM fallback. Promotion remains receipt-driven:
+
+```text
+one async HTTP mutation attempt
+  -> submission evidence
+  -> exact graph broker
+  -> canonical user node
+  -> optional final assistant descendant
+  -> SQLite mutation receipt
+```
+
+Post-dispatch transport failures, HTTP 5xx responses, missing SSE data, and cleanup failures are ambiguous outcomes. They must never be reported as safe precommit failures and must never cause automatic resend or DOM fallback. Explicit 4xx rejection remains distinguishable from an ambiguous dispatched POST.
+
+The synchronous wrapper used by MCP/library entrypoints is running-event-loop aware: async work moves to a worker thread when a caller already owns an event loop rather than nesting `asyncio.run()` on that thread.
+
+## Session snapshot boundary
+
+Authenticated browser-session snapshots are explicit operational state, not an automatic side effect of ordinary DOM mutation or diagnostics.
+
+- ordinary mutation/diagnostic recording does not persist a snapshot;
+- explicit session capture may persist one when requested;
+- persisted snapshot files are created private (`0600`) from the first write and atomically replace the prior snapshot;
+- diagnostic receipts contain structural metadata only and never merge unknown raw fields back into sanitized observations.
 
 ## Supported single-conversation operations
 
-The `re-gpt` entrypoint installs the same invariant for:
+The `re-gpt` entrypoint retains exact-ID semantics for:
 
 - `re-gpt --view <UUID>`;
 - `re-gpt --download <UUID>`;
 - interactive resume through legacy `SyncConversation.fetch_chat()` callers;
-- post-write reconciliation (with browser same-origin fallback on direct-client rejection);
+- post-write reconciliation through the graph broker;
 - direct library callers that still invoke `SyncConversation.fetch_chat()`.
 
-`SyncConversation.fetch_chat()` is compatibility surface only. At package import it is rebound to a delegate that calls the parent `SyncChatGPT.fetch_conversation()` and then populates legacy conversation state. It no longer owns a second unchecked HTTP implementation in supported use.
-
-For ordinary exact UUID/URL reads outside mutation reconciliation, a fetch error remains terminal for that operation and is reported as-is. Catalog/title matching remains available for title and alias selectors.
+`SyncConversation.fetch_chat()` remains a compatibility surface. Exact-ID failures must not expand into remote catalog pagination.
 
 ## Differential diagnostics
 
-When read behavior diverges, compare adapters before changing protocol assumptions:
+Use:
 
 ```bash
 python -m re_gpt.read_diagnostics <conversation-uuid>
 ```
 
-The diagnostic probes `sync`, `async`, and authenticated browser same-origin reads and emits only redacted request shape:
-
-```text
-adapter
-method
-route
-header names
-cookie names/domains
-auth-header present yes/no
-device-id present yes/no
-status
-elapsed time
-response class
-```
-
-It never emits cookie, token, authorization, or device-ID values. Async remains a second read adapter and differential reference implementation; it is not inserted into the production reconciliation chain.
+to compare exact-read transports. Output is redacted to structural request/response metadata such as adapter, method/path, header and cookie names, status, timing, and response class. Cookie values, bearer tokens, device identifiers, raw response bodies, and arbitrary unknown diagnostic fields are not emitted.
 
 ## Structurer pulls
 
-Until the async session/request behavior is understood and shown equivalent, use the synchronous engine for targeted archival pulls:
+The structurer may select an explicit engine for experiments, but the mutation architecture should consume the broker rather than encode an adapter as canonical. Exact conversation identity must be validated before ingestion.
 
-```bash
-python scripts/pull_to_structurer.py \
-  --mode pull \
-  --engine sync \
-  --ids 6acc564d-0314-83ec-8036-1f4d9868c5f3
-```
+## Merge/release criterion for this tranche
 
-The synchronous structurer engine already calls `SyncChatGPT.fetch_conversation()` directly and verifies payload conversation identity before ingestion.
+The proven baseline for PR #41 established async exact reads across short/medium/long threads, canonical async text-write receipts, DOM fallback writes, canonical attachment receipts, and a green local suite. Subsequent hardening changes specifically address exactly-once ambiguity, MCP event-loop compatibility, snapshot safety, diagnostic redaction, attachment cleanup, DOM duplicate-turn selection, strict status parsing, and recorder shutdown races.
 
-The async engine remains available for explicit bulk/benchmark experiments:
-
-```bash
-python scripts/pull_to_structurer.py --mode bench ...
-python scripts/pull_to_structurer.py --engine async ...
-```
-
-Do not infer account-wide throttling from an async or legacy-path HTTP response when the validated synchronous path has not been tested for that same operation. The transports have demonstrated different behavior in practice even when the nominal backend URL is the same.
+The hardening head still requires a fresh full test run and one paced async-write canonical receipt before merge/release is claimed. Do not substitute the earlier baseline receipt for verification of later hardening commits.
