@@ -123,15 +123,18 @@ class MutationService:
             assistant_node_id = _assistant_child_id(pulled["chat"], user_node_id)
             now = time.time()
             state = "complete" if assistant_node_id and receipt.assistant_text else "committed_pending"
-            return operations.update(
+            stored = operations.update(
                 operation_id,
                 state=state,
                 committed_at=op.get("committed_at") or now,
                 completed_at=now if state == "complete" else None,
                 user_node_id=user_node_id,
                 assistant_node_id=assistant_node_id,
-                assistant_text=receipt.assistant_text,
-            ) | {
+            )
+            return stored | {
+                # Transcript text is returned ephemerally from the canonical graph;
+                # it is not duplicated into mutation_attempts.
+                "assistant_text": receipt.assistant_text,
                 "new_messages": pulled["new_messages"],
                 "total_messages": pulled["total_messages"],
             }
