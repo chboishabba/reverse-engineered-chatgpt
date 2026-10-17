@@ -609,6 +609,7 @@ class SyncChatGPT(AsyncChatGPT):
         url = CHATGPT_API.format(f"conversation/{conversation_id}")
         headers = dict(self.build_request_headers())
         headers["Accept"] = "application/json"
+        headers.pop("Content-Type", None)
         self._debug_request_context(headers)
 
         params: dict[str, str] = {}

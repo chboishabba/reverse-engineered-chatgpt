@@ -123,6 +123,36 @@ def test_async_fetch_conversation_removes_stream_headers(monkeypatch):
     assert captured["params"]["since_time"] == "12.5"
 
 
+def test_sync_fetch_conversation_removes_content_type_header(monkeypatch):
+    client = SyncChatGPT()
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {"ok": True}
+
+    class FakeSession:
+        def get(self, url=None, headers=None, params=None):
+            captured["url"] = url
+            captured["headers"] = dict(headers or {})
+            captured["params"] = dict(params or {})
+            return FakeResponse()
+
+    monkeypatch.setattr(client, "build_request_headers", lambda: {"Content-Type": "application/json"})
+    client.session = FakeSession()
+
+    result = client.fetch_conversation("conv-1", since_time=12.5)
+
+    assert result == {"ok": True}
+    assert captured["url"].endswith("/conversation/conv-1")
+    assert "Content-Type" not in captured["headers"]
+    assert captured["headers"]["Accept"] == "application/json"
+    assert captured["params"]["since_time"] == "12.5"
+
+
 def test_sync_fetch_auth_token_bootstraps_frontend_cookies_on_warning_banner():
     client = SyncChatGPT(session_token="session-token")
     client._frontend_cookies = {"__Secure-next-auth.session-token": "session-token"}
