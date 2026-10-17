@@ -78,12 +78,10 @@ def test_recorder_captures_ordered_redacted_observations_and_detaches() -> None:
 
     async def run():
         async with BrowserProtocolRecorder(page, operation="continue") as recorder:
-            # Ignored external request
             ext_req = FakeRequest("https://cdn.oaistatic.com/assets/app.js")
             page.emit("request", ext_req)
             page.emit("response", FakeResponse(ext_req, status=200))
 
-            # 1. Auth session GET
             auth_req = FakeRequest(
                 "https://chatgpt.com/api/auth/session",
                 method="GET",
@@ -95,7 +93,6 @@ def test_recorder_captures_ordered_redacted_observations_and_detaches() -> None:
                 FakeResponse(auth_req, status=200, headers={"content-type": "application/json"}),
             )
 
-            # 2. Sentinel POST
             sentinel_req = FakeRequest(
                 "https://chatgpt.com/backend-api/sentinel/chat-requirements",
                 method="POST",
@@ -112,7 +109,6 @@ def test_recorder_captures_ordered_redacted_observations_and_detaches() -> None:
                 FakeResponse(sentinel_req, status=200, headers={"content-type": "application/json"}),
             )
 
-            # 3. Conversation SSE POST
             conv_req = FakeRequest(
                 "https://chatgpt.com/backend-api/conversation",
                 method="POST",
@@ -144,7 +140,6 @@ def test_recorder_captures_ordered_redacted_observations_and_detaches() -> None:
                 FakeResponse(conv_req, status=200, headers={"content-type": "text/event-stream"}),
             )
 
-        # After stop, events are ignored
         late_req = FakeRequest("https://chatgpt.com/backend-api/conversation/6ad2c994-f4d4-83ec-9658-c9f1f84e5db0")
         page.emit("request", late_req)
         page.emit("response", FakeResponse(late_req, status=200))
@@ -181,3 +176,28 @@ def test_recorder_captures_ordered_redacted_observations_and_detaches() -> None:
         "SECRET_USER_PROMPT",
     ):
         assert secret not in serialized
+
+
+def test_sentinel_is_consumed_only_by_actual_conversation_post() -> None:
+    recorder = BrowserProtocolRecorder(FakePage(), operation="continue")
+    recorder._captured_sentinel = {
+        "chat_requirements_token": "TOKEN",
+        "consumed": False,
+    }
+    headers = {"OpenAI-Sentinel-Chat-Requirements-Token": "TOKEN"}
+
+    recorder._capture_request_artifacts(
+        "https://chatgpt.com/backend-api/conversations",
+        "POST",
+        headers,
+        None,
+    )
+    assert recorder._captured_sentinel["consumed"] is False
+
+    recorder._capture_request_artifacts(
+        "https://chatgpt.com/backend-api/conversation",
+        "POST",
+        headers,
+        None,
+    )
+    assert recorder._captured_sentinel["consumed"] is True
