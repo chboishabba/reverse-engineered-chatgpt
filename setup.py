@@ -28,6 +28,7 @@ setup(
             "re-gpt-metrics = re_gpt.mutation_metrics:main",
             "re-gpt-session = re_gpt.resilience_cli:session_main",
             "re-gpt-protocol = re_gpt.resilience_cli:protocol_main",
+            "re-gpt-adapters = re_gpt.adapter_health_cli:main",
         ],
     },
 )
