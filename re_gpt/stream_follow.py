@@ -41,14 +41,71 @@ class SSEProgressDecoder:
         self._emit({"kind": "terminal", "reason": reason}, output)
 
     def _handle_json(self, event: Mapping[str, Any], output: list[dict[str, Any]]) -> None:
-        if event.get("conversation_id"):
-            self.conversation_id = str(event["conversation_id"])
+        conv_id = event.get("conversation_id")
+        v = event.get("v")
+        if not conv_id and isinstance(v, Mapping):
+            conv_id = v.get("conversation_id")
+        if conv_id:
+            self.conversation_id = str(conv_id)
+
+        msg_type = str(event.get("type") or "").strip().lower()
+        if msg_type in {"message_stream_complete", "conversation_completed"}:
+            self._terminal(msg_type, output)
 
         top_status = str(event.get("status") or "").strip().lower()
         if top_status == "finished_successfully":
             self._terminal("finished_successfully", output)
 
+        patches: list[Mapping[str, Any]] = []
+        if isinstance(v, list):
+            patches.extend(item for item in v if isinstance(item, Mapping))
+        elif "p" in event:
+            patches.append(event)
+
+        for patch in patches:
+            p = str(patch.get("p") or "")
+            op = str(patch.get("o") or "")
+            pval = patch.get("v")
+            if p == "/message/status" and str(pval).lower() == "finished_successfully":
+                self._terminal("finished_successfully", output)
+            elif p == "/message/end_turn" and bool(pval):
+                self._terminal("finished_successfully", output)
+            elif p.startswith("/message/content/parts/") or p == "/message/content/parts":
+                delta_str = str(pval) if pval is not None else ""
+                if op == "append" and delta_str:
+                    msg_id = self.assistant_message_id
+                    prior = self._last_text.get(msg_id or "", "")
+                    new_text = prior + delta_str
+                    if msg_id:
+                        self._last_text[msg_id] = new_text
+                    self.assistant_text = new_text
+                    self._emit({
+                        "kind": "token_delta",
+                        "message_id": msg_id,
+                        "delta": delta_str,
+                        "channel": getattr(self, "assistant_channel", None) or "final",
+                    }, output)
+                elif op == "replace" and delta_str:
+                    msg_id = self.assistant_message_id
+                    prior = self._last_text.get(msg_id or "", "")
+                    if delta_str.startswith(prior):
+                        delta = delta_str[len(prior):]
+                    else:
+                        delta = delta_str
+                    if msg_id:
+                        self._last_text[msg_id] = delta_str
+                    self.assistant_text = delta_str
+                    if delta:
+                        self._emit({
+                            "kind": "token_delta",
+                            "message_id": msg_id,
+                            "delta": delta,
+                            "channel": getattr(self, "assistant_channel", None) or "final",
+                        }, output)
+
         message = event.get("message")
+        if not isinstance(message, Mapping) and isinstance(v, Mapping):
+            message = v.get("message")
         if not isinstance(message, Mapping):
             return
 
@@ -66,6 +123,9 @@ class SSEProgressDecoder:
         channel = str(message.get("channel") or "").strip().lower()
         recipient = str(message.get("recipient") or "").strip()
         status = str(message.get("status") or "").strip().lower()
+
+        if role == "assistant" and channel:
+            self.assistant_channel = channel
 
         if channel == "analysis" or content_type in {"thoughts", "reasoning", "reasoning_recap"}:
             self._emit({

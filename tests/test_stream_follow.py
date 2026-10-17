@@ -77,3 +77,46 @@ def test_decoder_classifies_thinking_tool_and_terminal_events() -> None:
     assert "terminal" in kinds
     assert decoder.terminal_observed is True
     assert decoder.terminal_reason in {"finished_successfully", "done"}
+
+
+def test_decoder_handles_nested_envelope_and_json_patch_deltas() -> None:
+    decoder = SSEProgressDecoder()
+    envelope = _data({
+        "v": {
+            "conversation_id": "c-99",
+            "message": {
+                "id": "asst-99",
+                "author": {"role": "assistant"},
+                "content": {"content_type": "text", "parts": ["In quiet lines"]},
+                "status": "in_progress",
+                "channel": "final",
+            },
+        },
+        "c": 1,
+    })
+    patch1 = _data({
+        "o": "patch",
+        "v": [
+            {"p": "/message/content/parts/0", "o": "append", "v": " of code"},
+        ],
+    })
+    patch2 = _data({
+        "v": [
+            {"p": "/message/content/parts/0", "o": "append", "v": ", dreams awaken."},
+            {"p": "/message/status", "o": "replace", "v": "finished_successfully"},
+            {"p": "/message/end_turn", "o": "replace", "v": True},
+        ],
+    })
+    complete = _data({
+        "type": "message_stream_complete",
+        "conversation_id": "c-99",
+    }) + "data: [DONE]\n\n"
+
+    events = decoder.feed(envelope + patch1 + patch2 + complete)
+    deltas = [e["delta"] for e in events if e.get("kind") == "token_delta"]
+    assert deltas == ["In quiet lines", " of code", ", dreams awaken."]
+    assert decoder.assistant_text == "In quiet lines of code, dreams awaken."
+    assert decoder.conversation_id == "c-99"
+    assert decoder.assistant_message_id == "asst-99"
+    assert decoder.terminal_observed is True
+
