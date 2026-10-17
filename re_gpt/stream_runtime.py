@@ -14,6 +14,7 @@ from .stream_follow import ProgressCallback, SSEProgressDecoder
 class StreamRuntimeState:
     decoder: SSEProgressDecoder = field(default_factory=SSEProgressDecoder)
     progress_callback: ProgressCallback | None = None
+    follow_requested: bool = False
 
     def feed(self, chunk: bytes | str) -> None:
         events = self.decoder.feed(chunk)
@@ -37,8 +38,15 @@ def current_stream_state() -> StreamRuntimeState | None:
 
 
 @contextmanager
-def stream_runtime(progress_callback: ProgressCallback | None = None) -> Iterator[StreamRuntimeState]:
-    state = StreamRuntimeState(progress_callback=progress_callback)
+def stream_runtime(
+    progress_callback: ProgressCallback | None = None,
+    *,
+    follow_requested: bool = False,
+) -> Iterator[StreamRuntimeState]:
+    state = StreamRuntimeState(
+        progress_callback=progress_callback,
+        follow_requested=bool(follow_requested),
+    )
     token = _CURRENT_STREAM_STATE.set(state)
     try:
         yield state
