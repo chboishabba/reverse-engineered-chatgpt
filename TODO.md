@@ -1,12 +1,36 @@
 # TODO
 
-- [x] Update asset download tests to use an inline HTML fixture instead of `gpt-page-source-raw.txt`.
-- [x] Document test requirements in `README.md`.
-- [x] Keep fixture content minimal and synthetic when used in tests.
-- [x] Record the automation-friendly CLI helpers (`--list`, `--inspect`, `--view`, `--download`) that support scripted `rg` workflows.
-- [x] Add automation commands (`--view`, `--inspect`, `--download`) that emit conversation dumps, metadata, and exports without entering the interactive session.
-- [x] Provide a reusable `scripts/context_sync.sh` wrapper so the automation flow can be rerun without typing every command.
-- [x] Explain in the docs how `scripts/context_sync.sh` is wired to the CLI helpers (`run_noninteractive_view`, `run_inspect_command`, `handle_download_command`) so future edits know where to hook.
-- [x] Add a catalog delta helper (`scripts/list_sync_candidates.py`) that compares live conversation metadata against a SQLite archive and lists only missing/stale conversations for targeted downloads.
-- [ ] Implement an MCP-backed session in `re_gpt/sync_chatgpt.py` that attaches to the authenticated `chatgpt.com` tab, reads cookies/localStorage, and drives CDP commands as the supported recovery path now that the Playwright/Firefox fallback has been removed.
-- [x] Fix `--inspect` to include cached/remote timestamps by restoring `run_inspect_command`.
+## Completed product milestones
+
+- [x] Exact conversation reads through the adapter-independent graph broker.
+- [x] API-first existing-thread text continuation.
+- [x] Exactly-once mutation state and canonical graph reconciliation.
+- [x] Direct attachment staging (`files -> blob PUT -> process_upload_stream -> conversation`).
+- [x] API-first MCP continuation with safe pre-commit DOM fallback.
+- [x] Redaction-first browser protocol capture and accessibility experiment receipts.
+- [x] Direct new-conversation creation with assigned conversation ID capture.
+- [x] Direct branch-from-exact-node mutation.
+- [x] Direct regenerate/variant mutation from an exact user node.
+- [x] Direct edit-and-branch from an exact user node.
+- [x] Route the supported command-line mutation surface through `MutationService`.
+- [x] Route legacy `SyncConversation.chat()` / interactive mutations through `MutationService` compatibility.
+- [x] Expose new/branch/regenerate/edit-and-branch through MCP.
+- [x] Add one-command sacrificial graph-mutation acceptance runner.
+- [x] Refresh README, user guide, read/mutation/browser docs and interface contract.
+
+## Hardening / resilience
+
+- [ ] Run the full local pytest suite on the graph-mutation branch and record the exact pass/skip receipt.
+- [ ] Run `scripts/accept_graph_mutations_v1.py` against a sacrificial account thread and retain canonical complete receipts for all four graph operations.
+- [ ] Expand the attachment acceptance matrix: multiple files, duplicate basenames, larger files and non-text MIME types.
+- [ ] Add explicit session-bootstrap / refresh lifecycle commands and expiry diagnostics.
+- [ ] Add protocol-drift detection against redacted browser-oracle captures.
+- [ ] Add adapter health/backoff and empirical latency telemetry without weakening exactly-once semantics.
+- [ ] Improve arbitrary uploaded-file archive download/provenance beyond current canonical attachment binding.
+- [ ] Remove/deprecate obsolete low-level mutation implementations once downstream compatibility consumers no longer call them directly.
+
+## Existing archive/context helpers
+
+- [x] Automation-friendly `--list`, `--inspect`, `--view`, and `--download` flows.
+- [x] `scripts/context_sync.sh` wrapper and catalog delta helper.
+- [x] Cached/remote timestamps in `--inspect`.
