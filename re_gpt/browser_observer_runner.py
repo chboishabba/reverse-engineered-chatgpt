@@ -36,17 +36,14 @@ async def _same_origin_read(relay: AccessibilityBrowserRelay, conversation_id: s
             const sessionResponse = await fetch('/api/auth/session', {method: 'GET'});
             const sessionText = await sessionResponse.text();
             if (!sessionResponse.ok) {
-                return {ok: false, stage: 'auth-session', status: sessionResponse.status,
-                  body: sessionText.slice(0, 1000)};
+                return {ok: false, stage: 'auth-session', status: sessionResponse.status};
             }
             let session;
             try { session = JSON.parse(sessionText); }
-            catch (_) { return {ok: false, stage: 'auth-session-json', status: sessionResponse.status,
-              body: sessionText.slice(0, 1000)}; }
+            catch (_) { return {ok: false, stage: 'auth-session-json', status: sessionResponse.status}; }
             const accessToken = session.accessToken || '';
             if (!accessToken) {
-                return {ok: false, stage: 'auth-session', status: 401,
-                  body: 'No access token in /api/auth/session response.'};
+                return {ok: false, stage: 'auth-session', status: 401};
             }
             const headers = {Authorization: `Bearer ${accessToken}`, Accept: 'application/json'};
             const response = await fetch(`/backend-api/conversation/${conversationId}`, {
@@ -56,21 +53,21 @@ async def _same_origin_read(relay: AccessibilityBrowserRelay, conversation_id: s
             let chat = null;
             if (response.ok) {
                 try { chat = JSON.parse(body); }
-                catch (_) { return {ok: false, stage: 'conversation-json', status: response.status,
-                  body: body.slice(0, 1000)}; }
+                catch (_) { return {ok: false, stage: 'conversation-json', status: response.status}; }
             }
+            const headerNames = Object.keys(headers).sort();
             return {
               ok: response.ok,
               stage: 'conversation-get',
               status: response.status,
-              body: response.ok ? '' : body.slice(0, 1000),
               chat,
               diagnostic: {
                 adapter: 'browser',
                 method: 'GET',
                 route: '/backend-api/conversation/<id>',
-                header_names: Object.keys(headers).sort(),
-                auth_header_present: Boolean(headers.Authorization),
+                header_names: headerNames,
+                auth_header_present: headerNames.some((name) => name.toLowerCase() === 'authorization'),
+                device_id_present: headerNames.some((name) => ['oai-device-id', 'x-openai-device-id', 'openai-device-id'].includes(name.toLowerCase())),
                 status: response.status,
                 response_class: response.ok ? 'ok' : 'http_error',
               },
@@ -80,8 +77,7 @@ async def _same_origin_read(relay: AccessibilityBrowserRelay, conversation_id: s
     )
     if not result.get("ok"):
         raise RuntimeError(
-            f"browser {result.get('stage')} failed with HTTP {result.get('status')}: "
-            f"{result.get('body', '')}"
+            f"browser {result.get('stage')} failed with HTTP {result.get('status')}"
         )
     diagnostic = result.get("diagnostic") if isinstance(result.get("diagnostic"), dict) else {}
     try:
