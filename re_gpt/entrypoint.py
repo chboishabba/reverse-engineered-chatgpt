@@ -85,6 +85,7 @@ def build_write_parser() -> argparse.ArgumentParser:
     mutation.add_argument("--fleet", action="store_true", help="Display full fleet coordination matrix across all clusters.")
     mutation.add_argument("--fleet-revive-fatigued", action="store_true", help="Automatically revive all fatigued lead threads across all clusters.")
     mutation.add_argument("--fleet-alpha", action="store_true", help="Rank and display high-alpha mathematical & foundational continuations across recent threads.")
+    mutation.add_argument("--pnf-fleet", action="store_true", help="Compile PNF semantic factor and world model state for recent threads via slr prod compiler.")
     mutation.add_argument("--inspect-thread", metavar="CONVERSATION", help="Inspect a thread's title, turns, and recent messages.")
     mutation.add_argument("--branch", metavar="CONVERSATION", help="Create a user branch from --parent-node.")
     mutation.add_argument("--regenerate", metavar="CONVERSATION", help="Regenerate from an exact --user-node.")
@@ -92,6 +93,8 @@ def build_write_parser() -> argparse.ArgumentParser:
     parser.add_argument("--turns", type=int, default=3, help="Number of turns to show for --inspect-thread.")
     parser.add_argument("--alpha-limit", type=int, default=200, help="Number of recent threads to scan for --fleet-alpha.")
     parser.add_argument("--min-score", type=float, default=25.0, help="Minimum score threshold for --fleet-alpha.")
+    parser.add_argument("--pnf-limit", type=int, default=200, help="Number of recent threads to compile PNF for (default: 200).")
+    parser.add_argument("--pnf-output", type=Path, default=None, help="Output directory for .slro, .slrw and summary files.")
     parser.add_argument("--parent-node", help="Exact graph node used as the parent for --branch.")
     parser.add_argument("--user-node", help="Exact user node for --regenerate or --edit-branch.")
     parser.add_argument("--prompt")
@@ -213,6 +216,33 @@ def write_main(argv: list[str] | None = None) -> int:
             )
             print(orchestrator.render_alpha_matrix(limit=args.alpha_limit, min_score=args.min_score))
             return 0
+        elif args.pnf_fleet:
+            orchestrator = FleetOrchestrator(
+                db_path=getattr(service, "db_path", DEFAULT_DB_PATH),
+                profile_dir=args.browser_profile,
+                browser_mode=args.browser_mode,
+                session_token=args.key,
+                model=args.model,
+            )
+            print(f"Compiling PNF semantic factors for top {args.pnf_limit} threads via slr world compiler...")
+            def on_pnf_prog(i, total, cid, title):
+                if i % 20 == 0 or i == total:
+                    print(f"  [{i}/{total}] Encoded observations for {cid[:8]} ({title[:30]})...")
+            res = orchestrator.compile_fleet_pnf(limit=args.pnf_limit, output_dir=args.pnf_output, progress_cb=on_pnf_prog)
+            receipt = res.get("compiler_receipt", {})
+            print(f"\n✅ PNF Fleet Compilation Complete!")
+            print(f"- Threads compiled: {res['threads_compiled']}")
+            print(f"- Total sentences: {res['total_sentences']}")
+            print(f"- Total tokens: {res['total_tokens']}")
+            print(f"- Source manifestations: {receipt.get('manifestations')}")
+            print(f"- PNF candidates: {receipt.get('pnf_candidates')}")
+            print(f"- World atoms: {receipt.get('world_atoms')}")
+            print(f"- Unique semantic factors (role, lemma, dependency): {res['unique_factors_count']}")
+            print(f"- Durable world store: {res['slrw_path']} ({res['slrw_bytes']} bytes)")
+            print(f"\nTop 10 Semantic Factors:")
+            for f in res.get("top_factors", [])[:10]:
+                print(f"  • {f['factor']}: {f['count']}")
+            return 0
         elif args.inspect_thread:
             orchestrator = FleetOrchestrator(
                 db_path=getattr(service, "db_path", DEFAULT_DB_PATH),
@@ -288,7 +318,7 @@ def write_main(argv: list[str] | None = None) -> int:
 def main() -> int:
     graph_flags = (
         "--send", "--new", "--revive", "--fleet", "--fleet-revive-fatigued",
-        "--fleet-alpha", "--inspect-thread", "--branch", "--regenerate", "--edit-branch",
+        "--fleet-alpha", "--pnf-fleet", "--inspect-thread", "--branch", "--regenerate", "--edit-branch",
     )
     legacy_flags = (
         "--list", "--view", "--inspect", "--download", "--latest", "--since-last",

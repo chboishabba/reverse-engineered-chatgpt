@@ -519,6 +519,20 @@ class FleetOrchestrator:
         lines.append("")
         return "\n".join(lines)
 
+    def compile_fleet_pnf(
+        self,
+        limit: int = 200,
+        iteration: int = 1,
+        output_dir: Path | str | None = None,
+        progress_cb: Any = None,
+    ) -> dict[str, Any]:
+        """Compile top threads through slr's release sensiblaw-world-compiler."""
+        from .pnf_compiler import PnfFleetCompiler, DEFAULT_WORLD_DIR
+
+        out = output_dir or DEFAULT_WORLD_DIR
+        compiler = PnfFleetCompiler(db_path=self.db_path, output_dir=out)
+        return compiler.compile_fleet(limit=limit, iteration=iteration, progress_cb=progress_cb)
+
 
 ALPHA_KEYWORDS: dict[str, tuple[str, float]] = {
     # Clay / Millennium Problems
