@@ -25,11 +25,13 @@ def test_operation_store_persists_state_and_prompt_digest(tmp_path) -> None:
         assert persisted["user_node_id"] == "user-1"
 
 
-def test_operation_store_does_not_store_prompt_body(tmp_path) -> None:
+def test_operation_store_does_not_store_transcript_bodies(tmp_path) -> None:
     db = tmp_path / "history.sqlite3"
     secret_prompt = "this body belongs only in the conversation graph"
+    secret_reply = "this assistant body also belongs only in the conversation graph"
     with MutationOperationStore(db) as store:
         created = store.create(operation="continue", conversation_id="abc", prompt=secret_prompt)
-        row = store.get(created["operation_id"])
-        assert row is not None
+        row = store.update(created["operation_id"], assistant_text=secret_reply)
         assert secret_prompt not in repr(row)
+        assert secret_reply not in repr(row)
+        assert "assistant_text" not in row
