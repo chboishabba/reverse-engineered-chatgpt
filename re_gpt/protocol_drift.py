@@ -10,6 +10,7 @@ from .protocol_observation import normalize_protocol_path
 
 _SCHEMA_VERSION = 1
 _ATTACHMENT_STAGES = frozenset({"attachment_staging", "attachment_upload", "attachment_process"})
+_CRITICAL_HEADERS = frozenset({"authorization", "content-type", "openai-sentinel-chat-requirements-token"})
 
 
 def _canonical_schema(value: Any) -> str | None:
@@ -108,10 +109,11 @@ def compare_protocol_fingerprints(baseline: Mapping[str, Any], candidate: Mappin
     base_attach = {str(x) for x in baseline.get("attachment_stages") or []}
     cand_attach = {str(x) for x in candidate.get("attachment_stages") or []}
 
+    missing_headers = base_headers - cand_headers
     delta = {
         "missing_routes": _sorted_routes(base_routes - cand_routes),
         "added_routes": _sorted_routes(cand_routes - base_routes),
-        "missing_header_names": sorted(base_headers - cand_headers),
+        "missing_header_names": sorted(missing_headers),
         "added_header_names": sorted(cand_headers - base_headers),
         "missing_body_keys": sorted(base_body - cand_body),
         "added_body_keys": sorted(cand_body - base_body),
@@ -127,7 +129,9 @@ def compare_protocol_fingerprints(baseline: Mapping[str, Any], candidate: Mappin
         delta["missing_routes"]
         or delta["missing_body_keys"]
         or delta["missing_body_schema_signatures"]
+        or delta["missing_sse_event_key_signatures"]
         or delta["missing_attachment_stages"]
+        or bool(missing_headers & _CRITICAL_HEADERS)
     )
     changed = any(bool(value) for value in delta.values())
     classification = "incompatible" if incompatible else ("drift_suspected" if changed else "compatible")
