@@ -78,13 +78,16 @@ def _run_observer(
     else:
         command.extend(["--profile-dir", str(Path(profile_dir or DEFAULT_PROFILE_DIR).expanduser())])
 
-    completed = subprocess.run(
-        command,
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=max(5, int(timeout) + 10),
-    )
+    try:
+        completed = subprocess.run(
+            command,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=max(5, int(timeout) + 10),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise BrowserObservationError(f"browser observer launch failed: {exc}") from exc
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout or "unknown browser observer failure").strip()
         raise BrowserObservationError(detail)
