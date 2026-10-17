@@ -4,6 +4,9 @@ from .read_plane import install_sync_fetch_chat_compatibility
 from .dom_commit import install_dom_commit_receipts
 from .mutation_compat import install_unified_sync_mutation_plane
 from .session_precommit import install_session_precommit_guard
+from .backend_pacing import install_global_backend_pacing
+from .profile_isolation_install import install_profile_isolation
+from .stream_follow_install import install_stream_first_follow
 from .sse_identity import extract_graph_sse_identity
 from . import direct_graph_mutation as _direct_graph_mutation
 
@@ -18,6 +21,17 @@ install_unified_sync_mutation_plane()
 # Persisted session expiry that is provably stale is rejected before any
 # MutationService transport is allowed to dispatch.
 install_session_precommit_guard()
+
+# Pace all owned backend-api traffic through one cross-process SQLite queue;
+# exact reads use a wider default interval than other backend requests.
+install_global_backend_pacing()
+
+# Browser launches serialize only against the same canonical profile path.
+install_profile_isolation()
+
+# Stream-follow consumes the active conversation SSE and performs one terminal
+# canonical reconciliation instead of repeated full-graph polling.
+install_stream_first_follow()
 
 # curl_cffi callbacks may split one SSE event across arbitrary chunks. Install
 # the fragment-safe identity parser while keeping the direct module's public API.
