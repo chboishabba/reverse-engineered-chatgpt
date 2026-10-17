@@ -13,9 +13,10 @@ _INSTALLED = False
 def _guarded(method: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(method)
     def wrapper(self, *args: Any, **kwargs: Any) -> Any:
-        profile_dir = kwargs.get("profile_dir")
-        if profile_dir is not None:
-            SessionLifecycle().assert_precommit_ready(profile_dir=profile_dir)
+        # The default snapshot path matters too: direct transports load it even
+        # when callers omit profile_dir. Missing/opaque-expiry state is allowed;
+        # only a provably expired persisted credential blocks dispatch.
+        SessionLifecycle().assert_precommit_ready(profile_dir=kwargs.get("profile_dir"))
         return method(self, *args, **kwargs)
     return wrapper
 
