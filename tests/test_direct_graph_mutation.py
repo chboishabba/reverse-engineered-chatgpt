@@ -94,6 +94,17 @@ def test_extract_sse_identity_finds_new_conversation_and_assistant() -> None:
     assert identity["user_message_id"] == "user-id"
 
 
+def test_extract_sse_identity_handles_events_fragmented_across_chunks() -> None:
+    chunks = [
+        b'data: {"conversation_id":"new-con',
+        b'versation","message":{"id":"assistant-id",',
+        b'"author":{"role":"assistant"}}}\n\ndata: [DONE]\n',
+    ]
+    identity = extract_sse_identity(chunks)
+    assert identity["conversation_id"] == "new-conversation"
+    assert identity["assistant_message_id"] == "assistant-id"
+
+
 def test_sse_identity_does_not_copy_message_text() -> None:
     chunks = [
         'data: {"conversation_id":"c1","message":{"id":"a1","author":{"role":"assistant"},"content":{"parts":["SECRET-TEXT"]}}}\n'
