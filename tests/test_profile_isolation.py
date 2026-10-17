@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-from chatgpt_dom_relay import ProfileDirectoryLease, canonical_profile_dir
+from re_gpt.profile_isolation import ProfileDirectoryLease, canonical_profile_dir
 
 
 def test_canonical_profile_paths_are_distinct_per_profile(tmp_path) -> None:
