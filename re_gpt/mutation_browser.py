@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +51,8 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
     if prompt is None or not prompt.strip():
         raise ValueError("provide --prompt, --prompt-file, or pipe prompt text on stdin")
 
+    launched_at = time.time()
+    stage_times: dict[str, float] = {"browser_start": launched_at}
     async with AccessibilityBrowserRelay(
         profile_dir=args.profile_dir,
         browser_mode=args.browser_mode,
@@ -57,8 +60,12 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
         timeout_ms=args.timeout * 1000,
         idle_ms=args.idle_ms,
     ) as relay:
+        stage_times["browser_ready"] = time.time()
         readiness = await open_ready_thread(relay, thread_id)
+        stage_times["authenticated"] = time.time()
+        stage_times["hydrated"] = stage_times["authenticated"]
         result = await submit_prompt_once(relay, prompt)
+        stage_times["submission_observed"] = time.time()
         result.update(
             {
                 "transport": "dom",
@@ -66,12 +73,14 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                 "resolved_thread_id": thread_id,
                 "authenticated": readiness.authenticated,
                 "hydrated": readiness.history_hydrated,
+                "stage_times": stage_times,
             }
         )
         if args.follow:
             followed = await follow_prompt(relay, prompt, int(result["baseline_prompt_count"]))
             result["latest_assistant"] = str(followed.get("latest_assistant") or "")
             result["mutation_state"] = "assistant_observed"
+            stage_times["assistant_complete"] = time.time()
         return result
 
 
