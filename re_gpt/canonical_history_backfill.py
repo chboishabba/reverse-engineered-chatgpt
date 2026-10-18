@@ -24,16 +24,16 @@ def _table_columns(db: sqlite3.Connection, table: str) -> set[str]:
 def _canonical_existing(db: sqlite3.Connection, account: str) -> dict[str, str]:
     """Read existing canonical identities, including other producer ingest paths.
 
-    No guessing if an older schema cannot expose message IDs and content.
+    No guessing if a schema cannot expose message IDs and canonical text.
     """
     cols = _table_columns(db, "messages")
     required = {"platform", "account_id", "source_thread_id",
-                "source_message_id", "node_id", "content"}
+                "source_message_id", "node_id", "text"}
     if not required <= cols:
-        raise RuntimeError("canonical messages identity/content schema not verified")
+        raise RuntimeError("canonical messages identity/text schema not verified")
     result = {}
     for thread, msg, node, content in db.execute(
-        """SELECT source_thread_id,source_message_id,node_id,content
+        """SELECT source_thread_id,source_message_id,node_id,text
            FROM messages WHERE platform=? AND account_id=?""", ("chatgpt", account)
     ):
         if thread is None or msg is None or node is None or content is None:
