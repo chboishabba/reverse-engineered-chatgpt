@@ -70,6 +70,7 @@ def hydrate_verified_graph(
     # Receipts reside in the canonical archive, never in a second corpus store.
     with sqlite3.connect(archive) as db:
         _receipt_db(db)
+        db.commit()
         for row in messages:
             row = dict(row)
             row["thread_id"] = conversation_id
@@ -94,6 +95,9 @@ def hydrate_verified_graph(
                 "branch_membership":row["branch_membership"],
                 "content_sha256":digest},sort_keys=True)
             incoming.append((identity,digest,row))
+        # Commit conflict receipts and release the write lock before producer
+        # opens its own canonical archive connection.
+        db.commit()
         # Producer ingest is authoritative. Only mark receipts after it succeeds.
         stats = {"inserted":0,"duplicates":0}
         if incoming:
