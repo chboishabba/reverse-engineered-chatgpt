@@ -10,3 +10,14 @@ Graph hydration preserves platform/account/thread and stable message/node identi
 - [ ] Expose canonical archive candidate ledger to ITIR AO, with formal receipts and abstentions.
 - [ ] Preserve governance: only existing authorized ITIR worker lane may submit; no automatic resend.
 - [ ] Verify with focused tests; no CI.
+
+## Delivered (2026-10-18)
+
+`re_gpt.canonical_archive_hydrator.hydrate_verified_graph` projects exact graph messages through the existing structurer ingest. Its compact identity/digest/conflict receipts are stored in the canonical archive, not the re-gpt operational cache. `MutationService._reconcile_graph_mutation` calls it only after confirmed graph reconciliation; an archive projection failure is separately `deferred` and cannot trigger a mutation resend. Set `ITIR_CHATGPT_ACCOUNT` explicitly to enable post-reconciliation projection. No browser transport or automatic retry is added by this cut.
+
+**Known gaps:** serialised archive writer is assumed for receipt/ingest atomicity; crash between producer commit and receipt insert may cause an idempotent producer duplicate. Existing legacy re-gpt message rows are not deleted or migrated by this cut. Full graph reconciling policy still has preexisting adapter order and multiple read attempts; the governed ITIR worker lane must enforce async-only, once-reconcile semantics. Historical `~/.chat_archive.sqlite` is never automatically merged.
+
+Local verification:
+```bash
+python -m unittest discover -s tests -p 'test_canonical_archive_hydrator.py' -v
+```
