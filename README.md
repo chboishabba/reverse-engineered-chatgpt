@@ -4,6 +4,9 @@ Accessibility-oriented, API-first access to the authenticated ChatGPT web accoun
 
 The project treats the browser as **fallback/oracle/bootstrap infrastructure**, not the normal conversation writer. Existing-thread reads, text continuation, attachment staging, new-conversation creation, and graph-structural mutations run through the direct async `curl_cffi` transport and are certified from the canonical conversation graph before being persisted to SQLite.
 
+> [!IMPORTANT]
+> **CRITICAL FOR AGENTS & AUTOMATION**: The direct headless async `curl_cffi` transport is the **sole preferred method** for programmatic and agentic interactions. It is **significantly faster and vastly more reliable** than browser or DOM automation. Agents must **NEVER** attach to or hijack the user's active desktop browser (no CDP on port 9222, no puppeteer/playwright against user sessions) and must always pass `--no-dom-fallback` to guarantee pure headless execution.
+
 > This project targets the ChatGPT web application protocol. It is not the official OpenAI API and does not use an OpenAI API key. Web protocol details can change; the repository therefore keeps browser-based protocol capture and accessibility fallback tooling alongside the direct client.
 
 ## Current architecture
@@ -98,26 +101,22 @@ re-gpt-session refresh --profile-dir ~/.codex/chrome-mcp-profile
 
 Opaque token expiry is reported as `unknown_expiry`, not guessed stale. A mutation is blocked before dispatch only when saved access-token/session-cookie expiry is locally provable as stale.
 
-## Quick start
+## Quick start (Headless curl_cffi - Sole Preferred Method)
 
-### Continue an existing conversation
+The direct async `curl_cffi` transport is **sole preferred**: it is significantly faster, lower-overhead, and more reliable than browser/DOM automation. Automated agents should **always** execute with `--no-dom-fallback --write-transport async`.
 
-```bash
-python -m re_gpt.entrypoint \
-  --send <CONVERSATION_ID> \
-  --prompt 'Reply with only ACK' \
-  --follow
-```
-
-The public CLI defaults to direct async writes and allows DOM fallback only after an explicit **pre-commit** rejection. To require no DOM fallback:
+### Continue an existing conversation (Sole Preferred Method)
 
 ```bash
 python -m re_gpt.entrypoint \
   --send <CONVERSATION_ID> \
   --prompt 'Reply with only ACK' \
+  --write-transport async \
   --no-dom-fallback \
+  --write-timeout 300 \
   --follow
 ```
+*(Use `--prompt-file <path>` for multiline prompt text. `--write-timeout 300` gives reasoning models sufficient deliberation time before initial chunks).*
 
 ### Continue with attachments
 
