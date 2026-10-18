@@ -12,3 +12,19 @@ TODO:
 - [ ] Test replay, changed digest, preexisting canonical body, account guard and batch resume.
 - [ ] Verify against real structurer schema and run focused local tests.
 - [ ] Do not touch 42 `async_starting` or 4 `commit_unknown` dead-letter operations; never resend or reconcile them.
+
+## Delivered — initial implementation
+
+`re_gpt.canonical_history_backfill` is an offline, one-way, batch-size-limited importer. It opens history read-only, calls only the existing structurer `ingest_parsed_messages` producer for raw body writes, and persists identity/digest/conflict receipts in the canonical archive. Account is mandatory; changed digests are not overwritten. A second run replays existing receipts. Existing canonical message identities are checked before ingest; the producer result is verified against canonical rows before receipt acknowledgement. The legacy flat cache has no verified parent/branch/attachment columns: these remain explicitly unknown, not invented.
+
+**Schema gate:** this implementation deliberately fails closed if the live canonical `messages` table does not expose `platform`, `account_id`, `source_thread_id`, `source_message_id`, `node_id`, and `content`. Verify these columns against the live structurer schema before running a real migration. The existing ingest may store canonical content under a different column; this is a known integration risk. A future producer-owned lookup adapter should replace this direct schema check if needed.
+
+**Local commands** (do not run on production before fixture validation):
+
+```bash
+python -m unittest discover -s tests -p 'test_canonical_history_backfill*.py' -v
+ruff check re_gpt/canonical_history_backfill.py tests/test_canonical_history_backfill.py
+python -m re_gpt.canonical_history_backfill --history-db ~/.chatgpt_history.sqlite3 --archive-db ~/chat_archive.sqlite --account YOUR_EXPLICIT_ACCOUNT --batch-size 250
+```
+
+**Outstanding:** live structurer schema compatibility, full legacy graph provenance recovery where possible, production-scale resume and concurrent-writer gate. This tranche does not touch 42 `async_starting` and 4 `commit_unknown` dead-letter operations, does not resend/reconcile, and does not implement PNF.
