@@ -17,7 +17,7 @@ TODO:
 
 `re_gpt.canonical_history_backfill` is an offline, one-way, batch-size-limited importer. It opens history read-only, calls only the existing structurer `ingest_parsed_messages` producer for raw body writes, and persists identity/digest/conflict receipts in the canonical archive. Account is mandatory; changed digests are not overwritten. A second run replays existing receipts. Existing canonical message identities are checked before ingest; the producer result is verified against canonical rows before receipt acknowledgement. The legacy flat cache has no verified parent/branch/attachment columns: these remain explicitly unknown, not invented.
 
-**Schema gate:** this implementation deliberately fails closed if the live canonical `messages` table does not expose `platform`, `account_id`, `source_thread_id`, `source_message_id`, `node_id`, and `content`. Verify these columns against the live structurer schema before running a real migration. The existing ingest may store canonical content under a different column; this is a known integration risk. A future producer-owned lookup adapter should replace this direct schema check if needed.
+**Schema gate:** this implementation deliberately fails closed if the live canonical `messages` table does not expose `platform`, `account_id`, `source_thread_id`, `source_message_id`, `node_id`, and `text`. Verify these columns against the live structurer schema before running a real migration. The referee verified the production canonical body column is `text`; the importer now requires that exact column and hashes `str(text)` using SHA-256. A future producer-owned lookup adapter should replace this direct schema check if needed.
 
 **Local commands** (do not run on production before fixture validation):
 
@@ -28,3 +28,17 @@ python -m re_gpt.canonical_history_backfill --history-db ~/.chatgpt_history.sqli
 ```
 
 **Outstanding:** live structurer schema compatibility, full legacy graph provenance recovery where possible, production-scale resume and concurrent-writer gate. This tranche does not touch 42 `async_starting` and 4 `commit_unknown` dead-letter operations, does not resend/reconcile, and does not implement PNF.
+
+## Referee correction — canonical text schema
+
+The live read-only PRAGMA reported canonical `messages` columns including `platform`, `account_id`, `source_thread_id`, `source_message_id`, `node_id`, and **`text`**, not `content`. The strict `_canonical_existing` gate now requires those six columns, reads `text`, and hashes `str(text).encode("utf-8")`. The offline producer fixture now writes to `text` and a dedicated test uses the complete 25-column live schema supplied by the referee. Removed unused `hashlib` test import.
+
+Referee's **pre-correction** local receipt: 5/5 unit tests passed, Ruff found one unused import, and the production canonical-schema gate failed. **Post-correction local test/Ruff receipt is pending**: the GitHub connector can commit code but this environment cannot fetch a working checkout (network DNS unavailable), so no post-correction execution result is claimed.
+
+Exact post-correction commands:
+```bash
+python -m unittest discover -s tests -p 'test_canonical_history_backfill*.py' -v
+ruff check re_gpt/canonical_history_backfill.py tests/test_canonical_history_backfill.py
+```
+
+No production backfill, mutation, resend, CI or browser work was performed.
