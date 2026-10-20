@@ -180,10 +180,9 @@ class PnfFleetCompiler:
                 buf.extend(h)
 
                 # 2. Token observations (kind = 2)
-                # Parse text blocks (limit per thread to avoid quadratic memory if thread is huge)
-                # Keep up to 30,000 chars per thread for robust PNF coverage
-                parse_text = full_text[:30000] if len(full_text) > 30000 else full_text
-                doc = nlp(parse_text)
+                # PNF must cover the complete archived thread.  In particular, active
+                # roadmap decisions often occur after long exploratory history.
+                doc = nlp(full_text)
 
                 conv_sentences = 0
                 conv_tokens = 0
