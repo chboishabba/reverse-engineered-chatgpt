@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import sys
 import time
+import os
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -449,7 +450,23 @@ class MutationService:
                 error_class=None,
                 error_detail=None,
             )
+            # Confirmed exact graph only. No network call, mutation resend, or
+            # secondary transcript persistence is introduced by this projection.
+            try:
+                from .canonical_archive_hydrator import hydrate_verified_graph
+                account = os.environ.get("ITIR_CHATGPT_ACCOUNT", "").strip()
+                if not account:
+                    archive_delta = {"state": "deferred", "reason": "explicit_account_required"}
+                else:
+                    archive_delta = {"state": "ingested", **hydrate_verified_graph(
+                        chat, conversation_id=conversation_id, account=account)}
+            except Exception as exc:
+                # Mutation commit remains true; archive projection failure is
+                # separate, never a reason to retry or resubmit the operation.
+                archive_delta = {"state": "deferred",
+                                 "reason": type(exc).__name__}
             return stored | {
+                "canonical_archive_delta": archive_delta,
                 "assistant_text": assistant_text,
                 "attachment_ids": attachment_ids,
                 "new_messages": pulled["new_messages"],
