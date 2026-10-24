@@ -27,8 +27,8 @@ from .browser_session_replay import (
     apply_browser_session_to_client,
     capture_browser_session_snapshot_async,
     load_browser_session_snapshot,
-    mark_sentinel_consumed,
 )
+from .browser_observer import fetch_conversation_same_origin
 from .protocol_observation import (
     ProtocolObservation,
     build_protocol_observation,
@@ -228,6 +228,61 @@ def _upgrade_payload_for_web_frontend(
     }
 
 
+def _build_frontend_prepare_payload(final_payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Build the observed non-mutating `/f/conversation/prepare` preflight.
+
+    The web client sends this before the one commit-bearing `/f/conversation`
+    POST.  It is deliberately derived from the final payload so its parent,
+    model, prompt and message identity cannot diverge from the later submit.
+    """
+
+    messages = final_payload.get("messages")
+    first = dict(messages[0]) if isinstance(messages, list) and messages and isinstance(messages[0], Mapping) else {}
+    partial_query = {
+        "author": {"role": "user"},
+        "content": dict(first.get("content") or {}),
+        "id": str(first.get("id") or uuid.uuid4()),
+    }
+    return {
+        "client_prepare_state": "sent",
+        "conversation_id": str(final_payload.get("conversation_id") or ""),
+        "action": str(final_payload.get("action") or "next"),
+        "model": str(final_payload.get("model") or ""),
+        "parent_message_id": str(final_payload.get("parent_message_id") or ""),
+        "timezone": str(final_payload.get("timezone") or "UTC"),
+        "timezone_offset_min": int(final_payload.get("timezone_offset_min") or 0),
+        "is_do_not_remember": bool(final_payload.get("is_do_not_remember", False)),
+        "local_function_names": list(final_payload.get("local_function_names") or []),
+        "partial_query": partial_query,
+        "client_prepare_dispatch": "debounced",
+        "client_prepare_source": "composer_editor_state",
+    }
+
+
+def _build_payload_from_canonical_graph(
+    graph: Mapping[str, Any],
+    *,
+    conversation_id: str,
+    prompt: str,
+    fallback_model: str,
+) -> dict[str, Any]:
+    """Build the minimal graph-addressed continuation payload from one exact read."""
+
+    mapping = graph.get("mapping")
+    parent_id = str(graph.get("current_node") or "").strip()
+    if not isinstance(mapping, Mapping) or not parent_id or parent_id not in mapping:
+        raise ValueError("browser exact read has no canonical current node")
+    return {
+        "action": "next",
+        "conversation_id": conversation_id,
+        "parent_message_id": parent_id,
+        "model": str(graph.get("default_model_slug") or fallback_model),
+        "messages": [{
+            "id": str(uuid.uuid4()),
+            "author": {"role": "user"},
+            "content": {"content_type": "text", "parts": [prompt]},
+        }],
+    }
 async def _stage_attachments_async(
     client: Any,
     local_attachments: Sequence[LocalAttachment],
@@ -569,6 +624,7 @@ async def probe_async_continue_once(
 
             seq += 1
             build_started = time.perf_counter()
+            read_transport = "async"
             try:
                 payload = await conv.build_message_payload(prompt)
             except Exception as exc:
@@ -585,34 +641,72 @@ async def probe_async_continue_once(
                     bootstrap_stage="conversation_get",
                 )
                 observations.append(obs)
-                raise ExplicitAsyncWriteRejection(
-                    f"async precommit conversation build failed: {exc.__class__.__name__}",
-                    stage="conversation_get",
-                    status=obs.status,
-                    observations=tuple(observations),
-                ) from exc
+                # A direct request-context rejection is still pre-commit.  An
+                # explicitly attached browser may supply one exact graph read;
+                # it never submits the prompt or authorizes a DOM fallback.
+                if snapshot is None or not cdp_endpoint or obs.status != 429:
+                    raise ExplicitAsyncWriteRejection(
+                        f"async precommit conversation build failed: {exc.__class__.__name__}",
+                        stage="conversation_get",
+                        status=obs.status,
+                        observations=tuple(observations),
+                    ) from exc
+                try:
+                    browser_read = fetch_conversation_same_origin(
+                        conversation_id,
+                        profile_dir=profile_dir,
+                        browser_mode=browser_mode,
+                        cdp_endpoint=cdp_endpoint,
+                        timeout=browser_timeout,
+                    )
+                    payload = _build_payload_from_canonical_graph(
+                        browser_read.chat,
+                        conversation_id=conversation_id,
+                        prompt=prompt,
+                        fallback_model=default_model,
+                    )
+                    read_transport = "browser"
+                    diagnostic = dict(browser_read.diagnostic or {})
+                    seq += 1
+                    observations.append(build_protocol_observation(
+                        transport="browser", operation="continue", method="GET",
+                        path="/backend-api/conversation/<id>",
+                        status=int(diagnostic.get("status") or 200),
+                        response_class=str(diagnostic.get("response_class") or "json_ok"),
+                        headers={}, sequence_index=seq,
+                        elapsed_ms=(time.perf_counter() - build_started) * 1000.0,
+                        bootstrap_stage="conversation_get",
+                    ))
+                except Exception:
+                    raise ExplicitAsyncWriteRejection(
+                        f"async precommit conversation build failed: {exc.__class__.__name__}",
+                        stage="conversation_get",
+                        status=obs.status,
+                        observations=tuple(observations),
+                    ) from exc
 
             stage_times["hydrated"] = time.time()
-            observations.append(
-                build_protocol_observation(
-                    transport="async",
-                    operation="continue",
-                    method="GET",
-                    path=f"/backend-api/conversation/{conversation_id}",
-                    status=200,
-                    response_class="json_ok",
-                    headers={
-                        k: v
-                        for k, v in client.build_request_headers().items()
-                        if k.lower() != "content-type"
-                    }
-                    | {"Accept": "application/json"},
-                    cookies=_session_cookies(client.session),
-                    sequence_index=seq,
-                    elapsed_ms=(time.perf_counter() - build_started) * 1000.0,
-                    bootstrap_stage="conversation_get",
+            if read_transport == "async":
+                observations.append(
+                    build_protocol_observation(
+                        transport="async",
+                        operation="continue",
+                        method="GET",
+                        path=f"/backend-api/conversation/{conversation_id}",
+                        status=200,
+                        response_class="json_ok",
+                        headers={
+                            k: v
+                            for k, v in client.build_request_headers().items()
+                            if k.lower() != "content-type"
+                        }
+                        | {"Accept": "application/json"},
+                        cookies=_session_cookies(client.session),
+                        sequence_index=seq,
+                        elapsed_ms=(time.perf_counter() - build_started) * 1000.0,
+                        bootstrap_stage="conversation_get",
+                    )
                 )
-            )
 
             staged_metadata: list[dict[str, Any]] = []
             staged_file_ids: list[str] = []
@@ -628,10 +722,12 @@ async def probe_async_continue_once(
                 stage_times["attachment_ready"] = time.time()
 
             seq += 1
-            sentinel_started = time.perf_counter()
             headers = dict(client.build_request_headers())
-            use_replayed_sentinel = snapshot is not None and snapshot.has_fresh_sentinel()
-            if use_replayed_sentinel:
+            # The current browser wire contract is f/conversation/prepare then
+            # f/conversation.  A browser session is sufficient; a replayed
+            # legacy sentinel is neither fabricated nor consumed for this path.
+            use_browser_frontend_contract = snapshot is not None
+            if use_browser_frontend_contract:
                 assert snapshot is not None
                 payload = _upgrade_payload_for_web_frontend(
                     payload,
@@ -641,27 +737,54 @@ async def probe_async_continue_once(
                     attachment_metadata=staged_metadata,
                 )
                 headers["Referer"] = f"https://chatgpt.com/c/{conversation_id}"
-                headers["x-oai-mcp-form-version"] = "2"
-                headers["x-oai-turn-trace-id"] = str(uuid.uuid4())
-                headers.update(snapshot.sentinel_headers())
+                prepare_payload = _build_frontend_prepare_payload(payload)
+                seq += 1
+                prepare_started = time.perf_counter()
+                try:
+                    prepare_response = await client.session.post(
+                        url=CHATGPT_API.format("f/conversation/prepare"),
+                        headers=headers,
+                        json=prepare_payload,
+                    )
+                except Exception as exc:
+                    obs = observation_from_exception(
+                        exc, transport="async", operation="continue", method="POST",
+                        path="/backend-api/f/conversation/prepare", headers=headers,
+                        cookies=_session_cookies(client.session), payload=prepare_payload,
+                        sequence_index=seq, elapsed_ms=(time.perf_counter() - prepare_started) * 1000.0,
+                        bootstrap_stage="conversation_prepare",
+                    )
+                    observations.append(obs)
+                    raise ExplicitAsyncWriteRejection(
+                        f"async frontend prepare failed: {exc.__class__.__name__}",
+                        stage="conversation_prepare", status=obs.status, observations=tuple(observations),
+                    ) from exc
+                prepare_status = int(getattr(prepare_response, "status_code", 200) or 200)
                 observations.append(
                     build_protocol_observation(
                         transport="async",
                         operation="continue",
                         method="POST",
-                        path="/backend-api/sentinel/chat-requirements/finalize",
-                        status=200,
-                        response_class="json_ok",
+                        path="/backend-api/f/conversation/prepare",
+                        status=prepare_status,
+                        response_class="json_ok" if 200 <= prepare_status < 300 else f"http_{prepare_status}",
                         headers=headers,
                         cookies=_session_cookies(client.session),
+                        payload=prepare_payload,
                         sequence_index=seq,
-                        elapsed_ms=(time.perf_counter() - sentinel_started) * 1000.0,
-                        bootstrap_stage="sentinel_finalize",
+                        elapsed_ms=(time.perf_counter() - prepare_started) * 1000.0,
+                        bootstrap_stage="conversation_prepare",
                     )
                 )
-                mark_sentinel_consumed(snapshot, profile_dir=profile_dir)
+                if not 200 <= prepare_status < 300:
+                    raise ExplicitAsyncWriteRejection(
+                        f"async frontend prepare rejected with HTTP {prepare_status}",
+                        stage="conversation_prepare", status=prepare_status, observations=tuple(observations),
+                    )
+                payload["client_prepare_state"] = "success"
                 url = CHATGPT_API.format("f/conversation")
             else:
+                sentinel_started = time.perf_counter()
                 if staged_metadata and isinstance(payload, dict):
                     _attach_metadata_to_payload(payload, staged_metadata)
                 try:
