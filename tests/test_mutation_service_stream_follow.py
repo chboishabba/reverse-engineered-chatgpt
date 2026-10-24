@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import json
+
+import pytest
+
 from re_gpt import mutation_service as ms
+from re_gpt.async_mutation_probe import AmbiguousAsyncWriteError
 
 
 def test_follow_reconciles_once_after_terminal_stream(monkeypatch, tmp_path) -> None:
@@ -80,13 +85,6 @@ def test_follow_progress_callback_is_forwarded_to_async_stream(monkeypatch, tmp_
     )
     assert seen["callback"] is progress.append or callable(seen["callback"])
     assert progress == [{"kind": "token_delta", "delta": "hi"}]
-
-
-import json
-import pytest
-
-from re_gpt.async_mutation_probe import AmbiguousAsyncWriteError
-
 
 @pytest.mark.parametrize(
     ("terminal", "graph_result", "expected_state", "reads"),

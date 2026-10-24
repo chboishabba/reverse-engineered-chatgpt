@@ -820,7 +820,7 @@ class MutationService:
         started_at = time.time()
 
         try_async = write_transport in {"async", "auto"}
-        allow_dom_fallback = False if try_async else bool(dom_fallback)
+        allow_dom_fallback = write_transport == "auto" or (write_transport == "async" and bool(dom_fallback))
         effective_transport = "async" if try_async else "dom"
         pre_fallback_observations: list[dict[str, Any]] = []
         write_observations: list[dict[str, Any]] = []

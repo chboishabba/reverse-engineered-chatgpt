@@ -348,7 +348,7 @@ class CallbackThenTimeoutSession(FakeSession):
     ],
 )
 def test_post_timeout_incremental_terminal_evidence_is_redacted(chunks, terminal) -> None:
-    session = CallbackThenTimeoutSession(chunks=[c.replace("\\\\n", "\\n") for c in chunks])
+    session = CallbackThenTimeoutSession(chunks=[c.replace("\\n", "\n") for c in chunks])
     conv = FakeConversation()
     with pytest.raises(AmbiguousAsyncWriteError) as caught:
         submit_async_prompt_once(
