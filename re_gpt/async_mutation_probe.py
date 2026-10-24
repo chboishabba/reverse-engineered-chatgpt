@@ -28,6 +28,7 @@ from .browser_session_replay import (
     capture_browser_session_snapshot_async,
     load_browser_session_snapshot,
 )
+from .browser_observer import fetch_conversation_same_origin
 from .protocol_observation import (
     ProtocolObservation,
     build_protocol_observation,
@@ -258,6 +259,30 @@ def _build_frontend_prepare_payload(final_payload: Mapping[str, Any]) -> dict[st
     }
 
 
+def _build_payload_from_canonical_graph(
+    graph: Mapping[str, Any],
+    *,
+    conversation_id: str,
+    prompt: str,
+    fallback_model: str,
+) -> dict[str, Any]:
+    """Build the minimal graph-addressed continuation payload from one exact read."""
+
+    mapping = graph.get("mapping")
+    parent_id = str(graph.get("current_node") or "").strip()
+    if not isinstance(mapping, Mapping) or not parent_id or parent_id not in mapping:
+        raise ValueError("browser exact read has no canonical current node")
+    return {
+        "action": "next",
+        "conversation_id": conversation_id,
+        "parent_message_id": parent_id,
+        "model": str(graph.get("default_model_slug") or fallback_model),
+        "messages": [{
+            "id": str(uuid.uuid4()),
+            "author": {"role": "user"},
+            "content": {"content_type": "text", "parts": [prompt]},
+        }],
+    }
 async def _stage_attachments_async(
     client: Any,
     local_attachments: Sequence[LocalAttachment],
@@ -599,6 +624,7 @@ async def probe_async_continue_once(
 
             seq += 1
             build_started = time.perf_counter()
+            read_transport = "async"
             try:
                 payload = await conv.build_message_payload(prompt)
             except Exception as exc:
@@ -615,34 +641,72 @@ async def probe_async_continue_once(
                     bootstrap_stage="conversation_get",
                 )
                 observations.append(obs)
-                raise ExplicitAsyncWriteRejection(
-                    f"async precommit conversation build failed: {exc.__class__.__name__}",
-                    stage="conversation_get",
-                    status=obs.status,
-                    observations=tuple(observations),
-                ) from exc
+                # A direct request-context rejection is still pre-commit.  An
+                # explicitly attached browser may supply one exact graph read;
+                # it never submits the prompt or authorizes a DOM fallback.
+                if snapshot is None or not cdp_endpoint or obs.status != 429:
+                    raise ExplicitAsyncWriteRejection(
+                        f"async precommit conversation build failed: {exc.__class__.__name__}",
+                        stage="conversation_get",
+                        status=obs.status,
+                        observations=tuple(observations),
+                    ) from exc
+                try:
+                    browser_read = fetch_conversation_same_origin(
+                        conversation_id,
+                        profile_dir=profile_dir,
+                        browser_mode=browser_mode,
+                        cdp_endpoint=cdp_endpoint,
+                        timeout=browser_timeout,
+                    )
+                    payload = _build_payload_from_canonical_graph(
+                        browser_read.chat,
+                        conversation_id=conversation_id,
+                        prompt=prompt,
+                        fallback_model=default_model,
+                    )
+                    read_transport = "browser"
+                    diagnostic = dict(browser_read.diagnostic or {})
+                    seq += 1
+                    observations.append(build_protocol_observation(
+                        transport="browser", operation="continue", method="GET",
+                        path="/backend-api/conversation/<id>",
+                        status=int(diagnostic.get("status") or 200),
+                        response_class=str(diagnostic.get("response_class") or "json_ok"),
+                        headers={}, sequence_index=seq,
+                        elapsed_ms=(time.perf_counter() - build_started) * 1000.0,
+                        bootstrap_stage="conversation_get",
+                    ))
+                except Exception:
+                    raise ExplicitAsyncWriteRejection(
+                        f"async precommit conversation build failed: {exc.__class__.__name__}",
+                        stage="conversation_get",
+                        status=obs.status,
+                        observations=tuple(observations),
+                    ) from exc
 
             stage_times["hydrated"] = time.time()
-            observations.append(
-                build_protocol_observation(
-                    transport="async",
-                    operation="continue",
-                    method="GET",
-                    path=f"/backend-api/conversation/{conversation_id}",
-                    status=200,
-                    response_class="json_ok",
-                    headers={
-                        k: v
-                        for k, v in client.build_request_headers().items()
-                        if k.lower() != "content-type"
-                    }
-                    | {"Accept": "application/json"},
-                    cookies=_session_cookies(client.session),
-                    sequence_index=seq,
-                    elapsed_ms=(time.perf_counter() - build_started) * 1000.0,
-                    bootstrap_stage="conversation_get",
+            if read_transport == "async":
+                observations.append(
+                    build_protocol_observation(
+                        transport="async",
+                        operation="continue",
+                        method="GET",
+                        path=f"/backend-api/conversation/{conversation_id}",
+                        status=200,
+                        response_class="json_ok",
+                        headers={
+                            k: v
+                            for k, v in client.build_request_headers().items()
+                            if k.lower() != "content-type"
+                        }
+                        | {"Accept": "application/json"},
+                        cookies=_session_cookies(client.session),
+                        sequence_index=seq,
+                        elapsed_ms=(time.perf_counter() - build_started) * 1000.0,
+                        bootstrap_stage="conversation_get",
+                    )
                 )
-            )
 
             staged_metadata: list[dict[str, Any]] = []
             staged_file_ids: list[str] = []

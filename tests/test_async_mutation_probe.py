@@ -9,6 +9,7 @@ from re_gpt.browser_session_replay import BrowserSessionSnapshot
 from re_gpt.async_mutation_probe import (
     AmbiguousAsyncWriteError,
     ExplicitAsyncWriteRejection,
+    _build_payload_from_canonical_graph,
     submit_async_prompt_once,
 )
 
@@ -166,6 +167,26 @@ def test_browser_session_uses_observed_frontend_prepare_then_single_submit() -> 
     }
     stages = [obs["bootstrap_stage"] for obs in result["protocol_observations"]]
     assert stages == ["conversation_get", "conversation_prepare", "conversation_post"]
+
+
+def test_canonical_graph_parent_becomes_graph_addressed_payload() -> None:
+    payload = _build_payload_from_canonical_graph(
+        {"current_node": "canonical-parent", "default_model_slug": "gpt-6", "mapping": {"canonical-parent": {}}},
+        conversation_id="conv-1",
+        prompt="hello",
+        fallback_model="fallback",
+    )
+    assert payload["parent_message_id"] == "canonical-parent"
+    assert payload["model"] == "gpt-6"
+    assert payload["messages"][0]["content"]["parts"] == ["hello"]
+
+
+def test_canonical_graph_payload_requires_current_node() -> None:
+    with pytest.raises(ValueError, match="current node"):
+        _build_payload_from_canonical_graph(
+            {"current_node": "missing", "mapping": {}},
+            conversation_id="conv-1", prompt="hello", fallback_model="fallback",
+        )
 
 
 def test_async_probe_explicit_http_rejection_never_retries() -> None:
