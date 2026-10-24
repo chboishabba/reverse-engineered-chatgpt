@@ -36,6 +36,7 @@ from .protocol_observation import (
     observation_from_exception,
 )
 from .stream_follow import SSEProgressDecoder
+from .stream_runtime import current_stream_state
 from .utils import get_default_model, get_default_user_agent, get_session_token
 
 
@@ -500,6 +501,7 @@ async def probe_async_continue_once(
     browser_timeout: int = 30,
     allow_browser_bootstrap: bool = True,
     client_factory: Callable[..., Any] = AsyncChatGPT,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> AsyncMutationProbeResult:
     """Perform at most one async HTTP conversation POST and return redacted evidence."""
     conversation_id = str(conversation_id or "").strip()
@@ -712,8 +714,11 @@ async def probe_async_continue_once(
 
             def content_callback(chunk: bytes | str) -> None:
                 # Independent receipt decoder; pacing owns progress callback delivery.
-                decoder.feed(chunk)
+                events = decoder.feed(chunk)
                 chunks.append(chunk)
+                if progress_callback is not None and current_stream_state() is None:
+                    for event in events:
+                        progress_callback(dict(event))
 
             try:
                 post_dispatched = True
@@ -858,6 +863,7 @@ def submit_async_prompt_once(
     allow_browser_bootstrap: bool = True,
     client_factory: Callable[..., Any] = AsyncChatGPT,
     verify_callback: Callable[[str, str], dict[str, Any]] | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Synchronous wrapper for one-attempt async HTTP mutation probe."""
     result = run_async_sync(
@@ -875,6 +881,7 @@ def submit_async_prompt_once(
             browser_timeout=browser_timeout,
             allow_browser_bootstrap=allow_browser_bootstrap,
             client_factory=client_factory,
+            progress_callback=progress_callback,
         )
     )
     payload = result.to_dict()
