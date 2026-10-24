@@ -35,6 +35,7 @@ from .protocol_observation import (
     build_protocol_observation,
     observation_from_exception,
 )
+from .stream_follow import SSEProgressDecoder
 from .utils import get_default_model, get_default_user_agent, get_session_token
 
 
@@ -64,9 +65,13 @@ class AmbiguousAsyncWriteError(RuntimeError):
         *,
         status: int | None = None,
         observations: tuple[ProtocolObservation, ...] = (),
+        stream_evidence: Mapping[str, Any] | None = None,
+        transport_timeout: bool = False,
     ) -> None:
         self.status = status
         self.observations = observations
+        self.stream_evidence = dict(stream_evidence or {})
+        self.transport_timeout = transport_timeout
         super().__init__(message)
 
 
@@ -701,8 +706,11 @@ async def probe_async_continue_once(
             seq += 1
             post_started = time.perf_counter()
             chunks: list[bytes | str] = []
+            decoder = SSEProgressDecoder()
 
             def content_callback(chunk: bytes | str) -> None:
+                # Independent receipt decoder; pacing owns progress callback delivery.
+                decoder.feed(chunk)
                 chunks.append(chunk)
 
             try:
@@ -733,6 +741,12 @@ async def probe_async_continue_once(
                     f"async conversation POST outcome is ambiguous ({exc.__class__.__name__}); refusing retry or fallback",
                     status=obs.status,
                     observations=tuple(observations),
+                    stream_evidence={
+                        "stream_terminal_observed": decoder.terminal_observed,
+                        "stream_terminal_reason": decoder.terminal_reason,
+                        "stream_event_counts": decoder.event_counts,
+                    },
+                    transport_timeout=isinstance(exc, TimeoutError) or "timeout" in type(exc).__name__.lower(),
                 ) from exc
 
             status = int(getattr(response, "status_code", 200) or 200)
