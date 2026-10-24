@@ -820,7 +820,7 @@ class MutationService:
         started_at = time.time()
 
         try_async = write_transport in {"async", "auto"}
-        allow_dom_fallback = write_transport == "auto" or (write_transport == "async" and bool(dom_fallback))
+        allow_dom_fallback = False if try_async else bool(dom_fallback)
         effective_transport = "async" if try_async else "dom"
         pre_fallback_observations: list[dict[str, Any]] = []
         write_observations: list[dict[str, Any]] = []
@@ -845,6 +845,7 @@ class MutationService:
                         cdp_endpoint=cdp_endpoint,
                         browser_timeout=browser_timeout,
                         progress_callback=progress_callback,
+                        allow_browser_bootstrap=False,
                     )
                 except ExplicitAsyncWriteRejection as exc:
                     if not allow_dom_fallback:
@@ -859,13 +860,47 @@ class MutationService:
                     effective_transport = "dom"
                 except AmbiguousAsyncWriteError as exc:
                     write_observations = [obs.to_dict() for obs in exc.observations]
-                    return operations.update(
+                    evidence = dict(exc.stream_evidence)
+                    held = operations.update(
                         operation_id,
                         state="commit_unknown",
                         transport="async",
                         error_class=exc.__class__.__name__,
-                        error_detail=str(exc),
-                    ) | {"write_observations": write_observations}
+                        error_detail="post_dispatch_ambiguous",
+                    )
+                    if not (exc.transport_timeout and evidence.get("stream_terminal_observed")):
+                        return held | {"write_observations": write_observations, "stream_evidence": evidence}
+                    # Terminal SSE is a reconciliation selector, never commit proof.
+                    # Exactly one broker acquisition, direct adapters only, no resend.
+                    try:
+                        result = self.reconcile(
+                            operation_id,
+                            prompt=prompt,
+                            not_before=started_at - 5.0,
+                            expected_attachments=local_attachments,
+                            browser_fallback=False,
+                            skip_read_adapters=("browser",),
+                        )
+                        expected_id = exc.expected_user_message_id
+                        if result.get("state") in {"complete", "committed_pending"} and (
+                            not expected_id or result.get("user_node_id") != expected_id
+                        ):
+                            result = operations.update(
+                                operation_id, state="commit_unknown",
+                                error_class="CanonicalIdentityMismatch",
+                                error_detail="canonical_identity_not_proven",
+                            )
+                    except Exception:  # noqa: BLE001 - unreadable graph remains held.
+                        result = operations.update(
+                            operation_id, state="commit_unknown",
+                            error_class="CanonicalGraphUnavailable",
+                            error_detail="direct_graph_reconciliation_failed",
+                        )
+                    return result | {
+                        "write_observations": write_observations,
+                        "stream_evidence": evidence,
+                        "timeout_reconciliation_attempts": 1,
+                    }
 
             if submission is None:
                 effective_transport = "dom"
