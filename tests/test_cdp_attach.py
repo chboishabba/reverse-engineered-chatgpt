@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 from pathlib import Path
@@ -38,6 +39,28 @@ def test_relay_marks_cdp_as_attached_browser(tmp_path: Path) -> None:
     )
     assert relay.cdp_endpoint == "http://127.0.0.1:9222"
     assert relay.attaches_existing_browser is True
+
+
+def test_attached_api_context_reuses_existing_chatgpt_page(tmp_path: Path) -> None:
+    class Page:
+        url = "https://chatgpt.com/c/6adce5a3-ccd8-83ec-b87b-6264af35ece7"
+
+        async def goto(self, *args, **kwargs):
+            raise AssertionError("attached API context must not navigate the operator's page")
+
+        async def title(self):
+            return "Clarify Request"
+
+    relay = AccessibilityBrowserRelay(
+        profile_dir=tmp_path / "unused-profile",
+        browser_mode="displayless",
+        cdp_endpoint="http://127.0.0.1:9222",
+        timeout_ms=1000,
+        idle_ms=100,
+    )
+    relay._page = Page()
+
+    asyncio.run(relay.open_api_context())
 
 
 def test_submit_prompt_forwards_cdp_endpoint(monkeypatch) -> None:

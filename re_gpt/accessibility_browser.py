@@ -186,6 +186,29 @@ class AccessibilityBrowserRelay(ChatGPTDomRelay):
             return
         await super().__aexit__(exc_type, exc, tb)
 
+    async def open_api_context(self) -> None:
+        """Prepare a browser-owned API context without disturbing an attached tab."""
+
+        # An attached browser belongs to the operator.  Do not replace its
+        # selected conversation with the ChatGPT root merely to perform an
+        # exact read: that is disruptive and creates a fresh request context,
+        # defeating reuse of an already-admitted browser session.
+        if self.attaches_existing_browser:
+            current_url = self.page.url
+            if "chatgpt.com" not in current_url:
+                raise RuntimeError(
+                    "Attached browser has no ChatGPT page. Open an authenticated "
+                    "ChatGPT tab before using an attached exact-read adapter."
+                )
+            if "/auth/" in current_url or "/login" in current_url:
+                raise RuntimeError("Attached browser is not authenticated for ChatGPT.")
+            if "just a moment" in (await self.page.title()).lower():
+                raise RuntimeError("Cloudflare challenge is still active in the attached browser.")
+            self._log("reusing attached ChatGPT page for API context")
+            return
+
+        await super().open_api_context()
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
