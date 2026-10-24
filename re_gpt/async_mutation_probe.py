@@ -67,11 +67,13 @@ class AmbiguousAsyncWriteError(RuntimeError):
         observations: tuple[ProtocolObservation, ...] = (),
         stream_evidence: Mapping[str, Any] | None = None,
         transport_timeout: bool = False,
+        expected_user_message_id: str | None = None,
     ) -> None:
         self.status = status
         self.observations = observations
         self.stream_evidence = dict(stream_evidence or {})
         self.transport_timeout = transport_timeout
+        self.expected_user_message_id = expected_user_message_id
         super().__init__(message)
 
 
@@ -747,6 +749,7 @@ async def probe_async_continue_once(
                         "stream_event_counts": decoder.event_counts,
                     },
                     transport_timeout=isinstance(exc, TimeoutError) or "timeout" in type(exc).__name__.lower(),
+                    expected_user_message_id=str(payload["messages"][0]["id"]) if payload.get("messages") else None,
                 ) from exc
 
             status = int(getattr(response, "status_code", 200) or 200)
