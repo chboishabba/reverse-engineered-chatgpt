@@ -38,3 +38,8 @@
 - [x] Automation-friendly `--list`, `--inspect`, `--view`, and `--download` flows.
 - [x] `scripts/context_sync.sh` wrapper and catalog delta helper.
 - [x] Cached/remote timestamps in `--inspect`.
+
+## Terminal-timeout direct-async hardening (pending local verification)
+- [ ] Locally verify terminal+timeout direct graph proof, unreadable/missing graph, preterminal hold, chunk splits, malformed stream, no duplicate POST/DOM and redacted receipts.
+- [ ] Independently review fail-closed canonical identity matching and exactly-once state transitions before merge.
+- [ ] Formal gap: executable Python tests do not establish a kernel-verified refinement of POSTCount <= 1, Complete => CanonicalGraphProves, or post-timeout graph reads <= 1.

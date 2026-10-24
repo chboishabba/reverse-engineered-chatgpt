@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import codecs
 import json
 from typing import Any, Callable, Mapping
 
@@ -15,6 +16,7 @@ class SSEProgressDecoder:
 
     def __init__(self) -> None:
         self._buffer = ""
+        self._utf8_decoder = codecs.getincrementaldecoder("utf-8")("replace")
         self._last_text: dict[str, str] = {}
         self._counts: Counter[str] = Counter()
         self.conversation_id: str | None = None
@@ -170,7 +172,7 @@ class SSEProgressDecoder:
             self._terminal("finished_successfully", output)
 
     def feed(self, chunk: bytes | str) -> list[dict[str, Any]]:
-        text = chunk.decode("utf-8", errors="ignore") if isinstance(chunk, (bytes, bytearray)) else str(chunk)
+        text = self._utf8_decoder.decode(bytes(chunk), final=False) if isinstance(chunk, (bytes, bytearray)) else str(chunk)
         self._buffer += text.replace("\r\n", "\n")
         output: list[dict[str, Any]] = []
         while "\n" in self._buffer:

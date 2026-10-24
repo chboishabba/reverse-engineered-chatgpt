@@ -327,3 +327,40 @@ def test_async_probe_attachment_upload_failure_is_precommit_rejection(tmp_path) 
     assert excinfo.value.status == 403
     assert session.post_calls == 0
 
+
+
+class CallbackThenTimeoutSession(FakeSession):
+    async def post(self, *, url: str, headers: dict, json: dict, content_callback=None):
+        self.post_calls += 1
+        if content_callback is not None:
+            for chunk in self.chunks:
+                content_callback(chunk.encode("utf-8"))
+        raise TimeoutError("SECRET_TIMEOUT_PAYLOAD")
+
+
+@pytest.mark.parametrize(
+    ("chunks", "terminal"),
+    [
+        (["data: [DO", "NE]\\n\\n"], True),
+        (["data: {bad json}\\n\\n"], False),
+        (["data: [DO"], False),
+        ([], False),
+    ],
+)
+def test_post_timeout_incremental_terminal_evidence_is_redacted(chunks, terminal) -> None:
+    session = CallbackThenTimeoutSession(chunks=[c.replace("\\n", "\n") for c in chunks])
+    conv = FakeConversation()
+    with pytest.raises(AmbiguousAsyncWriteError) as caught:
+        submit_async_prompt_once(
+            "conv-1", "SECRET_PROMPT_BODY",
+            client_factory=lambda **kwargs: FakeAsyncClient(session=session, conv=conv),
+            allow_browser_bootstrap=False,
+        )
+    error = caught.value
+    assert session.post_calls == 1
+    assert error.transport_timeout is True
+    assert error.stream_evidence["stream_terminal_observed"] is terminal
+    assert error.expected_user_message_id == "u-msg-1"
+    serialized = json.dumps(error.stream_evidence) + str(error)
+    for secret in ("SECRET_PROMPT_BODY", "SECRET_SESSION", "SECRET_TIMEOUT_PAYLOAD", "Bearer"):
+        assert secret not in serialized

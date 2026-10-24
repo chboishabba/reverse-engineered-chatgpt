@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 import inspect
 import json
 from pathlib import Path
-import sys
 import time
 import uuid
 from typing import Any, Callable, Mapping, Sequence
@@ -35,6 +34,8 @@ from .protocol_observation import (
     build_protocol_observation,
     observation_from_exception,
 )
+from .stream_follow import SSEProgressDecoder
+from .stream_runtime import current_stream_state
 from .utils import get_default_model, get_default_user_agent, get_session_token
 
 
@@ -64,9 +65,15 @@ class AmbiguousAsyncWriteError(RuntimeError):
         *,
         status: int | None = None,
         observations: tuple[ProtocolObservation, ...] = (),
+        stream_evidence: Mapping[str, Any] | None = None,
+        transport_timeout: bool = False,
+        expected_user_message_id: str | None = None,
     ) -> None:
         self.status = status
         self.observations = observations
+        self.stream_evidence = dict(stream_evidence or {})
+        self.transport_timeout = transport_timeout
+        self.expected_user_message_id = expected_user_message_id
         super().__init__(message)
 
 
@@ -493,6 +500,7 @@ async def probe_async_continue_once(
     browser_timeout: int = 30,
     allow_browser_bootstrap: bool = True,
     client_factory: Callable[..., Any] = AsyncChatGPT,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> AsyncMutationProbeResult:
     """Perform at most one async HTTP conversation POST and return redacted evidence."""
     conversation_id = str(conversation_id or "").strip()
@@ -701,9 +709,15 @@ async def probe_async_continue_once(
             seq += 1
             post_started = time.perf_counter()
             chunks: list[bytes | str] = []
+            decoder = SSEProgressDecoder()
 
             def content_callback(chunk: bytes | str) -> None:
+                # Independent receipt decoder; pacing owns progress callback delivery.
+                events = decoder.feed(chunk)
                 chunks.append(chunk)
+                if progress_callback is not None and current_stream_state() is None:
+                    for event in events:
+                        progress_callback(dict(event))
 
             try:
                 post_dispatched = True
@@ -733,6 +747,13 @@ async def probe_async_continue_once(
                     f"async conversation POST outcome is ambiguous ({exc.__class__.__name__}); refusing retry or fallback",
                     status=obs.status,
                     observations=tuple(observations),
+                    stream_evidence={
+                        "stream_terminal_observed": decoder.terminal_observed,
+                        "stream_terminal_reason": decoder.terminal_reason,
+                        "stream_event_counts": decoder.event_counts,
+                    },
+                    transport_timeout=isinstance(exc, TimeoutError) or "timeout" in type(exc).__name__.lower(),
+                    expected_user_message_id=str(payload["messages"][0]["id"]) if payload.get("messages") else None,
                 ) from exc
 
             status = int(getattr(response, "status_code", 200) or 200)
@@ -841,6 +862,7 @@ def submit_async_prompt_once(
     allow_browser_bootstrap: bool = True,
     client_factory: Callable[..., Any] = AsyncChatGPT,
     verify_callback: Callable[[str, str], dict[str, Any]] | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Synchronous wrapper for one-attempt async HTTP mutation probe."""
     result = run_async_sync(
@@ -858,6 +880,7 @@ def submit_async_prompt_once(
             browser_timeout=browser_timeout,
             allow_browser_bootstrap=allow_browser_bootstrap,
             client_factory=client_factory,
+            progress_callback=progress_callback,
         )
     )
     payload = result.to_dict()
