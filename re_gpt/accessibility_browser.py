@@ -17,6 +17,7 @@ import json
 import os
 import re
 import sys
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,26 @@ from chatgpt_dom_relay import (
 )
 
 BROWSER_MODES = ("displayless", "headless", "headed")
+
+
+def _is_chatgpt_url(url: str | None) -> bool:
+    if not url:
+        return False
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        return parsed.scheme == "https" and parsed.netloc == "chatgpt.com"
+    except Exception:
+        return False
+
+
+def _is_authenticated_chatgpt_url(url: str | None) -> bool:
+    if not _is_chatgpt_url(url):
+        return False
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        return not ("/auth/" in parsed.path or "/login" in parsed.path)
+    except Exception:
+        return False
 _EXPLICIT_API_FAILURE_RE = re.compile(
     r"^API (auth-session|conversation-get|sentinel|conversation-post) "
     r"failed with HTTP \d+:"
@@ -144,14 +165,22 @@ class AccessibilityBrowserRelay(ChatGPTDomRelay):
 
                 selected_context = contexts[0]
                 selected_page = None
+                fallback_page = None
                 for context in contexts:
                     for page in context.pages:
-                        if "chatgpt.com" in (page.url or ""):
+                        page_url = page.url or ""
+                        if _is_authenticated_chatgpt_url(page_url):
                             selected_context = context
                             selected_page = page
                             break
+                        if fallback_page is None and _is_chatgpt_url(page_url):
+                            selected_context = context
+                            fallback_page = page
                     if selected_page is not None:
                         break
+
+                if selected_page is None:
+                    selected_page = fallback_page
 
                 self._context = selected_context
                 self._page = selected_page or await selected_context.new_page()
@@ -195,12 +224,12 @@ class AccessibilityBrowserRelay(ChatGPTDomRelay):
         # defeating reuse of an already-admitted browser session.
         if self.attaches_existing_browser:
             current_url = self.page.url
-            if "chatgpt.com" not in current_url:
+            if not _is_chatgpt_url(current_url):
                 raise RuntimeError(
                     "Attached browser has no ChatGPT page. Open an authenticated "
                     "ChatGPT tab before using an attached exact-read adapter."
                 )
-            if "/auth/" in current_url or "/login" in current_url:
+            if not _is_authenticated_chatgpt_url(current_url):
                 raise RuntimeError("Attached browser is not authenticated for ChatGPT.")
             if "just a moment" in (await self.page.title()).lower():
                 raise RuntimeError("Cloudflare challenge is still active in the attached browser.")
