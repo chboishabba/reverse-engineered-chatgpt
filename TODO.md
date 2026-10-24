@@ -39,7 +39,9 @@
 - [x] `scripts/context_sync.sh` wrapper and catalog delta helper.
 - [x] Cached/remote timestamps in `--inspect`.
 
-## Terminal-timeout direct-async hardening (pending local verification)
-- [ ] Locally verify terminal+timeout direct graph proof, unreadable/missing graph, preterminal hold, chunk splits, malformed stream, no duplicate POST/DOM and redacted receipts.
-- [ ] Independently review fail-closed canonical identity matching and exactly-once state transitions before merge.
+## Terminal-timeout direct-async hardening (merged; verification recorded)
+- [x] Merged PR #51 to main (4d20dda) after caller-owned focused verification: 36 timeout/reconciliation tests, Ruff, and a 24-test ITIR frontier/handoff/PNF packet passed.
+- [x] Independently reviewed fail-closed canonical identity matching, exactly-once state transitions, no-resend behavior, and the direct-only terminal-timeout reconciliation path.
+- [ ] Run a controlled live terminal-timeout fault-injection acceptance. A normal governed smoke continuation completed, but it did not exercise that timeout branch.
+- [ ] Triage the existing full-suite auth-bootstrap baseline separately: 297 passed, 1 skipped, and 5 unrelated failures remain in unchanged InvalidSessionToken handling.
 - [ ] Formal gap: executable Python tests do not establish a kernel-verified refinement of POSTCount <= 1, Complete => CanonicalGraphProves, or post-timeout graph reads <= 1.
