@@ -80,3 +80,81 @@ def test_follow_progress_callback_is_forwarded_to_async_stream(monkeypatch, tmp_
     )
     assert seen["callback"] is progress.append or callable(seen["callback"])
     assert progress == [{"kind": "token_delta", "delta": "hi"}]
+
+
+import json
+import pytest
+
+from re_gpt.async_mutation_probe import AmbiguousAsyncWriteError
+
+
+@pytest.mark.parametrize(
+    ("terminal", "graph_result", "expected_state", "reads"),
+    [
+        (True, {"state": "complete", "user_node_id": "user-1"}, "complete", 1),
+        (True, RuntimeError("SECRET_GRAPH_BODY"), "commit_unknown", 1),
+        (True, {"state": "commit_unknown"}, "commit_unknown", 1),
+        (False, {"state": "complete", "user_node_id": "user-1"}, "commit_unknown", 0),
+        (True, {"state": "complete", "user_node_id": "other-user"}, "commit_unknown", 1),
+    ],
+)
+def test_timeout_reconciliation_is_direct_once_and_fail_closed(
+    monkeypatch, tmp_path, terminal, graph_result, expected_state, reads,
+) -> None:
+    post_calls = []
+    graph_calls = []
+    dom_calls = []
+    def submit(*args, **kwargs):
+        post_calls.append((args, kwargs))
+        assert kwargs["allow_browser_bootstrap"] is False
+        raise AmbiguousAsyncWriteError(
+            "post timeout",
+            transport_timeout=True,
+            expected_user_message_id="user-1",
+            stream_evidence={
+                "stream_terminal_observed": terminal,
+                "stream_terminal_reason": "done" if terminal else None,
+                "stream_event_counts": {"terminal": int(terminal)},
+            },
+        )
+    def reconcile(operation_id, **kwargs):
+        graph_calls.append(kwargs)
+        assert kwargs["browser_fallback"] is False
+        assert "browser" in kwargs["skip_read_adapters"]
+        if isinstance(graph_result, Exception):
+            raise graph_result
+        return {"operation_id": operation_id, **graph_result}
+    monkeypatch.setattr(ms, "submit_async_prompt_once", submit)
+    monkeypatch.setattr(ms, "submit_prompt", lambda *a, **k: dom_calls.append(True))
+    service = ms.MutationService(db_path=tmp_path / "state.db")
+    monkeypatch.setattr(service, "reconcile", reconcile)
+    result = service.continue_thread(
+        "conv-1", "SECRET_PROMPT_BODY", write_transport="async",
+        dom_fallback=True, follow=True, reconcile_attempts=8,
+    )
+    assert result["state"] == expected_state
+    assert len(post_calls) == 1
+    assert len(graph_calls) == reads
+    assert dom_calls == []
+    diagnostic = json.dumps({
+        "stream_evidence": result.get("stream_evidence"),
+        "error_detail": result.get("error_detail"),
+    })
+    assert "SECRET_PROMPT_BODY" not in diagnostic
+    assert "SECRET_GRAPH_BODY" not in diagnostic
+
+
+def test_non_timeout_post_ambiguity_never_reconciles_or_falls_back(monkeypatch, tmp_path) -> None:
+    calls = {"post": 0, "read": 0, "dom": 0}
+    def submit(*args, **kwargs):
+        calls["post"] += 1
+        raise AmbiguousAsyncWriteError("ambiguous post", stream_evidence={
+            "stream_terminal_observed": True,
+        })
+    monkeypatch.setattr(ms, "submit_async_prompt_once", submit)
+    monkeypatch.setattr(ms, "submit_prompt", lambda *a, **k: calls.__setitem__("dom", calls["dom"] + 1))
+    service = ms.MutationService(db_path=tmp_path / "state.db")
+    monkeypatch.setattr(service, "reconcile", lambda *a, **k: calls.__setitem__("read", calls["read"] + 1))
+    result = service.continue_thread("conv-1", "hello", write_transport="async", dom_fallback=True)
+    assert result["state"] == "commit_unknown"
+    assert calls == {"post": 1, "read": 0, "dom": 0}
