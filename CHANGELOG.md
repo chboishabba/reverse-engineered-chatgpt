@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added candidate-only terminal-SSE timeout recovery for direct async existing-thread continuation: incremental stream evidence, exactly one direct graph reconciliation after terminal timeout, fail-closed unknown state otherwise, and no resend/DOM fallback. Local verification and independent review pending.
+
 - Added chunked session-token file support:
   - `get_session_token()` can now read `~/.chatgpt_session_new` and stitch
     multiple raw lines into one token before auth bootstrap
