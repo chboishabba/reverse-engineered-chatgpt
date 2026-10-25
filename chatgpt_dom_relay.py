@@ -87,6 +87,8 @@ def resolve_thread_selector(selector: str, alias_map: dict[str, str]) -> str:
     selector = selector.strip()
     if not selector:
         raise ValueError("thread selector is empty")
+    if "/g/" in selector:
+        return selector
     thread_id = extract_thread_id(selector)
     if thread_id:
         return thread_id
@@ -118,7 +120,10 @@ def resolve_prompt_text(
 
 
 def build_conversation_url(thread_id: str) -> str:
-    normalized = extract_thread_id(thread_id)
+    raw = thread_id.strip()
+    if "/g/" in raw:
+        return raw.split("?")[0].rstrip("/")
+    normalized = extract_thread_id(raw)
     if not normalized:
         raise ValueError(f"Invalid conversation id: {thread_id}")
     return f"https://chatgpt.com/c/{normalized}"

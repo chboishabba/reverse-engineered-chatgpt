@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 import time
 import uuid
@@ -128,8 +129,23 @@ class MutationOperationStore:
         return [dict(row) for row in rows]
 
     def mark_error(self, operation_id: str, state: str, exc: BaseException) -> dict[str, Any]:
+        observations = getattr(exc, "observations", ())
+        preflight: list[dict[str, Any]] = []
+        for observation in observations if isinstance(observations, Sequence) else ():
+            to_dict = getattr(observation, "to_dict", None)
+            raw = to_dict() if callable(to_dict) else observation
+            if not isinstance(raw, dict):
+                continue
+            preflight.append({
+                "stage": raw.get("bootstrap_stage"),
+                "status": raw.get("status"),
+                "response_class": raw.get("response_class"),
+            })
+        detail = str(exc)
+        if preflight:
+            detail = f"{detail}; redacted_preflight={json.dumps(preflight, sort_keys=True, separators=(',', ':'))}"
         return self.update(
-            operation_id, state=state, error_class=exc.__class__.__name__, error_detail=str(exc),
+            operation_id, state=state, error_class=exc.__class__.__name__, error_detail=detail,
             completed_at=time.time() if state in TERMINAL_STATES else None,
         )
 

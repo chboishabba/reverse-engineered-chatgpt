@@ -53,7 +53,10 @@ python -m re_gpt.entrypoint \
   --follow
 ```
 
-The default is `--write-transport async` with safe pre-commit DOM fallback enabled. To prohibit DOM fallback:
+The default is `--write-transport async` with DOM fallback disabled. The
+`--no-dom-fallback` flag is therefore redundant for normal automation but can
+be retained in scripts as an explicit safety assertion. `--dom-fallback` is
+manual diagnostic opt-in only.
 
 ```bash
 python -m re_gpt.entrypoint \
@@ -166,7 +169,7 @@ continued = service.continue_thread(
     conversation_id,
     "Reply with only SECOND",
     write_transport="async",
-    dom_fallback=True,
+    dom_fallback=False,
     follow=True,
 )
 

@@ -43,7 +43,7 @@ def test_existing_sync_chat_delegates_to_api_first_mutation_service() -> None:
 
     assert service.calls[0][0:3] == ("continue", "c1", "hello")
     assert service.calls[0][3]["write_transport"] == "async"
-    assert service.calls[0][3]["dom_fallback"] is True
+    assert service.calls[0][3]["dom_fallback"] is False
     assert chunks == [{"content": "ACK", "conversation_id": "c1", "message_id": "a1"}]
     assert conversation.parent_id == "a1"
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from re_gpt.graph_broker import GraphAcquisitionFailed, GraphAcquisitionResult
 from re_gpt.mutation_service import MutationService
 from re_gpt.operation_store import MutationOperationStore
@@ -364,7 +366,42 @@ def test_continue_thread_dom_fallback_recovers_from_explicit_precommit_rejection
     assert result["write_observations"][0]["status"] == 403
 
 
-def test_mcp_chatgpt_continue_defaults_to_async_with_dom_fallback(monkeypatch, tmp_path: Path) -> None:
+def test_async_precommit_failure_persists_redacted_observation(monkeypatch, tmp_path: Path) -> None:
+    from re_gpt.async_mutation_probe import ExplicitAsyncWriteRejection
+    from re_gpt.protocol_observation import build_protocol_observation
+
+    obs = build_protocol_observation(
+        transport="async",
+        operation="continue",
+        method="GET",
+        path="/backend-api/conversation/conv-1",
+        status=401,
+        response_class="UnexpectedResponseError",
+        bootstrap_stage="conversation_get",
+        headers={"Authorization": "Bearer SECRET", "Oai-device-id": "SECRET_DEVICE"},
+    )
+    monkeypatch.setattr(
+        "re_gpt.mutation_service.submit_async_prompt_once",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            ExplicitAsyncWriteRejection("preflight rejected", stage="conversation_get", status=401, observations=(obs,))
+        ),
+    )
+    service = MutationService(db_path=tmp_path / "history.sqlite3")
+
+    with pytest.raises(ExplicitAsyncWriteRejection):
+        service.continue_thread("conv-1", "hello", write_transport="async", dom_fallback=False)
+
+    with MutationOperationStore(service.db_path) as operations:
+        operation_id = str(operations.recent(1)[0]["operation_id"])
+    status = service.operation_status(operation_id)
+    assert status is not None
+    assert status["state"] == "failed_precommit"
+    assert '"status":401' in status["error_detail"]
+    assert '"stage":"conversation_get"' in status["error_detail"]
+    assert "SECRET" not in status["error_detail"]
+
+
+def test_mcp_chatgpt_continue_defaults_to_async_without_dom_fallback(monkeypatch, tmp_path: Path) -> None:
     from re_gpt import mcp_server
 
     called: dict = {}
@@ -380,7 +417,6 @@ def test_mcp_chatgpt_continue_defaults_to_async_with_dom_fallback(monkeypatch, t
     res = mcp_server.chatgpt_continue("conv-1", "hello", attachments=["a.txt"])
     assert res["state"] == "complete"
     assert called["write_transport"] == "async"
-    assert called["dom_fallback"] is True
+    assert called["dom_fallback"] is False
     assert list(called["attachments"]) == ["a.txt"]
-
 

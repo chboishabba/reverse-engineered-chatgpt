@@ -6,7 +6,7 @@
 - [x] API-first existing-thread text continuation.
 - [x] Exactly-once mutation state and canonical graph reconciliation.
 - [x] Direct attachment staging (`files -> blob PUT -> process_upload_stream -> conversation`).
-- [x] API-first MCP continuation with safe pre-commit DOM fallback.
+- [x] API-first MCP continuation with direct async/no-DOM defaults; DOM fallback is explicit manual diagnostic opt-in.
 - [x] Redaction-first browser protocol capture and accessibility experiment receipts.
 - [x] Direct new-conversation creation with assigned conversation ID capture.
 - [x] Direct branch-from-exact-node mutation.

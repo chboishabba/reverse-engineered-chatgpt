@@ -93,6 +93,15 @@ class AsyncConversation:
             url=url, headers=headers
         )
 
+        # Preserve the HTTP classification without retaining the response body.
+        # Callers turn this into a redacted ProtocolObservation before it reaches
+        # a durable operation receipt.
+        if response.status_code != 200:
+            raise UnexpectedResponseError(
+                f"HTTP {response.status_code} when fetching {self.conversation_id}",
+                "",
+            )
+
         error = None
         try:
             chat = response.json()
@@ -656,8 +665,9 @@ class AsyncChatGPT:
         return os.environ.get(name, "").strip()
 
     async def __aenter__(self):
+        timeout = float(os.environ.get("RE_GPT_TIMEOUT", "180.0"))
         self.session = AsyncSession(
-            impersonate="chrome142", timeout=30.0, proxies=self.proxies
+            impersonate="chrome142", timeout=timeout, proxies=self.proxies
         )
         self._frontend_cookies = {}
         self._apply_browser_session()

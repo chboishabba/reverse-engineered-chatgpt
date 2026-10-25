@@ -130,10 +130,11 @@ The top-level continuation CLI defaults to:
 
 ```text
 write_transport=async
-dom_fallback=true
+dom_fallback=false
 ```
 
-DOM fallback can be disabled explicitly.
+DOM fallback is disabled by default and is available only through explicit
+manual diagnostic opt-in.
 
 ## Browser role
 

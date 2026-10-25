@@ -62,7 +62,7 @@ def mutation_service_chat(
             conversation_id,
             prompt,
             write_transport="async",
-            dom_fallback=True,
+            dom_fallback=False,
             follow=True,
         )
     else:

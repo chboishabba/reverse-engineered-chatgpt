@@ -24,6 +24,13 @@ def test_resolve_prompt_rejects_flag_and_file(tmp_path: Path) -> None:
 def test_write_parser_is_api_first_by_default() -> None:
     args = entrypoint.build_write_parser().parse_args(["--send", "abc", "--prompt", "hello"])
     assert args.write_transport == "async"
+    assert args.dom_fallback is False
+
+
+def test_write_parser_requires_explicit_dom_fallback_opt_in() -> None:
+    args = entrypoint.build_write_parser().parse_args(
+        ["--send", "abc", "--prompt", "hello", "--dom-fallback"]
+    )
     assert args.dom_fallback is True
 
 
@@ -49,7 +56,7 @@ def test_write_main_reports_complete_operation(monkeypatch, capsys) -> None:
     code = entrypoint.write_main(["--send", "abc", "--prompt", "hello"])
     assert code == 0
     assert seen["write_transport"] == "async"
-    assert seen["dom_fallback"] is True
+    assert seen["dom_fallback"] is False
     output = capsys.readouterr().out
     assert "ACK" in output
     assert "operation=op-1" in output
@@ -215,4 +222,3 @@ def test_top_level_convenience_functions(monkeypatch, tmp_path: Path) -> None:
     res2 = new_conversation("start", output=out2)
     assert res2["conversation_id"] == "new-conv"
     assert out2.read_text(encoding="utf-8") == "NEW-CONV-ACK\n"
-

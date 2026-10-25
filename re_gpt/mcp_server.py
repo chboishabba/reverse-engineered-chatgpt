@@ -34,10 +34,10 @@ def chatgpt_continue(
     attachments: list[str] | None = None,
     follow: bool = False,
     write_transport: str = "async",
-    dom_fallback: bool = True,
+    dom_fallback: bool = False,
     db_path: str | None = None,
 ) -> dict[str, Any]:
-    """Continue an existing thread; direct async CFFI is primary, with safe pre-commit DOM fallback."""
+    """Continue via direct async CFFI; DOM fallback is explicit diagnostic opt-in only."""
     return _service(db_path).continue_thread(
         conversation_id,
         prompt,

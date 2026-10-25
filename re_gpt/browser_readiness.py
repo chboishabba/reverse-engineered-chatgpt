@@ -5,7 +5,12 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
-from chatgpt_dom_relay import SEND_BUTTON_SELECTORS, TURN_SELECTOR, build_conversation_url
+from chatgpt_dom_relay import (
+    SEND_BUTTON_SELECTORS,
+    TURN_SELECTOR,
+    build_conversation_url,
+    extract_thread_id,
+)
 
 # The live UI exposes the actual editor as ProseMirror.  Deliberately do not
 # include textarea fallbacks here: #pending-conversation-input is a loading-state
@@ -66,7 +71,10 @@ async def inspect_readiness(relay, thread_id: str) -> BrowserReadiness:
     expected_url = build_conversation_url(thread_id).rstrip("/")
     current_url = str(relay.page.url or "").split("?", 1)[0].rstrip("/")
     if current_url != expected_url:
-        return BrowserReadiness(thread_id, False, False, False, False, False, False)
+        expected_uuid = extract_thread_id(expected_url)
+        current_uuid = extract_thread_id(current_url)
+        if not expected_uuid or expected_uuid != current_uuid:
+            return BrowserReadiness(thread_id, False, False, False, False, False, False)
 
     authenticated = await authenticated_session(relay.page)
     pending_absent = await _visible_count(relay.page, PENDING_EDITOR_SELECTOR) == 0

@@ -40,7 +40,7 @@ def test_mcp_graph_mutations_route_to_shared_service(monkeypatch) -> None:
     assert service.calls[3][0:4] == ("edit", "c1", "u0", "replacement")
 
 
-def test_mcp_continue_remains_api_first_with_safe_fallback(monkeypatch) -> None:
+def test_mcp_continue_defaults_to_api_first_without_dom_fallback(monkeypatch) -> None:
     seen = {}
 
     class ContinueService:
@@ -51,4 +51,4 @@ def test_mcp_continue_remains_api_first_with_safe_fallback(monkeypatch) -> None:
     monkeypatch.setattr(mcp_server, "_service", lambda db_path=None: ContinueService())
     mcp_server.chatgpt_continue("c1", "hello")
     assert seen["write_transport"] == "async"
-    assert seen["dom_fallback"] is True
+    assert seen["dom_fallback"] is False

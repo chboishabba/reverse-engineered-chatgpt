@@ -209,7 +209,7 @@ from re_gpt.mutation_service import MutationService
 service = MutationService()
 created = service.new_conversation("Reply with only ACK", follow=True)
 conversation_id = created["conversation_id"]
-continued = service.continue_thread(conversation_id, "Reply with only SECOND", write_transport="async", dom_fallback=True, follow=True)
+continued = service.continue_thread(conversation_id, "Reply with only SECOND", write_transport="async", dom_fallback=False, follow=True)
 branched = service.branch_from_node(conversation_id, parent_node_id="<NODE_ID>", prompt="Alternative branch", follow=True)
 regenerated = service.regenerate(conversation_id, user_node_id="<USER_NODE_ID>", follow=True)
 edited = service.edit_and_branch(conversation_id, user_node_id="<USER_NODE_ID>", prompt="Replacement text", follow=True)

@@ -315,7 +315,7 @@ class FleetOrchestrator:
             profile_dir=self.profile_dir,
             browser_mode=self.browser_mode,
             write_transport="async",
-            dom_fallback=True,
+            dom_fallback=False,
             follow=True,
             progress_callback=progress_callback,
         )
@@ -588,4 +588,3 @@ class AlphaOpportunity:
     frontier_summary: str
     formula_snippet: str | None
     recommended_continuation: str
-
