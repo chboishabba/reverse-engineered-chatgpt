@@ -4,9 +4,12 @@ import json
 from types import SimpleNamespace
 import pytest
 
+from re_gpt.browser_session_replay import BrowserSessionSnapshot
+
 from re_gpt.async_mutation_probe import (
     AmbiguousAsyncWriteError,
     ExplicitAsyncWriteRejection,
+    _build_payload_from_canonical_graph,
     submit_async_prompt_once,
 )
 
@@ -20,6 +23,7 @@ class FakeSession:
             "data: [DONE]\n\n",
         ]
         self.post_calls = 0
+        self.calls: list[dict] = []
         self.cookies = [
             SimpleNamespace(name="__Secure-next-auth.session-token", value="SECRET_SESSION", domain="chatgpt.com"),
             SimpleNamespace(name="oai-chat-web-route", value="SECRET_ROUTE", domain=".chatgpt.com"),
@@ -27,6 +31,7 @@ class FakeSession:
 
     async def post(self, *, url: str, headers: dict, json: dict, content_callback=None):
         self.post_calls += 1
+        self.calls.append({"url": url, "headers": dict(headers), "json": dict(json)})
         if self.post_exc is not None:
             raise self.post_exc
         if content_callback is not None:
@@ -130,6 +135,58 @@ def test_async_probe_accepted_sse_emits_redacted_observations_and_calls_verify()
         "SECRET_ROUTE",
     ):
         assert secret not in serialized
+
+
+def test_browser_session_uses_observed_frontend_prepare_then_single_submit() -> None:
+    session = FakeSession(post_status=200)
+    conv = FakeConversation()
+    snapshot = BrowserSessionSnapshot(
+        access_token="SECRET_TOKEN",
+        user_agent="Mozilla/5.0",
+        fingerprint={"timezone": "Australia/Brisbane", "timezone_offset_min": -600},
+    )
+
+    result = submit_async_prompt_once(
+        "conv-1",
+        "SECRET_PROMPT_TEXT",
+        browser_session=snapshot,
+        allow_browser_bootstrap=False,
+        client_factory=lambda **kwargs: FakeAsyncClient(session=session, conv=conv),
+    )
+
+    assert result["state"] == "submission_observed"
+    assert [call["url"].rsplit("/", 1)[-1] for call in session.calls] == ["prepare", "conversation"]
+    prepare, submit = session.calls
+    assert prepare["url"].endswith("/backend-api/f/conversation/prepare")
+    assert prepare["json"]["client_prepare_state"] == "sent"
+    assert prepare["json"]["partial_query"]["id"] == submit["json"]["messages"][0]["id"]
+    assert submit["url"].endswith("/backend-api/f/conversation")
+    assert submit["json"]["client_prepare_state"] == "success"
+    assert "openai-sentinel-chat-requirements-token" not in {
+        key.lower() for key in submit["headers"]
+    }
+    stages = [obs["bootstrap_stage"] for obs in result["protocol_observations"]]
+    assert stages == ["conversation_get", "conversation_prepare", "conversation_post"]
+
+
+def test_canonical_graph_parent_becomes_graph_addressed_payload() -> None:
+    payload = _build_payload_from_canonical_graph(
+        {"current_node": "canonical-parent", "default_model_slug": "gpt-6", "mapping": {"canonical-parent": {}}},
+        conversation_id="conv-1",
+        prompt="hello",
+        fallback_model="fallback",
+    )
+    assert payload["parent_message_id"] == "canonical-parent"
+    assert payload["model"] == "gpt-6"
+    assert payload["messages"][0]["content"]["parts"] == ["hello"]
+
+
+def test_canonical_graph_payload_requires_current_node() -> None:
+    with pytest.raises(ValueError, match="current node"):
+        _build_payload_from_canonical_graph(
+            {"current_node": "missing", "mapping": {}},
+            conversation_id="conv-1", prompt="hello", fallback_model="fallback",
+        )
 
 
 def test_async_probe_explicit_http_rejection_never_retries() -> None:
