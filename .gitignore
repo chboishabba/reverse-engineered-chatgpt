@@ -209,3 +209,4 @@ chatgpt_history*.sqlite*-wal
 chatgpt_history*.sqlite*-shm
 codex_history*.sqlite*-wal
 codex_history*.sqlite*-shm
+*.db

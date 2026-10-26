@@ -31,6 +31,7 @@ from .browser_session_replay import (
     capture_browser_session_snapshot_async,
     load_browser_session_snapshot,
     mark_sentinel_consumed,
+    refresh_browser_session_sentinel_async,
 )
 from .protocol_observation import ProtocolObservation, build_protocol_observation, observation_from_exception
 from .utils import get_default_model, get_default_user_agent, get_session_token
@@ -238,6 +239,17 @@ async def probe_direct_graph_mutation_once(
     snapshot = browser_session
     if snapshot is None and (profile_dir is not None or client_factory is AsyncChatGPT):
         snapshot = load_browser_session_snapshot(profile_dir=profile_dir)
+    if snapshot is not None and not snapshot.has_fresh_sentinel():
+        try:
+            refreshed = await refresh_browser_session_sentinel_async(
+                snapshot,
+                profile_dir=profile_dir,
+                cdp_endpoint=cdp_endpoint,
+            )
+            if refreshed is not None and refreshed.has_fresh_sentinel():
+                snapshot = refreshed
+        except Exception:
+            pass
     if (
         (snapshot is None or not snapshot.has_fresh_sentinel())
         and allow_browser_bootstrap
@@ -338,6 +350,18 @@ async def probe_direct_graph_mutation_once(
                     seq_start=seq,
                 )
                 stage_times["attachment_ready"] = time.time()
+
+            if snapshot is not None and not snapshot.has_fresh_sentinel():
+                try:
+                    refreshed = await refresh_browser_session_sentinel_async(
+                        snapshot,
+                        profile_dir=profile_dir,
+                        cdp_endpoint=cdp_endpoint,
+                    )
+                    if refreshed is not None and refreshed.has_fresh_sentinel():
+                        snapshot = refreshed
+                except Exception:
+                    pass
 
             payload = build_graph_mutation_payload(
                 base_payload,

@@ -15,7 +15,7 @@ import os
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Mapping
 
 from chatgpt_dom_relay import DEFAULT_PROFILE_DIR
 
@@ -265,6 +265,32 @@ def mark_sentinel_consumed(
         pass
 
 
+async def refresh_browser_session_sentinel_async(
+    snapshot: BrowserSessionSnapshot | None = None,
+    *,
+    profile_dir: Path | str | None = None,
+    snapshot_path: Path | str | None = None,
+    cdp_endpoint: str | None = None,
+    save: bool = True,
+) -> BrowserSessionSnapshot | None:
+    """Fast in-browser minting of Sentinel tokens via direct CDP WebSocket (<1s)."""
+    loaded = snapshot or load_browser_session_snapshot(profile_dir=profile_dir, snapshot_path=snapshot_path)
+    if loaded is None:
+        return None
+    endpoint = cdp_endpoint or os.environ.get("RE_GPT_CDP_ENDPOINT", "http://127.0.0.1:9222")
+    try:
+        from .cdp_sentinel import mint_sentinel_tokens_via_cdp
+        sentinel_data = await mint_sentinel_tokens_via_cdp(cdp_url=endpoint)
+        if sentinel_data and isinstance(sentinel_data, Mapping) and sentinel_data.get("chat_requirements_token"):
+            loaded.sentinel = dict(sentinel_data)
+            if save:
+                save_browser_session_snapshot(loaded, profile_dir=profile_dir, snapshot_path=snapshot_path)
+            return loaded
+    except Exception:
+        pass
+    return loaded
+
+
 def filter_replayable_headers(headers: Mapping[str, Any] | None) -> tuple[dict[str, str], str | None]:
     """Extract replayable fingerprint headers and bearer token from raw request headers."""
     replay_headers: dict[str, str] = {}
@@ -344,6 +370,19 @@ async def capture_browser_session_snapshot_async(
 ) -> BrowserSessionSnapshot:
     """Open the lightweight ChatGPT root context and capture session/fingerprint/sentinel state."""
     resolved_profile = Path(profile_dir or DEFAULT_PROFILE_DIR).expanduser()
+
+    # Fast path: if CDP endpoint or running browser tab is accessible, capture in <1s over direct CDP WebSocket
+    try:
+        from .cdp_sentinel import capture_snapshot_via_cdp
+        cdp_target = cdp_endpoint or os.environ.get("RE_GPT_CDP_ENDPOINT", "http://127.0.0.1:9222")
+        fast_snapshot = await capture_snapshot_via_cdp(cdp_url=cdp_target, profile_dir=str(resolved_profile))
+        if fast_snapshot is not None and fast_snapshot.access_token:
+            if save:
+                save_browser_session_snapshot(fast_snapshot, profile_dir=resolved_profile, snapshot_path=snapshot_path)
+            return fast_snapshot
+    except Exception:
+        pass
+
     captured_headers: dict[str, str] = {}
     captured_access_token: str | None = None
     finalize_req: dict[str, Any] = {}

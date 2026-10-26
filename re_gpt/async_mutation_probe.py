@@ -28,6 +28,7 @@ from .browser_session_replay import (
     capture_browser_session_snapshot_async,
     load_browser_session_snapshot,
     mark_sentinel_consumed,
+    refresh_browser_session_sentinel_async,
 )
 from .browser_observer import fetch_conversation_same_origin
 from .protocol_observation import (
@@ -553,6 +554,17 @@ async def probe_async_continue_once(
     snapshot = browser_session
     if snapshot is None and (profile_dir is not None or client_factory is AsyncChatGPT):
         snapshot = load_browser_session_snapshot(profile_dir=profile_dir)
+    if snapshot is not None and not snapshot.has_fresh_sentinel():
+        try:
+            refreshed = await refresh_browser_session_sentinel_async(
+                snapshot,
+                profile_dir=profile_dir,
+                cdp_endpoint=cdp_endpoint,
+            )
+            if refreshed is not None and refreshed.has_fresh_sentinel():
+                snapshot = refreshed
+        except Exception:
+            pass
     if (
         (snapshot is None or not snapshot.has_fresh_sentinel())
         and allow_browser_bootstrap
@@ -693,6 +705,17 @@ async def probe_async_continue_once(
 
             seq += 1
             sentinel_started = time.perf_counter()
+            if snapshot is not None and not snapshot.has_fresh_sentinel():
+                try:
+                    refreshed = await refresh_browser_session_sentinel_async(
+                        snapshot,
+                        profile_dir=profile_dir,
+                        cdp_endpoint=cdp_endpoint,
+                    )
+                    if refreshed is not None and refreshed.has_fresh_sentinel():
+                        snapshot = refreshed
+                except Exception:
+                    pass
             headers = dict(client.build_request_headers())
             use_replayed_sentinel = snapshot is not None and snapshot.has_fresh_sentinel()
             if use_replayed_sentinel:
@@ -783,64 +806,126 @@ async def probe_async_continue_once(
                     for event in events:
                         progress_callback(dict(event))
 
-            try:
-                post_dispatched = True
-                response = await client.session.post(
-                    url=url,
-                    headers=headers,
-                    json=payload,
-                    content_callback=content_callback,
-                )
-            except Exception as exc:
-                obs = observation_from_exception(
-                    exc,
+            from .cdp_sentinel import DEFAULT_CDP_URL, find_chatgpt_tab_ws_url, send_inpage_api_prompt
+
+            cdp_target = cdp_endpoint or DEFAULT_CDP_URL
+            inpage_ws = find_chatgpt_tab_ws_url(cdp_target, timeout=0.5)
+
+            inpage_user_msg_id: str | None = None
+            inpage_parent_msg_id: str | None = None
+
+            if client_factory is AsyncChatGPT and inpage_ws is not None and not local_attachments:
+                try:
+                    post_dispatched = True
+                    inpage_res = await send_inpage_api_prompt(
+                        conversation_id,
+                        prompt,
+                        cdp_url=cdp_target,
+                        timeout=float(browser_timeout),
+                    )
+                    raw_body = inpage_res.get("body", "")
+                    content_callback(raw_body.encode("utf-8") if isinstance(raw_body, str) else raw_body)
+                    status = int(inpage_res.get("status", 200) or 200)
+                    elapsed_ms = (time.perf_counter() - post_started) * 1000.0
+                    inpage_user_msg_id = inpage_res.get("user_message_id")
+                    inpage_parent_msg_id = inpage_res.get("parent_message_id")
+                    post_obs = build_protocol_observation(
+                        transport="async",
+                        operation="continue",
+                        method="POST",
+                        path="/backend-api/f/conversation",
+                        status=status,
+                        response_class="sse_stream" if status == 200 else f"http_{status}",
+                        headers=headers,
+                        cookies=_session_cookies(client.session),
+                        payload=payload,
+                        sse_chunks=chunks if status == 200 else None,
+                        sequence_index=seq,
+                        elapsed_ms=elapsed_ms,
+                        bootstrap_stage="conversation_post",
+                    )
+                    observations.append(post_obs)
+                except Exception as exc:
+                    obs = observation_from_exception(
+                        exc,
+                        transport="async",
+                        operation="continue",
+                        method="POST",
+                        path="/backend-api/f/conversation",
+                        headers=headers,
+                        cookies=_session_cookies(client.session),
+                        payload=payload,
+                        sse_chunks=chunks,
+                        sequence_index=seq,
+                        elapsed_ms=(time.perf_counter() - post_started) * 1000.0,
+                        bootstrap_stage="conversation_post",
+                    )
+                    observations.append(obs)
+                    raise ExplicitAsyncWriteRejection(
+                        f"async in-page conversation POST failed: {exc.__class__.__name__}: {exc}",
+                        stage="conversation_post",
+                        status=obs.status,
+                        observations=tuple(observations),
+                    ) from exc
+            else:
+                try:
+                    post_dispatched = True
+                    response = await client.session.post(
+                        url=url,
+                        headers=headers,
+                        json=payload,
+                        content_callback=content_callback,
+                    )
+                except Exception as exc:
+                    obs = observation_from_exception(
+                        exc,
+                        transport="async",
+                        operation="continue",
+                        method="POST",
+                        path=url,
+                        headers=headers,
+                        cookies=_session_cookies(client.session),
+                        payload=payload,
+                        sse_chunks=chunks,
+                        sequence_index=seq,
+                        elapsed_ms=(time.perf_counter() - post_started) * 1000.0,
+                        bootstrap_stage="conversation_post",
+                    )
+                    observations.append(obs)
+                    raise AmbiguousAsyncWriteError(
+                        f"async conversation POST outcome is ambiguous ({exc.__class__.__name__}); refusing retry or fallback",
+                        status=obs.status,
+                        observations=tuple(observations),
+                        stream_evidence={
+                            "stream_terminal_observed": decoder.terminal_observed,
+                            "stream_terminal_reason": decoder.terminal_reason,
+                            "stream_event_counts": decoder.event_counts,
+                        },
+                        transport_timeout=isinstance(exc, TimeoutError) or "timeout" in type(exc).__name__.lower(),
+                        expected_user_message_id=str(payload["messages"][0]["id"]) if payload.get("messages") else None,
+                    ) from exc
+
+                status = int(getattr(response, "status_code", 200) or 200)
+                elapsed_ms = (time.perf_counter() - post_started) * 1000.0
+                if not chunks and getattr(response, "text", None):
+                    chunks.append(str(response.text))
+
+                post_obs = build_protocol_observation(
                     transport="async",
                     operation="continue",
                     method="POST",
                     path=url,
+                    status=status,
+                    response_class="sse_stream" if status == 200 else f"http_{status}",
                     headers=headers,
                     cookies=_session_cookies(client.session),
                     payload=payload,
-                    sse_chunks=chunks,
+                    sse_chunks=chunks if status == 200 else None,
                     sequence_index=seq,
-                    elapsed_ms=(time.perf_counter() - post_started) * 1000.0,
+                    elapsed_ms=elapsed_ms,
                     bootstrap_stage="conversation_post",
                 )
-                observations.append(obs)
-                raise AmbiguousAsyncWriteError(
-                    f"async conversation POST outcome is ambiguous ({exc.__class__.__name__}); refusing retry or fallback",
-                    status=obs.status,
-                    observations=tuple(observations),
-                    stream_evidence={
-                        "stream_terminal_observed": decoder.terminal_observed,
-                        "stream_terminal_reason": decoder.terminal_reason,
-                        "stream_event_counts": decoder.event_counts,
-                    },
-                    transport_timeout=isinstance(exc, TimeoutError) or "timeout" in type(exc).__name__.lower(),
-                    expected_user_message_id=str(payload["messages"][0]["id"]) if payload.get("messages") else None,
-                ) from exc
-
-            status = int(getattr(response, "status_code", 200) or 200)
-            elapsed_ms = (time.perf_counter() - post_started) * 1000.0
-            if not chunks and getattr(response, "text", None):
-                chunks.append(str(response.text))
-
-            post_obs = build_protocol_observation(
-                transport="async",
-                operation="continue",
-                method="POST",
-                path=url,
-                status=status,
-                response_class="sse_stream" if status == 200 else f"http_{status}",
-                headers=headers,
-                cookies=_session_cookies(client.session),
-                payload=payload,
-                sse_chunks=chunks if status == 200 else None,
-                sequence_index=seq,
-                elapsed_ms=elapsed_ms,
-                bootstrap_stage="conversation_post",
-            )
-            observations.append(post_obs)
+                observations.append(post_obs)
 
             if 400 <= status < 500:
                 raise ExplicitAsyncWriteRejection(
@@ -867,8 +952,12 @@ async def probe_async_continue_once(
             stage_times["submission_observed"] = time.time()
             messages = payload.get("messages") if isinstance(payload, Mapping) else None
             first_msg = messages[0] if isinstance(messages, list) and messages else {}
-            user_message_id = str(first_msg.get("id")) if isinstance(first_msg.get("id") if isinstance(first_msg, Mapping) else None, str) else None
-            parent_message_id = str(payload.get("parent_message_id")) if isinstance(payload, Mapping) and payload.get("parent_message_id") else None
+            user_message_id = inpage_user_msg_id or (
+                str(first_msg.get("id")) if isinstance(first_msg.get("id") if isinstance(first_msg, Mapping) else None, str) else None
+            )
+            parent_message_id = inpage_parent_msg_id or (
+                str(payload.get("parent_message_id")) if isinstance(payload, Mapping) and payload.get("parent_message_id") else None
+            )
 
             return AsyncMutationProbeResult(
                 conversation_id=conversation_id,
