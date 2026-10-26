@@ -38,7 +38,7 @@ def hydrate_recent(min_timestamp: float = 1791000000.0, limit: int = 60) -> None
     for i, (cid, title) in enumerate(unpulled, 1):
         print(f"[{i}/{len(unpulled)}] Hydrating {cid[:8]} ({title.strip()[:35]})...", flush=True)
         try:
-            res = service._pull_and_persist(cid, profile_dir=PROFILE_DIR)
+            res = service._pull_and_persist(cid, browser_fallback=False, profile_dir=PROFILE_DIR)
             msgs = res.get("total_messages", 0)
             print(f" -> {msgs} messages hydrated", flush=True)
             success += 1

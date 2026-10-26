@@ -282,7 +282,7 @@ def chatgpt_hydrate(
     results = []
     for cid, title in target_ids:
         try:
-            res = service._pull_and_persist(cid)
+            res = service._pull_and_persist(cid, browser_fallback=False)
             results.append({
                 "conversation_id": cid,
                 "title": (title or cid).strip()[:40],

@@ -166,7 +166,7 @@ class MutationService:
         self,
         conversation_id: str,
         *,
-        browser_fallback: bool = True,
+        browser_fallback: bool = False,
         direct_allowed: bool = True,
         skip_read_adapters: Sequence[str] = (),
         profile_dir: Path | str | None = None,
