@@ -157,9 +157,23 @@ def chatgpt_continue(
     dom_fallback: bool = False,
     db_path: str | None = None,
     preset: str | None = None,
+    auto_latex_bridge: bool = False,
+    pnf_mode: bool = False,
 ) -> dict[str, Any]:
     """Continue via direct async CFFI; DOM fallback is explicit diagnostic opt-in only."""
     resolved_prompt = expand_worker_prompt(prompt, preset=preset)
+    bridge_payload: dict[str, Any] | None = None
+
+    if pnf_mode or auto_latex_bridge:
+        try:
+            from itir_mcp.latex_math_bridge import distill_pnf_capsule
+            capsule = distill_pnf_capsule(resolved_prompt, conversation_id=conversation_id)
+            bridge_payload = capsule.to_dict()
+            if pnf_mode:
+                resolved_prompt = capsule.condensed_prompt_text
+        except Exception:
+            pass
+
     result = _service(db_path).continue_thread(
         conversation_id,
         resolved_prompt,
@@ -168,7 +182,10 @@ def chatgpt_continue(
         write_transport=write_transport,
         dom_fallback=dom_fallback,
     )
-    return compact_operation_payload(result)
+    compacted = compact_operation_payload(result)
+    if bridge_payload is not None:
+        compacted["latex_bridge"] = bridge_payload
+    return compacted
 
 
 @mcp.tool()
