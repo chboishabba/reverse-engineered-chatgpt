@@ -27,20 +27,17 @@ WORKER_PROMPT_PRESETS: dict[str, str] = {
         "Exactly complete all per max-cut and continue per pareto/snowball/ibrahim. "
         "Check the web and latest PRs for inspiration and cross-pollination -- assume we "
         "already have everything we need in-repo. Keep following your nose until you hit "
-        "a wall -- do not wait for approval, and remember our attribution rules. "
-        "Keep your final response under 1,500 characters so MCP output stays inline."
+        "a wall -- do not wait for approval, and remember our attribution rules."
     ),
     "grug_ste100": (
         "Apply Grug-brain simplicity and ASD-STE100 Simplified Technical English: one "
         "thought per sentence, active voice, approved unambiguous terms, zero speculative "
-        "abstraction, no inline code dumps in prose, and normalize onto existing in-repo surfaces. "
-        "Keep your final response under 1,500 characters."
+        "abstraction, no inline code dumps in prose, and normalize onto existing in-repo surfaces."
     ),
     "grug": (
         "Apply Grug-brain simplicity and ASD-STE100 Simplified Technical English: one "
         "thought per sentence, active voice, approved unambiguous terms, zero speculative "
-        "abstraction, no inline code dumps in prose, and normalize onto existing in-repo surfaces. "
-        "Keep your final response under 1,500 characters."
+        "abstraction, no inline code dumps in prose, and normalize onto existing in-repo surfaces."
     ),
     "zkp_qa": (
         "Frame via ZKP (O/R/C/S/L/P/G/F) with explicit preconditions, invariants, and "
