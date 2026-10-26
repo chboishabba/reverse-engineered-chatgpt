@@ -140,6 +140,7 @@ class PnfFleetCompiler:
             raise ValueError(f"No hydrated conversations found in {self.db_path}")
 
         nlp = spacy.load("en_core_web_sm", disable=["ner"])
+        nlp.max_length = 10_000_000
 
         slro_path = self.output_dir / f"fleet_top{limit}_iter{iteration}.slro"
         slrw_path = self.output_dir / f"fleet_top{limit}_iter{iteration}.slrw"
