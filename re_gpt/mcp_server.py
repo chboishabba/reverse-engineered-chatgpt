@@ -22,6 +22,106 @@ from .storage import DEFAULT_DB_PATH
 
 mcp = FastMCP("re-gpt")
 
+WORKER_PROMPT_PRESETS: dict[str, str] = {
+    "max_cut": (
+        "Exactly complete all per max-cut and continue per pareto/snowball/ibrahim. "
+        "Check the web and latest PRs for inspiration and cross-pollination -- assume we "
+        "already have everything we need in-repo. Keep following your nose until you hit "
+        "a wall -- do not wait for approval, and remember our attribution rules."
+    ),
+    "grug_ste100": (
+        "Apply Grug-brain simplicity and ASD-STE100 Simplified Technical English: one "
+        "thought per sentence, active voice, approved unambiguous terms, zero speculative "
+        "abstraction, no inline code dumps in prose, and normalize onto existing in-repo surfaces."
+    ),
+    "grug": (
+        "Apply Grug-brain simplicity and ASD-STE100 Simplified Technical English: one "
+        "thought per sentence, active voice, approved unambiguous terms, zero speculative "
+        "abstraction, no inline code dumps in prose, and normalize onto existing in-repo surfaces."
+    ),
+    "zkp_qa": (
+        "Frame via ZKP (O/R/C/S/L/P/G/F) with explicit preconditions, invariants, and "
+        "postconditions. Converge toward normalized surfaces per ITIL, ISO 9000/42001/27001/"
+        "27701/23894/9241, NIST AI RMF, Six Sigma, and C4/PlantUML. Assign one disjoint "
+        "nonblocking lane per worker, no skeletons or stubs, and complete implementation + "
+        "deterministic verification within the turn."
+    ),
+    "zkp": (
+        "Frame via ZKP (O/R/C/S/L/P/G/F) with explicit preconditions, invariants, and "
+        "postconditions. Converge toward normalized surfaces per ITIL, ISO 9000/42001/27001/"
+        "27701/23894/9241, NIST AI RMF, Six Sigma, and C4/PlantUML. Assign one disjoint "
+        "nonblocking lane per worker, no skeletons or stubs, and complete implementation + "
+        "deterministic verification within the turn."
+    ),
+    "introspective_viz": (
+        "Apply the introspective method: 1. Model the theory accurately per actual "
+        "implementation. 2. Generate a plain-language, physically intuitive visual proof "
+        "(Python/HTML/SVG). 3. Inspect the visualization. 4. Formalize new findings in "
+        "Lean or Agda per repo convention."
+    ),
+    "referee_pass": (
+        "Local referee verification passed (0 errors, 0 warnings). Proceed immediately "
+        "to the next highest-alpha vertical slice per max-cut and pareto/snowball/ibrahim; "
+        "push commits and return SHAs + deterministic referee commands."
+    ),
+}
+
+_VERBOSE_OPERATION_KEYS = {
+    "read_diagnostic",
+    "write_diagnostic",
+    "read_diagnostics",
+    "read_observations",
+    "write_observations",
+    "started_at",
+    "authenticated_at",
+    "hydrated_at",
+    "attachment_ready_at",
+    "submitted_at",
+    "committed_at",
+    "completed_at",
+    "requested_parent_node_id",
+    "attachment_ids",
+    "attachments",
+    "attempted_read_adapters",
+    "rejected_read_adapters",
+}
+
+
+def expand_worker_prompt(prompt: str, preset: str | None = None) -> str:
+    """Expand @preset tokens and optional preset key into canonical worker instructions."""
+    parts: list[str] = []
+    if preset:
+        for key in preset.replace(",", " ").split():
+            clean = key.lstrip("@").strip()
+            if clean not in WORKER_PROMPT_PRESETS:
+                raise ValueError(f"Unknown worker prompt preset: {clean}")
+            parts.append(WORKER_PROMPT_PRESETS[clean])
+    text = (prompt or "").strip()
+    if text:
+        tokens = text.split()
+        consumed = 0
+        for tok in tokens:
+            if tok.startswith("@") and tok[1:] in WORKER_PROMPT_PRESETS:
+                parts.append(WORKER_PROMPT_PRESETS[tok[1:]])
+                consumed += 1
+            else:
+                break
+        remainder = " ".join(tokens[consumed:]).strip() if consumed == len(tokens) else text.split(None, consumed)[-1] if consumed else text
+        if consumed == len(tokens):
+            remainder = ""
+        if remainder:
+            parts.append(remainder)
+    resolved = "\n\n".join(p for p in parts if p)
+    if not resolved:
+        raise ValueError("Worker prompt must be non-empty after preset expansion")
+    return resolved
+
+
+def compact_operation_payload(result: Any) -> Any:
+    if isinstance(result, dict):
+        return {k: v for k, v in result.items() if k not in _VERBOSE_OPERATION_KEYS}
+    return result
+
 
 def _service(db_path: str | None = None) -> MutationService:
     return MutationService(db_path=Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH)
@@ -36,23 +136,19 @@ def chatgpt_continue(
     write_transport: str = "async",
     dom_fallback: bool = False,
     db_path: str | None = None,
+    preset: str | None = None,
 ) -> dict[str, Any]:
     """Continue via direct async CFFI; DOM fallback is explicit diagnostic opt-in only."""
+    resolved_prompt = expand_worker_prompt(prompt, preset=preset)
     result = _service(db_path).continue_thread(
         conversation_id,
-        prompt,
+        resolved_prompt,
         attachments=attachments or (),
         follow=follow,
         write_transport=write_transport,
         dom_fallback=dom_fallback,
     )
-    if isinstance(result, dict):
-        result = {
-            k: v
-            for k, v in result.items()
-            if k not in {"read_diagnostic", "read_observations", "write_observations"}
-        }
-    return result
+    return compact_operation_payload(result)
 
 
 @mcp.tool()
