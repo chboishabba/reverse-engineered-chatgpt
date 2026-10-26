@@ -214,7 +214,12 @@ def chatgpt_live_status(
 
 
 @mcp.tool()
-def chatgpt_view(conversation_id: str, db_path: str | None = None) -> dict[str, Any]:
+def chatgpt_view(
+    conversation_id: str,
+    tail: int = 10,
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    """View conversation metadata and recent tail turns (token-optimized). Set tail=0 for all."""
     path = Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH
     connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
@@ -222,13 +227,81 @@ def chatgpt_view(conversation_id: str, db_path: str | None = None) -> dict[str, 
         conversation = connection.execute("SELECT * FROM conversations WHERE conversation_id = ?", (conversation_id,)).fetchone()
         if conversation is None:
             raise ValueError(f"conversation not archived: {conversation_id}")
-        messages = connection.execute("""
+        query = """
             SELECT message_index, author, content, create_time, message_key
             FROM messages WHERE conversation_id = ? ORDER BY message_index ASC
-        """, (conversation_id,)).fetchall()
-        return {"conversation": dict(conversation), "messages": [dict(row) for row in messages]}
+        """
+        messages = [dict(row) for row in connection.execute(query, (conversation_id,)).fetchall()]
+        total_messages = len(messages)
+        if tail > 0 and total_messages > tail:
+            messages = messages[-tail:]
+        return {
+            "conversation": dict(conversation),
+            "total_messages": total_messages,
+            "returned_messages": len(messages),
+            "messages": messages,
+        }
     finally:
         connection.close()
+
+
+@mcp.tool()
+def chatgpt_hydrate(
+    conversation_id: str | None = None,
+    limit: int = 1,
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    """Hydrate message graphs into local SQLite using direct async CFFI (token-optimized)."""
+    service = _service(db_path)
+    path = Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH
+    
+    target_ids: list[tuple[str, str]] = []
+    if conversation_id and conversation_id.strip():
+        cid = conversation_id.strip()
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            title = cur.execute("SELECT title FROM conversations WHERE conversation_id = ?", (cid,)).fetchone()
+            target_ids.append((cid, (title[0] if title else cid)))
+    else:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            rows = cur.execute("""
+                SELECT c.conversation_id, c.title
+                FROM conversations c
+                LEFT JOIN messages m ON c.conversation_id = m.conversation_id
+                GROUP BY c.conversation_id
+                HAVING count(m.message_index) = 0
+                ORDER BY CAST(c.remote_update_time AS REAL) DESC
+                LIMIT ?
+            """, (max(1, min(int(limit), 20)),)).fetchall()
+            target_ids.extend((r[0], r[1] or r[0]) for r in rows)
+
+    if not target_ids:
+        return {"hydrated_count": 0, "results": [], "status": "no_unhydrated_targets"}
+
+    results = []
+    for cid, title in target_ids:
+        try:
+            res = service._pull_and_persist(cid)
+            results.append({
+                "conversation_id": cid,
+                "title": (title or cid).strip()[:40],
+                "messages": res.get("total_messages", 0),
+                "adapter": res.get("read_adapter", "unknown"),
+                "status": "ok",
+            })
+        except Exception as exc:
+            results.append({
+                "conversation_id": cid,
+                "title": (title or cid).strip()[:40],
+                "error": str(exc),
+                "status": "error",
+            })
+
+    return {
+        "hydrated_count": len([r for r in results if r.get("status") == "ok"]),
+        "results": results,
+    }
 
 
 @mcp.tool()
