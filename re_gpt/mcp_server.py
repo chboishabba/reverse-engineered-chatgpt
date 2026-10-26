@@ -38,7 +38,7 @@ def chatgpt_continue(
     db_path: str | None = None,
 ) -> dict[str, Any]:
     """Continue via direct async CFFI; DOM fallback is explicit diagnostic opt-in only."""
-    return _service(db_path).continue_thread(
+    result = _service(db_path).continue_thread(
         conversation_id,
         prompt,
         attachments=attachments or (),
@@ -46,6 +46,13 @@ def chatgpt_continue(
         write_transport=write_transport,
         dom_fallback=dom_fallback,
     )
+    if isinstance(result, dict):
+        result = {
+            k: v
+            for k, v in result.items()
+            if k not in {"read_diagnostic", "read_observations", "write_observations"}
+        }
+    return result
 
 
 @mcp.tool()
