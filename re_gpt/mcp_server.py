@@ -27,17 +27,20 @@ WORKER_PROMPT_PRESETS: dict[str, str] = {
         "Exactly complete all per max-cut and continue per pareto/snowball/ibrahim. "
         "Check the web and latest PRs for inspiration and cross-pollination -- assume we "
         "already have everything we need in-repo. Keep following your nose until you hit "
-        "a wall -- do not wait for approval, and remember our attribution rules."
+        "a wall -- do not wait for approval, and remember our attribution rules. "
+        "Keep your final response under 1,500 characters so MCP output stays inline."
     ),
     "grug_ste100": (
         "Apply Grug-brain simplicity and ASD-STE100 Simplified Technical English: one "
         "thought per sentence, active voice, approved unambiguous terms, zero speculative "
-        "abstraction, no inline code dumps in prose, and normalize onto existing in-repo surfaces."
+        "abstraction, no inline code dumps in prose, and normalize onto existing in-repo surfaces. "
+        "Keep your final response under 1,500 characters."
     ),
     "grug": (
         "Apply Grug-brain simplicity and ASD-STE100 Simplified Technical English: one "
         "thought per sentence, active voice, approved unambiguous terms, zero speculative "
-        "abstraction, no inline code dumps in prose, and normalize onto existing in-repo surfaces."
+        "abstraction, no inline code dumps in prose, and normalize onto existing in-repo surfaces. "
+        "Keep your final response under 1,500 characters."
     ),
     "zkp_qa": (
         "Frame via ZKP (O/R/C/S/L/P/G/F) with explicit preconditions, invariants, and "
@@ -84,11 +87,19 @@ _VERBOSE_OPERATION_KEYS = {
     "attachments",
     "attempted_read_adapters",
     "rejected_read_adapters",
+    "prompt_digest",
+    "transport",
+    "operation",
+    "user_node_id",
+    "assistant_node_id",
+    "read_adapter",
+    "new_messages",
+    "total_messages",
 }
 
 
 def expand_worker_prompt(prompt: str, preset: str | None = None) -> str:
-    """Expand @preset tokens and optional preset key into canonical worker instructions."""
+    """Expand leading @preset tokens and an optional preset key into worker instructions."""
     parts: list[str] = []
     if preset:
         for key in preset.replace(",", " ").split():
@@ -106,9 +117,7 @@ def expand_worker_prompt(prompt: str, preset: str | None = None) -> str:
                 consumed += 1
             else:
                 break
-        remainder = " ".join(tokens[consumed:]).strip() if consumed == len(tokens) else text.split(None, consumed)[-1] if consumed else text
-        if consumed == len(tokens):
-            remainder = ""
+        remainder = "" if consumed == len(tokens) else (text.split(None, consumed)[-1] if consumed else text)
         if remainder:
             parts.append(remainder)
     resolved = "\n\n".join(p for p in parts if p)
@@ -119,7 +128,12 @@ def expand_worker_prompt(prompt: str, preset: str | None = None) -> str:
 
 def compact_operation_payload(result: Any) -> Any:
     if isinstance(result, dict):
-        return {k: v for k, v in result.items() if k not in _VERBOSE_OPERATION_KEYS}
+        return {
+            k: v
+            for k, v in result.items()
+            if k not in _VERBOSE_OPERATION_KEYS
+            and not (k in {"error_class", "error_detail"} and v is None)
+        }
     return result
 
 

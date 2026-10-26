@@ -32,6 +32,10 @@
 - [ ] Run `scripts/accept_stream_follow_v1.py` and retain the real-time progress + zero-poll terminal reconciliation receipt before merging Milestone E.
 - [ ] Improve arbitrary uploaded-file archive download/provenance beyond current canonical attachment binding.
 - [ ] Remove/deprecate obsolete low-level mutation implementations once downstream compatibility consumers no longer call them directly.
+- [x] Keep MCP worker responses small: drop transport telemetry (`read_observations`, `write_observations`, timestamps, node IDs) from `chatgpt_continue` / `itir.chatgpt.dispatch_worker`. Keep it in the durable SQLite receipt only.
+- [x] Add worker prompt presets (`@max_cut`, `@grug_ste100`, `@zkp_qa`, `@introspective_viz`, `@referee_pass`). Callers can send short replies instead of full prompts.
+- [ ] Roadmap (not yet priority): staged outbound prompts. The caller writes the prompt to the SQLite archive first, as a pending row. The service then reads the remote thread head. It sends only if the remote head is not newer than the local head. This removes temporary prompt/response files and gives a send-once guard before transport.
+- [ ] Roadmap: return large worker replies by reference (operation ID + message index), not inline, when the host MCP client has an output size cap. Read the full text through `itir.archive.thread_view`.
 
 ## Existing archive/context helpers
 
