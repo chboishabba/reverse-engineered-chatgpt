@@ -216,10 +216,13 @@ def chatgpt_live_status(
 @mcp.tool()
 def chatgpt_view(
     conversation_id: str,
-    tail: int = 10,
+    tail: int = 5,
+    message_index: int | None = None,
+    author: str | None = None,
+    max_chars: int = 0,
     db_path: str | None = None,
 ) -> dict[str, Any]:
-    """View conversation metadata and recent tail turns (token-optimized). Set tail=0 for all."""
+    """View conversation metadata and recent/filtered turns (token-optimized). Set tail=0 for all."""
     path = Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH
     connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
@@ -231,12 +234,29 @@ def chatgpt_view(
             SELECT message_index, author, content, create_time, message_key
             FROM messages WHERE conversation_id = ? ORDER BY message_index ASC
         """
-        messages = [dict(row) for row in connection.execute(query, (conversation_id,)).fetchall()]
-        total_messages = len(messages)
-        if tail > 0 and total_messages > tail:
-            messages = messages[-tail:]
+        all_messages = [dict(row) for row in connection.execute(query, (conversation_id,)).fetchall()]
+        total_messages = len(all_messages)
+        messages = all_messages
+        if message_index is not None:
+            messages = [m for m in messages if m.get("message_index") == int(message_index)]
+        else:
+            if author and author.strip():
+                role = author.strip().lower()
+                messages = [m for m in messages if str(m.get("author") or "").lower() == role]
+            if tail > 0 and len(messages) > tail:
+                messages = messages[-tail:]
+        if max_chars and int(max_chars) > 0:
+            limit_c = int(max_chars)
+            for m in messages:
+                text = str(m.get("content") or "")
+                if len(text) > limit_c:
+                    m["content"] = text[:limit_c] + f"... [+{len(text) - limit_c} chars]"
         return {
-            "conversation": dict(conversation),
+            "conversation": {
+                "conversation_id": conversation["conversation_id"],
+                "title": conversation["title"],
+                "remote_update_time": conversation["remote_update_time"],
+            },
             "total_messages": total_messages,
             "returned_messages": len(messages),
             "messages": messages,
@@ -305,15 +325,28 @@ def chatgpt_hydrate(
 
 
 @mcp.tool()
-def chatgpt_list(limit: int = 50, db_path: str | None = None) -> list[dict[str, Any]]:
+def chatgpt_list(
+    limit: int = 20,
+    query: str | None = None,
+    db_path: str | None = None,
+) -> list[dict[str, Any]]:
     path = Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH
     connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
     try:
-        rows = connection.execute("""
-            SELECT conversation_id, title, remote_update_time, last_seen_at, cached_message_count
-            FROM conversations ORDER BY COALESCE(remote_update_time, last_seen_at, 0) DESC LIMIT ?
-        """, (max(1, min(int(limit), 500)),)).fetchall()
+        cap = max(1, min(int(limit), 500))
+        if query and query.strip():
+            rows = connection.execute("""
+                SELECT conversation_id, title, remote_update_time, last_seen_at, cached_message_count
+                FROM conversations
+                WHERE LOWER(COALESCE(title, '')) LIKE ?
+                ORDER BY COALESCE(remote_update_time, last_seen_at, 0) DESC LIMIT ?
+            """, (f"%{query.strip().lower()}%", cap)).fetchall()
+        else:
+            rows = connection.execute("""
+                SELECT conversation_id, title, remote_update_time, last_seen_at, cached_message_count
+                FROM conversations ORDER BY COALESCE(remote_update_time, last_seen_at, 0) DESC LIMIT ?
+            """, (cap,)).fetchall()
         return [dict(row) for row in rows]
     finally:
         connection.close()

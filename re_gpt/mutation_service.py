@@ -439,6 +439,13 @@ class MutationService:
             if assistant_node_id is None and assistants:
                 assistant_node_id = assistants[-1][2]
                 assistant_text = assistants[-1][3] or None
+            visible_texts = [
+                item[3].strip()
+                for item in sorted(assistants, key=lambda x: x[1])
+                if item[0] and item[3] and item[3].strip()
+            ]
+            if len(visible_texts) > 1:
+                assistant_text = "\n\n".join(visible_texts)
             state = "complete" if assistant_node_id and assistant_text else "committed_pending"
             stored = operations.update(
                 operation_id,

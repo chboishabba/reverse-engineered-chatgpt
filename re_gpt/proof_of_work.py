@@ -248,63 +248,71 @@ async def mint_sentinel_tokens_cffi(
     user_agent: str | None = None,
 ) -> dict[str, Any]:
     """Mint Sentinel tokens directly on the active curl_cffi session (same TLS socket)."""
-    req_key = build_requirements_token(user_agent=user_agent)
     prep_headers = dict(headers)
     prep_headers["Content-Type"] = "application/json"
+    prep_headers["Accept"] = "application/json"
 
-    prep_resp = await session.post(
-        url="https://chatgpt.com/backend-api/sentinel/chat-requirements/prepare",
-        headers=prep_headers,
-        json={"p": req_key},
-    )
-    prep_data = prep_resp.json()
-    if not isinstance(prep_data, dict) or not prep_data.get("prepare_token"):
-        raise RuntimeError(f"Sentinel prepare failed: status={getattr(prep_resp, 'status_code', None)}")
+    last_exc: Exception | None = None
+    for _attempt in range(2):
+        try:
+            req_key = build_requirements_token(user_agent=user_agent)
+            prep_resp = await session.post(
+                url="https://chatgpt.com/backend-api/sentinel/chat-requirements/prepare",
+                headers=prep_headers,
+                json={"p": req_key},
+            )
+            prep_data = prep_resp.json()
+            if not isinstance(prep_data, dict) or not prep_data.get("prepare_token"):
+                raise RuntimeError(f"Sentinel prepare failed: status={getattr(prep_resp, 'status_code', None)}")
 
-    proof_token: str | None = None
-    pow_spec = prep_data.get("proofofwork")
-    if isinstance(pow_spec, dict) and pow_spec.get("required"):
-        proof_token = solve_proof_of_work(
-            str(pow_spec.get("seed") or ""),
-            str(pow_spec.get("difficulty") or ""),
-            user_agent=user_agent,
-        )
+            proof_token: str | None = None
+            pow_spec = prep_data.get("proofofwork")
+            if isinstance(pow_spec, dict) and pow_spec.get("required"):
+                proof_token = solve_proof_of_work(
+                    str(pow_spec.get("seed") or ""),
+                    str(pow_spec.get("difficulty") or ""),
+                    user_agent=user_agent,
+                )
 
-    turnstile_token: str | None = None
-    ts_spec = prep_data.get("turnstile")
-    if isinstance(ts_spec, dict) and ts_spec.get("required") and ts_spec.get("dx"):
-        turnstile_token = solve_turnstile_dx(
-            str(ts_spec["dx"]),
-            req_key,
-            user_agent=user_agent,
-        )
+            turnstile_token: str | None = None
+            ts_spec = prep_data.get("turnstile")
+            if isinstance(ts_spec, dict) and ts_spec.get("required") and ts_spec.get("dx"):
+                turnstile_token = solve_turnstile_dx(
+                    str(ts_spec["dx"]),
+                    req_key,
+                    user_agent=user_agent,
+                )
 
-    fin_body: dict[str, Any] = {"prepare_token": prep_data["prepare_token"]}
-    if proof_token:
-        fin_body["proofofwork"] = proof_token
-    if turnstile_token:
-        fin_body["turnstile"] = turnstile_token
+            fin_body: dict[str, Any] = {"prepare_token": prep_data["prepare_token"]}
+            if proof_token:
+                fin_body["proofofwork"] = proof_token
+            if turnstile_token:
+                fin_body["turnstile"] = turnstile_token
 
-    fin_resp = await session.post(
-        url="https://chatgpt.com/backend-api/sentinel/chat-requirements/finalize",
-        headers=prep_headers,
-        json=fin_body,
-    )
-    fin_data = fin_resp.json()
-    if not isinstance(fin_data, dict) or not fin_data.get("token"):
-        raise RuntimeError(f"Sentinel finalize failed: status={getattr(fin_resp, 'status_code', None)}")
+            fin_resp = await session.post(
+                url="https://chatgpt.com/backend-api/sentinel/chat-requirements/finalize",
+                headers=prep_headers,
+                json=fin_body,
+            )
+            fin_data = fin_resp.json()
+            if not isinstance(fin_data, dict) or not fin_data.get("token"):
+                raise RuntimeError(f"Sentinel finalize failed: status={getattr(fin_resp, 'status_code', None)}")
 
-    return {
-        "chat_requirements_token": str(fin_data["token"]),
-        "proof_token": proof_token,
-        "turnstile_token": turnstile_token,
-        "prepare_token": str(prep_data["prepare_token"]),
-        "expire_after": fin_data.get("expire_after"),
-        "expire_at": fin_data.get("expire_at"),
-        "persona": fin_data.get("persona") or prep_data.get("persona"),
-        "captured_at": time.time(),
-        "consumed": False,
-    }
+            return {
+                "chat_requirements_token": str(fin_data["token"]),
+                "proof_token": proof_token,
+                "turnstile_token": turnstile_token,
+                "prepare_token": str(prep_data["prepare_token"]),
+                "expire_after": fin_data.get("expire_after"),
+                "expire_at": fin_data.get("expire_at"),
+                "persona": fin_data.get("persona") or prep_data.get("persona"),
+                "captured_at": time.time(),
+                "consumed": False,
+            }
+        except Exception as exc:
+            last_exc = exc
+    assert last_exc is not None
+    raise last_exc
 
 
 async def prepare_conduit_cffi(
