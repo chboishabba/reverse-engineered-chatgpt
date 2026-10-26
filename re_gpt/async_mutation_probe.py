@@ -623,49 +623,77 @@ async def probe_async_continue_once(
                     bootstrap_stage="conversation_get",
                 )
                 observations.append(obs)
-                # A direct request-context rejection is still pre-commit.  An
-                # explicitly attached browser may supply one exact graph read;
-                # it never submits the prompt or authorizes a DOM fallback.
-                if snapshot is None or not cdp_endpoint or obs.status != 429:
-                    raise ExplicitAsyncWriteRejection(
-                        f"async precommit conversation build failed: {exc.__class__.__name__}",
-                        stage="conversation_get",
-                        status=obs.status,
-                        observations=tuple(observations),
-                    ) from exc
-                try:
-                    browser_read = fetch_conversation_same_origin(
-                        conversation_id,
-                        profile_dir=profile_dir,
-                        browser_mode=browser_mode,
-                        cdp_endpoint=cdp_endpoint,
-                        timeout=browser_timeout,
-                    )
-                    payload = _build_payload_from_canonical_graph(
-                        browser_read.chat,
-                        conversation_id=conversation_id,
-                        prompt=prompt,
-                        fallback_model=default_model,
-                    )
-                    read_transport = "browser"
-                    diagnostic = dict(browser_read.diagnostic or {})
-                    seq += 1
-                    observations.append(build_protocol_observation(
-                        transport="browser", operation="continue", method="GET",
-                        path="/backend-api/conversation/<id>",
-                        status=int(diagnostic.get("status") or 200),
-                        response_class=str(diagnostic.get("response_class") or "json_ok"),
-                        headers={}, sequence_index=seq,
-                        elapsed_ms=(time.perf_counter() - build_started) * 1000.0,
-                        bootstrap_stage="conversation_get",
-                    ))
-                except Exception:
-                    raise ExplicitAsyncWriteRejection(
-                        f"async precommit conversation build failed: {exc.__class__.__name__}",
-                        stage="conversation_get",
-                        status=obs.status,
-                        observations=tuple(observations),
-                    ) from exc
+                payload = None
+                if client_factory is AsyncChatGPT and obs.status == 429:
+                    try:
+                        from .graph_broker import fetch_exact_graph
+                        from .read_plane import install_validated_sync_read_plane
+
+                        install_validated_sync_read_plane()
+                        sync_read = fetch_exact_graph(
+                            conversation_id,
+                            session_token=token,
+                            model=default_model,
+                            profile_dir=profile_dir,
+                            browser_mode=browser_mode,
+                            cdp_endpoint=cdp_endpoint,
+                            browser_timeout=browser_timeout,
+                            adapter_order=("sync",),
+                        )
+                        payload = _build_payload_from_canonical_graph(
+                            sync_read.graph,
+                            conversation_id=conversation_id,
+                            prompt=prompt,
+                            fallback_model=default_model,
+                        )
+                        read_transport = "sync"
+                    except Exception:
+                        payload = None
+
+                if payload is None:
+                    # A direct request-context rejection is still pre-commit.  An
+                    # explicitly attached browser may supply one exact graph read;
+                    # it never submits the prompt or authorizes a DOM fallback.
+                    if snapshot is None or not cdp_endpoint or obs.status != 429:
+                        raise ExplicitAsyncWriteRejection(
+                            f"async precommit conversation build failed: {exc.__class__.__name__}",
+                            stage="conversation_get",
+                            status=obs.status,
+                            observations=tuple(observations),
+                        ) from exc
+                    try:
+                        browser_read = fetch_conversation_same_origin(
+                            conversation_id,
+                            profile_dir=profile_dir,
+                            browser_mode=browser_mode,
+                            cdp_endpoint=cdp_endpoint,
+                            timeout=browser_timeout,
+                        )
+                        payload = _build_payload_from_canonical_graph(
+                            browser_read.chat,
+                            conversation_id=conversation_id,
+                            prompt=prompt,
+                            fallback_model=default_model,
+                        )
+                        read_transport = "browser"
+                        diagnostic = dict(browser_read.diagnostic or {})
+                        seq += 1
+                        observations.append(build_protocol_observation(
+                            transport="browser", operation="continue", method="GET",
+                            path="/backend-api/conversation/<id>",
+                            status=int(diagnostic.get("status") or 200),
+                            response_class=str(diagnostic.get("response_class") or "json_ok"),
+                            headers={}, sequence_index=seq,
+                            elapsed_ms=(time.perf_counter() - build_started) * 1000.0,
+                            bootstrap_stage="conversation_get",
+                        ))
+                    except Exception:
+                        raise ExplicitAsyncWriteRejection(
+                            f"async precommit conversation build failed: {exc.__class__.__name__}",
+                            stage="conversation_get",
+                            status=obs.status,
+                            observations=tuple(observations),
+                        ) from exc
 
             stage_times["hydrated"] = time.time()
             if read_transport == "async":
