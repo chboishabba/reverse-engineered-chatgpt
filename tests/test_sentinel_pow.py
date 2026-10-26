@@ -1,13 +1,32 @@
 import base64
 import json
 
-from re_gpt.proof_of_work import fnv_murmur3, solve_proof_of_work
+from re_gpt.proof_of_work import (
+    build_requirements_token,
+    fnv_murmur3,
+    solve_proof_of_work,
+    solve_turnstile_dx,
+    xor_strings,
+)
 from re_gpt.cdp_sentinel import find_chatgpt_tab_ws_url
 
 
 def test_fnv_murmur3_known_vector():
     # Known hash for "abc" verified against browser JavaScript engine
     assert fnv_murmur3("abc") == "1cc93dbc"
+
+
+def test_build_requirements_token_and_headless_dx_vm():
+    req_key = build_requirements_token()
+    assert req_key.startswith("gAAAAAC")
+    # Build a synthetic 2-instruction dx program:
+    # [2, 50, "ok-vm"], [7, 3, 50] -> sets register 50 to "ok-vm" and calls opcode 3 with r.get(50)
+    prog_json = json.dumps([[2, 50, "ok-vm"], [7, 3, 50]])
+    xored = xor_strings(prog_json, req_key)
+    dx = base64.b64encode(xored.encode("latin1")).decode("ascii")
+    tok = solve_turnstile_dx(dx, req_key)
+    assert base64.b64decode(tok).decode("ascii") == "ok-vm"
+
 
 
 def test_solve_proof_of_work():

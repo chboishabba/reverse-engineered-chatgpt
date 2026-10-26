@@ -351,17 +351,37 @@ async def probe_direct_graph_mutation_once(
                 )
                 stage_times["attachment_ready"] = time.time()
 
-            if snapshot is not None and not snapshot.has_fresh_sentinel():
+            headers = dict(client.build_request_headers())
+            if client_factory is AsyncChatGPT:
                 try:
-                    refreshed = await refresh_browser_session_sentinel_async(
-                        snapshot,
-                        profile_dir=profile_dir,
-                        cdp_endpoint=cdp_endpoint,
+                    from .proof_of_work import mint_sentinel_tokens_cffi
+
+                    cffi_sentinel = await mint_sentinel_tokens_cffi(
+                        client.session,
+                        headers,
+                        user_agent=agent,
                     )
-                    if refreshed is not None and refreshed.has_fresh_sentinel():
-                        snapshot = refreshed
+                    if cffi_sentinel.get("chat_requirements_token"):
+                        if snapshot is None:
+                            snapshot = BrowserSessionSnapshot(
+                                captured_at=time.time(),
+                                user_agent=agent,
+                                sentinel=cffi_sentinel,
+                            )
+                        else:
+                            snapshot.sentinel = cffi_sentinel
                 except Exception:
-                    pass
+                    if snapshot is not None and not snapshot.has_fresh_sentinel():
+                        try:
+                            refreshed = await refresh_browser_session_sentinel_async(
+                                snapshot,
+                                profile_dir=profile_dir,
+                                cdp_endpoint=cdp_endpoint,
+                            )
+                            if refreshed is not None and refreshed.has_fresh_sentinel():
+                                snapshot = refreshed
+                        except Exception:
+                            pass
 
             payload = build_graph_mutation_payload(
                 base_payload,
@@ -373,15 +393,15 @@ async def probe_direct_graph_mutation_once(
                 snapshot=snapshot if snapshot is not None and snapshot.has_fresh_sentinel() else None,
             )
 
-            headers = dict(client.build_request_headers())
             use_replayed_sentinel = snapshot is not None and snapshot.has_fresh_sentinel()
             seq += 1
             sentinel_started = time.perf_counter()
             if use_replayed_sentinel:
                 assert snapshot is not None
+                trace_id = str(uuid.uuid4())
                 headers["Referer"] = f"https://chatgpt.com/c/{conversation_id}" if conversation_id else "https://chatgpt.com/"
                 headers["x-oai-mcp-form-version"] = "2"
-                headers["x-oai-turn-trace-id"] = str(uuid.uuid4())
+                headers["x-oai-turn-trace-id"] = trace_id
                 headers.update(snapshot.sentinel_headers())
                 observations.append(build_protocol_observation(
                     transport="async", operation=operation, method="POST",
@@ -391,7 +411,23 @@ async def probe_direct_graph_mutation_once(
                     bootstrap_stage="sentinel_finalize",
                 ))
                 mark_sentinel_consumed(snapshot, profile_dir=profile_dir)
-                url = CHATGPT_API.format("conversation")
+                if client_factory is AsyncChatGPT:
+                    from .proof_of_work import prepare_conduit_cffi
+
+                    conduit_token = await prepare_conduit_cffi(
+                        client.session,
+                        headers,
+                        conversation_id=conversation_id,
+                        parent_message_id=str(payload.get("parent_message_id") or "") if isinstance(payload, Mapping) else None,
+                        model=str((payload.get("model") if isinstance(payload, Mapping) else None) or default_model),
+                        action=str((payload.get("action") if isinstance(payload, Mapping) else None) or "next"),
+                        trace_id=trace_id,
+                    )
+                    if conduit_token:
+                        headers["x-conduit-token"] = conduit_token
+                    url = CHATGPT_API.format("f/conversation")
+                else:
+                    url = CHATGPT_API.format("conversation")
             else:
                 try:
                     sentinel_token = await client.create_chat_requirements_token()

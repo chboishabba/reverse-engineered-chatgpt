@@ -799,3 +799,37 @@ async def send_inpage_api_prompt(
     raise RuntimeError("In-page API mutation timed out waiting for result")
 
 
+async def strip_tab_dom_via_cdp(
+    cdp_url: str = DEFAULT_CDP_URL,
+    timeout: float = 5.0,
+) -> bool:
+    """Convert an open ChatGPT tab into a ~35MB shell tab by blocking UI assets and wiping DOM."""
+    ws_url = find_chatgpt_tab_ws_url(cdp_url=cdp_url, timeout=min(2.0, timeout))
+    if not ws_url:
+        return False
+    try:
+        import websockets
+
+        async with websockets.connect(ws_url, max_size=None, close_timeout=2.0) as ws:
+            await ws.send(json.dumps({"id": 1, "method": "Network.enable", "params": {}}))
+            await ws.send(json.dumps({
+                "id": 2,
+                "method": "Network.setBlockedURLs",
+                "params": {"urls": ["*.css", "*.woff2", "*.png", "*.svg", "*.jpg", "*.webp"]},
+            }))
+            await ws.send(json.dumps({
+                "id": 3,
+                "method": "Runtime.evaluate",
+                "params": {
+                    "expression": "if (document && document.body) { document.body.innerHTML = ''; } true;",
+                    "returnByValue": True,
+                },
+            }))
+            await asyncio.wait_for(ws.recv(), timeout=timeout)
+            return True
+    except Exception as exc:
+        logger.debug("Failed to strip tab DOM via CDP: %s", exc)
+        return False
+
+
+
