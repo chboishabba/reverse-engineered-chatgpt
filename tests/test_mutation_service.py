@@ -326,7 +326,7 @@ def test_continue_thread_dom_fallback_recovers_from_explicit_precommit_rejection
         transport="async",
         operation="continue",
         method="POST",
-        path="/backend-api/f/conversation",
+        path="/backend-api/conversation",
         status=403,
         response_class="http_403",
         bootstrap_stage="conversation_post",

@@ -215,7 +215,7 @@ def test_async_probe_replays_browser_session_and_sentinel_headers(tmp_path: Path
     )
 
     assert result["state"] == "submission_observed"
-    assert str(captured_post["url"]).endswith("/backend-api/f/conversation")
+    assert str(captured_post["url"]).endswith("/backend-api/conversation")
     sent_headers = captured_post["headers"]
     assert isinstance(sent_headers, dict)
     assert sent_headers["openai-sentinel-chat-requirements-token"] == "SENTINEL_REQ_TOK"

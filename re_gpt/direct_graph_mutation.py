@@ -367,7 +367,7 @@ async def probe_direct_graph_mutation_once(
                     bootstrap_stage="sentinel_finalize",
                 ))
                 mark_sentinel_consumed(snapshot, profile_dir=profile_dir)
-                url = CHATGPT_API.format("f/conversation")
+                url = CHATGPT_API.format("conversation")
             else:
                 try:
                     sentinel_token = await client.create_chat_requirements_token()
