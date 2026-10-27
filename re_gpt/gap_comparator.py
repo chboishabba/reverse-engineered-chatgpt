@@ -8,6 +8,7 @@ Implements the zero-residue provenance comparison doctrine from slr.
 from __future__ import annotations
 
 import collections
+import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 import struct
@@ -95,11 +96,12 @@ class GapReport:
 class ExactGapComparator:
     """Computes exact multiset difference between compiled informal threads and formal files."""
 
-    def __init__(self, slrw_path: Path | str | None = None) -> None:
+    def __init__(self, slrw_path: Path | str | None = None, *, database_url: str | None = None) -> None:
         if slrw_path:
             self.slrw_path = Path(slrw_path).expanduser()
         else:
             self.slrw_path = DEFAULT_WORLD_DIR / "fleet_top200_iter1.slrw"
+        self.database_url = database_url if database_url is not None else os.environ.get("DATABASE_URL")
         self._nlp = None
 
     @property
@@ -107,6 +109,40 @@ class ExactGapComparator:
         if self._nlp is None:
             self._nlp = spacy.load("en_core_web_sm", disable=["ner"])
         return self._nlp
+
+    def load_thread_multiset_pg(self, conversation_id: str) -> collections.Counter:
+        """Read the configured PostgreSQL factor view with bound parameters."""
+        if not self.database_url:
+            raise ConnectionError("DATABASE_URL is not configured")
+        try:
+            import psycopg
+        except ImportError as exc:
+            raise ConnectionError("psycopg is unavailable") from exc
+        with psycopg.connect(self.database_url, connect_timeout=3) as conn:
+            with conn.cursor() as cur:
+                for view in ("pnf_predicate_frame", "slr_world_v2_factor"):
+                    cur.execute(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_schema='public' AND table_name=%s", (view,),
+                    )
+                    columns = {row[0] for row in cur.fetchall()}
+                    if not {"conversation_id", "lemma"} <= columns:
+                        continue
+                    role = next((v for v in ("role", "fragment", "fragment_name") if v in columns), None)
+                    dep = next((v for v in ("dependency", "dependency_shape", "shape") if v in columns), None)
+                    if role is None or dep is None:
+                        continue
+                    # View and column names come from fixed allowlists.
+                    cur.execute(
+                        f'SELECT "{role}", lemma, "{dep}" FROM public."{view}" '
+                        "WHERE conversation_id = %s", (conversation_id,),
+                    )
+                    return collections.Counter(
+                        f"{str(r).lower()}:{str(l).lower()}:{str(d)}"
+                        for r, l, d in cur.fetchall()
+                        if r is not None and l is not None and d is not None
+                    )
+        raise LookupError("no compatible PostgreSQL factor view")
 
     def load_thread_multiset(self, conversation_id: str) -> collections.Counter:
         """Extract the semantic factor multiset for a conversation from the .slrw world store."""
@@ -196,7 +232,18 @@ class ExactGapComparator:
 
     def compare(self, conversation_id: str, formal_path: Path | str) -> GapReport:
         """Execute exact provenance-backed multiset difference."""
-        informal_ms = self.load_thread_multiset(conversation_id)
+        if self.database_url:
+            try:
+                informal_ms = self.load_thread_multiset_pg(conversation_id)
+            except (ConnectionError, OSError, LookupError, TimeoutError):
+                informal_ms = self.load_thread_multiset(conversation_id)
+            except Exception as exc:
+                if exc.__class__.__module__.startswith("psycopg"):
+                    informal_ms = self.load_thread_multiset(conversation_id)
+                else:
+                    raise
+        else:
+            informal_ms = self.load_thread_multiset(conversation_id)
         formal_ms = self.extract_formal_multiset(formal_path)
 
         all_keys = set(informal_ms.keys()) | set(formal_ms.keys())
