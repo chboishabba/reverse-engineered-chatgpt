@@ -152,9 +152,21 @@ class SessionLifecycle:
         *,
         profile_dir: Path | str | None = None,
         snapshot_path: Path | str | None = None,
+        auto_refresh: bool = True,
     ) -> dict[str, Any]:
         status = self.status(profile_dir=profile_dir, snapshot_path=snapshot_path)
         if status["state"] == "stale":
+            if auto_refresh:
+                try:
+                    refreshed = self.refresh(
+                        profile_dir=profile_dir,
+                        snapshot_path=snapshot_path,
+                        browser_mode="displayless",
+                    )
+                    if refreshed.get("state") not in {"stale", "missing"}:
+                        return refreshed
+                except Exception:
+                    pass
             raise StaleSessionError(
                 "saved ChatGPT session is provably stale before mutation dispatch; refresh/bootstrap session state before retrying"
             )
