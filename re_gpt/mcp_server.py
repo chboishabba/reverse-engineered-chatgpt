@@ -159,6 +159,7 @@ def chatgpt_continue(
     preset: str | None = None,
     auto_latex_bridge: bool = False,
     pnf_mode: bool = False,
+    reconcile_attempts: int = 3,
 ) -> dict[str, Any]:
     """Continue via direct async CFFI; DOM fallback is explicit diagnostic opt-in only."""
     resolved_prompt = expand_worker_prompt(prompt, preset=preset)
@@ -181,6 +182,7 @@ def chatgpt_continue(
         follow=follow,
         write_transport=write_transport,
         dom_fallback=dom_fallback,
+        reconcile_attempts=reconcile_attempts,
     )
     compacted = compact_operation_payload(result)
     if bridge_payload is not None:
