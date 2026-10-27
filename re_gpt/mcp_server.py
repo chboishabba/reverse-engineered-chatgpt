@@ -479,29 +479,85 @@ def chatgpt_hydrate(
 
 
 @mcp.tool()
+def chatgpt_revive(
+    conversation_id: str,
+    prompt: str,
+    attachments: list[str] | None = None,
+    follow: bool = False,
+    output: str | None = None,
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    """Revive an existing long-running thread into a fresh thread with clean context and recorded lineage."""
+    from .revive import revive_thread
+
+    resolved_db = Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH
+    res = revive_thread(
+        conversation_id=conversation_id,
+        prompt=prompt,
+        attachments=[Path(p) for p in (attachments or ())],
+        follow=follow,
+        output=Path(output) if output else None,
+        db_path=resolved_db,
+    )
+    return compact_operation_payload(res)
+
+
+@mcp.tool()
 def chatgpt_list(
     limit: int = 20,
     query: str | None = None,
+    keywords: list[str] | None = None,
+    order_by: str = "recent",
+    min_turns: int = 0,
     db_path: str | None = None,
 ) -> list[dict[str, Any]]:
+    """List or search archived conversations by query or multi-keywords, ordered by recency or turns."""
+    from .fleet import classify_text
+
     path = Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH
     connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
     try:
         cap = max(1, min(int(limit), 500))
+        clauses: list[str] = []
+        params: list[Any] = []
+
         if query and query.strip():
-            rows = connection.execute("""
-                SELECT conversation_id, title, remote_update_time, last_seen_at, cached_message_count
-                FROM conversations
-                WHERE LOWER(COALESCE(title, '')) LIKE ?
-                ORDER BY COALESCE(remote_update_time, last_seen_at, 0) DESC LIMIT ?
-            """, (f"%{query.strip().lower()}%", cap)).fetchall()
-        else:
-            rows = connection.execute("""
-                SELECT conversation_id, title, remote_update_time, last_seen_at, cached_message_count
-                FROM conversations ORDER BY COALESCE(remote_update_time, last_seen_at, 0) DESC LIMIT ?
-            """, (cap,)).fetchall()
-        return [dict(row) for row in rows]
+            clauses.append("LOWER(COALESCE(title, '')) LIKE ?")
+            params.append(f"%{query.strip().lower()}%")
+
+        if keywords:
+            clean_kws = [k.strip().lower() for k in keywords if k.strip()]
+            if clean_kws:
+                kw_clauses = ["LOWER(COALESCE(title, '')) LIKE ?" for _ in clean_kws]
+                clauses.append(f"({' OR '.join(kw_clauses)})")
+                params.extend(f"%{kw}%" for kw in clean_kws)
+
+        if min_turns > 0:
+            clauses.append("COALESCE(cached_message_count, 0) >= ?")
+            params.append(min_turns)
+
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        order_col = (
+            "COALESCE(cached_message_count, 0) DESC"
+            if order_by == "turns"
+            else "COALESCE(remote_update_time, last_seen_at, 0) DESC"
+        )
+        sql = f"""
+            SELECT conversation_id, title, remote_update_time, last_seen_at, cached_message_count
+            FROM conversations
+            {where_sql}
+            ORDER BY {order_col} LIMIT ?
+        """
+        params.append(cap)
+        rows = connection.execute(sql, params).fetchall()
+        results = []
+        for row in rows:
+            d = dict(row)
+            d["cluster"] = classify_text(d.get("title") or "")
+            d["turns"] = d.get("cached_message_count") or 0
+            results.append(d)
+        return results
     finally:
         connection.close()
 
