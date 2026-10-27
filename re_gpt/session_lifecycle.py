@@ -152,11 +152,11 @@ class SessionLifecycle:
         *,
         profile_dir: Path | str | None = None,
         snapshot_path: Path | str | None = None,
-        auto_refresh: bool = True,
+        auto_refresh: bool = False,
     ) -> dict[str, Any]:
         status = self.status(profile_dir=profile_dir, snapshot_path=snapshot_path)
         if status["state"] == "stale":
-            if auto_refresh:
+            if auto_refresh and profile_dir is None:
                 try:
                     refreshed = self.refresh(
                         profile_dir=profile_dir,

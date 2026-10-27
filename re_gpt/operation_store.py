@@ -67,7 +67,8 @@ class MutationOperationStore:
                 )
             """)
             self.connection.execute("CREATE INDEX IF NOT EXISTS idx_mutation_activities_operation ON mutation_activities(operation_id, observed_at)")
-            self.connection.execute("CREATE INDEX IF NOT EXISTS idx_mutation_attempts_conversation ON mutation_attempts(conversation_id, started_at)")
+            if "conversation_id" in columns and "started_at" in columns:
+                self.connection.execute("CREATE INDEX IF NOT EXISTS idx_mutation_attempts_conversation ON mutation_attempts(conversation_id, started_at)")
             self.connection.execute("""
                 CREATE TABLE IF NOT EXISTS mutation_attachments (
                     operation_id TEXT NOT NULL,
