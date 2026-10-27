@@ -167,8 +167,9 @@ class ConversationStorage:
         self.export_dir = Path(export_dir)
         self.write_json = bool(write_json)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._connection = sqlite3.connect(self.db_path)
+        self._connection = sqlite3.connect(self.db_path, timeout=30.0)
         self._connection.execute("PRAGMA journal_mode=WAL;")
+        self._connection.execute("PRAGMA busy_timeout=30000;")
         self._connection.execute("PRAGMA foreign_keys=ON;")
         self._initialise_schema()
         self._conversation_key_cache: dict[str, str] = {}

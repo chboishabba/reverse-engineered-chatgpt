@@ -20,9 +20,10 @@ class MutationOperationStore:
     def __init__(self, db_path: Path | str = DEFAULT_DB_PATH) -> None:
         self.db_path = Path(db_path).expanduser()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(self.db_path)
+        self.connection = sqlite3.connect(self.db_path, timeout=30.0)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA journal_mode=WAL;")
+        self.connection.execute("PRAGMA busy_timeout=30000;")
         self._init_schema()
 
     def __enter__(self): return self
