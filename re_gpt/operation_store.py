@@ -125,7 +125,8 @@ class MutationOperationStore:
                  "token_delta": "streaming", "terminal": "terminal"}[kind]
         if kind == "tool_invocation":
             recipient = str(event.get("recipient") or "tool")
-            summary = recipient[:160]
+            target = str(event.get("target") or "").strip()
+            summary = f"{recipient}: {target}"[:160] if target else recipient[:160]
         elif kind == "thinking":
             summary = str(event.get("content_type") or "thinking")[:160]
         elif kind == "token_delta":

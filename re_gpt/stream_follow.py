@@ -142,16 +142,29 @@ class SSEProgressDecoder:
                 "thought_snippet": text[-160:] if text else None,
             }, output)
 
+        metadata = message.get("metadata") if isinstance(message.get("metadata"), Mapping) else {}
+
         if (
             "tool" in content_type
             or (recipient and recipient not in {"all", "assistant", "user"})
             or content_type in {"computer_initialize_state", "computer_output"}
         ):
+            target = ""
+            if "url" in metadata:
+                target = str(metadata["url"])
+            elif "search_query" in metadata:
+                target = f"query: {metadata['search_query']}"
+            elif "command" in metadata:
+                target = str(metadata["command"])
+            elif text:
+                target = text.strip()[:140].replace("\n", " ")
+
             self._emit({
                 "kind": "tool_invocation",
                 "message_id": message_id,
                 "recipient": recipient or None,
                 "content_type": content_type or None,
+                "target": target or None,
             }, output)
 
         if role == "assistant" and message_id and text:
