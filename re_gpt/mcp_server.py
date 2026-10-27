@@ -16,6 +16,7 @@ from mcp.server.fastmcp import FastMCP
 from .adapter_health import AdapterHealthStore
 from .browser_observer import observe_live_status
 from .mutation_service import MutationService
+from .operation_store import MutationOperationStore
 from .protocol_drift import build_protocol_fingerprint, compare_protocol_fingerprints
 from .session_lifecycle import SessionLifecycle
 from .storage import DEFAULT_DB_PATH
@@ -309,6 +310,17 @@ def chatgpt_adapter_health(db_path: str | None = None, sample_limit: int = 200) 
 def chatgpt_operation_status(operation_id: str, db_path: str | None = None) -> dict[str, Any]:
     """Read durable mutation and attachment status without launching a browser."""
     result = _service(db_path).operation_status(operation_id)
+    if result is None:
+        raise ValueError(f"unknown mutation operation {operation_id}")
+    return result
+
+
+@mcp.tool()
+def chatgpt_live_activity(operation_id: str, db_path: str | None = None) -> dict[str, Any]:
+    """Read recent SSE activity without exposing reasoning text or tool arguments."""
+    path = Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH
+    with MutationOperationStore(path) as store:
+        result = store.live_activity(operation_id)
     if result is None:
         raise ValueError(f"unknown mutation operation {operation_id}")
     return result
