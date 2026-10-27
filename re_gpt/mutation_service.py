@@ -851,7 +851,10 @@ class MutationService:
                         browser_mode=browser_mode,
                         cdp_endpoint=cdp_endpoint,
                         browser_timeout=browser_timeout,
-                        progress_callback=progress_callback,
+                        progress_callback=lambda event: (
+                            operations.record_activity(operation_id, event),
+                            progress_callback(event) if progress_callback is not None else None,
+                        ),
                         allow_browser_bootstrap=False,
                     )
                 except ExplicitAsyncWriteRejection as exc:
