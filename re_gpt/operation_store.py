@@ -124,9 +124,13 @@ class MutationOperationStore:
         stage = {"thinking": "reasoning", "tool_invocation": "tool_use",
                  "token_delta": "streaming", "terminal": "terminal"}[kind]
         if kind == "tool_invocation":
-            summary = str(event.get("recipient") or "tool")[:160]
+            recipient = str(event.get("recipient") or "tool")
+            summary = recipient[:160]
+        elif kind == "thinking":
+            summary = str(event.get("content_type") or "thinking")[:160]
         elif kind == "token_delta":
-            summary = "token delta received"
+            channel = str(event.get("channel") or "")
+            summary = "thinking delta" if channel == "analysis" else "token delta received"
         else:
             summary = kind
         now = time.time()
@@ -147,7 +151,7 @@ class MutationOperationStore:
             return None
         recent = self.connection.execute(
             "SELECT observed_at,stage,summary FROM mutation_activities "
-            "WHERE operation_id=? ORDER BY observed_at DESC LIMIT 20",
+            "WHERE operation_id=? ORDER BY observed_at DESC LIMIT 50",
             (operation_id,),
         ).fetchall()
         last = row.get("last_activity_at")
@@ -158,6 +162,39 @@ class MutationOperationStore:
             "current_stage": row.get("current_stage"),
             "activity_summary": row.get("activity_summary"),
             "recent_activities": [dict(item) for item in recent],
+        }
+
+    def fleet_telemetry(self, window_seconds: float = 120.0, limit: int = 50) -> dict[str, Any]:
+        since = time.time() - window_seconds
+        with self.connection:
+            cur = self.connection.cursor()
+            cur.execute(
+                "SELECT count(DISTINCT operation_id) FROM mutation_activities WHERE observed_at > ?",
+                (since,),
+            )
+            count = cur.fetchone()[0]
+            cur.execute(
+                "SELECT m.operation_id, m.observed_at, m.stage, m.summary "
+                "FROM mutation_activities m JOIN ("
+                "  SELECT operation_id, max(rowid) as max_r FROM mutation_activities WHERE observed_at > ? GROUP BY operation_id"
+                ") sub ON m.operation_id = sub.operation_id AND m.rowid = sub.max_r "
+                "ORDER BY m.rowid DESC LIMIT ?",
+                (since, limit),
+            )
+            rows = [
+                {
+                    "operation_id": r[0],
+                    "observed_at": r[1],
+                    "stage": r[2],
+                    "summary": r[3],
+                    "seconds_ago": round(max(0.0, time.time() - r[1]), 1),
+                }
+                for r in cur.fetchall()
+            ]
+        return {
+            "window_seconds": window_seconds,
+            "active_operations_count": count,
+            "recent_operations": rows,
         }
 
     def record_local_attachments(self, operation_id: str, attachments: Sequence[LocalAttachment]) -> None:

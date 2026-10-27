@@ -327,6 +327,53 @@ def chatgpt_live_activity(operation_id: str, db_path: str | None = None) -> dict
 
 
 @mcp.tool()
+def chatgpt_tranche_status(
+    prefix: str = "6a",
+    min_turns: int = 50,
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    """Query tranche candidates and completed attempt counts across the fleet archive."""
+    path = Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH
+    from .fleet import FleetOrchestrator
+    fo = FleetOrchestrator(db_path=path)
+    members = fo.iterate_tranche(prefix=prefix, min_turns=min_turns, sort_by="turns")
+    with sqlite3.connect(path, timeout=30.0) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT conversation_id FROM mutation_attempts WHERE conversation_id IS NOT NULL")
+        mutated = set(r[0] for r in cur.fetchall())
+
+    candidates = [m for m in members if m.conversation_id not in mutated]
+    return {
+        "prefix": prefix,
+        "min_turns": min_turns,
+        "total_members": len(members),
+        "attempted_count": len(members) - len(candidates),
+        "remaining_count": len(candidates),
+        "candidates": [
+            {
+                "conversation_id": m.conversation_id,
+                "title": m.title,
+                "turns": m.message_count,
+                "cluster": m.cluster,
+            }
+            for m in candidates
+        ],
+    }
+
+
+@mcp.tool()
+def chatgpt_fleet_telemetry(
+    window_seconds: int = 120,
+    limit: int = 20,
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    """Query live multi-thread fleet activity across the active operations window."""
+    path = Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH
+    with MutationOperationStore(path) as store:
+        return store.fleet_telemetry(window_seconds=float(window_seconds), limit=limit)
+
+
+@mcp.tool()
 def chatgpt_reconcile(
     operation_id: str,
     prompt: str,

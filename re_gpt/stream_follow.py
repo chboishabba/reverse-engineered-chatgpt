@@ -129,11 +129,17 @@ class SSEProgressDecoder:
         if role == "assistant" and channel:
             self.assistant_channel = channel
 
+        parts = content.get("parts")
+        text = ""
+        if isinstance(parts, list):
+            text = "".join(part for part in parts if isinstance(part, str))
+
         if channel == "analysis" or content_type in {"thoughts", "reasoning", "reasoning_recap"}:
             self._emit({
                 "kind": "thinking",
                 "message_id": message_id,
                 "content_type": content_type or None,
+                "thought_snippet": text[-160:] if text else None,
             }, output)
 
         if (
@@ -148,10 +154,6 @@ class SSEProgressDecoder:
                 "content_type": content_type or None,
             }, output)
 
-        parts = content.get("parts")
-        text = ""
-        if isinstance(parts, list):
-            text = "".join(part for part in parts if isinstance(part, str))
         if role == "assistant" and message_id and text:
             prior = self._last_text.get(message_id, "")
             if text.startswith(prior):
