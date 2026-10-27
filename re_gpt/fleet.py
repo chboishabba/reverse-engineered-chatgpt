@@ -239,15 +239,17 @@ class FleetOrchestrator:
 
     def iterate_tranche(
         self,
-        prefix: str = "6a",
+        prefix: str | None = "6a",
         min_turns: int = 50,
         sort_by: str = "turns",
+        limit: int | None = None,
     ) -> list[FleetMember]:
         """Return all members in the target tranche ordered for systematic convergence."""
         clusters = self.registry.discover_fleet(
             min_timestamp=0.0,
             prefix=prefix,
             min_turns=min_turns,
+            limit=limit,
         )
         members: list[FleetMember] = []
         for mems in clusters.values():
@@ -256,6 +258,8 @@ class FleetOrchestrator:
             members.sort(key=lambda m: m.message_count, reverse=True)
         elif sort_by == "time":
             members.sort(key=lambda m: m.remote_update_time, reverse=True)
+        if limit and len(members) > limit:
+            members = members[:limit]
         return members
 
     def status_summary(self) -> dict[str, Any]:
