@@ -57,6 +57,16 @@ class MutationOperationStore:
             columns = {row[1] for row in self.connection.execute("PRAGMA table_info(mutation_attempts)")}
             if "attachment_ready_at" not in columns:
                 self.connection.execute("ALTER TABLE mutation_attempts ADD COLUMN attachment_ready_at REAL")
+            for name, kind in (("last_activity_at", "REAL"), ("current_stage", "TEXT"), ("activity_summary", "TEXT")):
+                if name not in columns:
+                    self.connection.execute(f"ALTER TABLE mutation_attempts ADD COLUMN {name} {kind}")
+            self.connection.execute("""
+                CREATE TABLE IF NOT EXISTS mutation_activities (
+                    operation_id TEXT NOT NULL, observed_at REAL NOT NULL,
+                    stage TEXT NOT NULL, summary TEXT NOT NULL
+                )
+            """)
+            self.connection.execute("CREATE INDEX IF NOT EXISTS idx_mutation_activities_operation ON mutation_activities(operation_id, observed_at)")
             self.connection.execute("CREATE INDEX IF NOT EXISTS idx_mutation_attempts_conversation ON mutation_attempts(conversation_id, started_at)")
             self.connection.execute("""
                 CREATE TABLE IF NOT EXISTS mutation_attachments (
@@ -104,6 +114,49 @@ class MutationOperationStore:
         with self.connection:
             self.connection.execute(f"UPDATE mutation_attempts SET {assignments} WHERE operation_id = ?", [*values.values(), operation_id])
         return self.get(operation_id) or {}
+
+    def record_activity(self, operation_id: str, event: dict[str, Any]) -> None:
+        kind = str(event.get("kind") or "stream")[:64]
+        if kind not in {"thinking", "tool_invocation", "token_delta", "terminal"}:
+            return
+        stage = {"thinking": "reasoning", "tool_invocation": "tool_use",
+                 "token_delta": "streaming", "terminal": "terminal"}[kind]
+        if kind == "tool_invocation":
+            summary = str(event.get("recipient") or "tool")[:160]
+        elif kind == "token_delta":
+            summary = "token delta received"
+        else:
+            summary = kind
+        now = time.time()
+        with self.connection:
+            cursor = self.connection.execute(
+                "UPDATE mutation_attempts SET last_activity_at=?, current_stage=?, activity_summary=? "
+                "WHERE operation_id=?", (now, stage, summary, operation_id),
+            )
+            if cursor.rowcount:
+                self.connection.execute(
+                    "INSERT INTO mutation_activities VALUES (?,?,?,?)",
+                    (operation_id, now, stage, summary),
+                )
+
+    def live_activity(self, operation_id: str) -> dict[str, Any] | None:
+        row = self.get(operation_id)
+        if row is None:
+            return None
+        recent = self.connection.execute(
+            "SELECT observed_at,stage,summary FROM mutation_activities "
+            "WHERE operation_id=? ORDER BY observed_at DESC LIMIT 20",
+            (operation_id,),
+        ).fetchall()
+        last = row.get("last_activity_at")
+        return {
+            "operation_id": operation_id,
+            "last_activity_at": last,
+            "seconds_since_last_activity": max(0.0, time.time() - last) if last is not None else None,
+            "current_stage": row.get("current_stage"),
+            "activity_summary": row.get("activity_summary"),
+            "recent_activities": [dict(item) for item in recent],
+        }
 
     def record_local_attachments(self, operation_id: str, attachments: Sequence[LocalAttachment]) -> None:
         with self.connection:
