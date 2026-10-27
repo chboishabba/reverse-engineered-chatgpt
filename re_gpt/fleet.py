@@ -92,7 +92,13 @@ class FleetRegistry:
     def __init__(self, db_path: Path | str = DEFAULT_DB_PATH) -> None:
         self.db_path = Path(db_path).expanduser()
 
-    def discover_fleet(self, min_timestamp: float = 1791000000.0) -> dict[str, list[FleetMember]]:
+    def discover_fleet(
+        self,
+        min_timestamp: float = 0.0,
+        prefix: str | None = None,
+        min_turns: int = 0,
+        limit: int | None = None,
+    ) -> dict[str, list[FleetMember]]:
         """Scan conversations, lineages, and messages into clustered FleetMembers."""
         with sqlite3.connect(self.db_path) as conn:
             cur = conn.cursor()
@@ -115,27 +121,37 @@ class FleetRegistry:
                 child_to_parent[child] = parent
                 parent_to_child[parent] = child
 
-            # Fetch active conversations
-            cur.execute("""
+            # Build query with optional prefix and timestamp filters
+            query = """
                 SELECT 
                     conversation_id, 
                     title, 
                     CAST(remote_update_time AS REAL) as ts
                 FROM conversations 
                 WHERE CAST(remote_update_time AS REAL) >= ?
-                ORDER BY ts DESC
-            """, (min_timestamp,))
+            """
+            params: list[Any] = [min_timestamp]
+            if prefix:
+                query += " AND conversation_id LIKE ?"
+                params.append(f"{prefix}%")
+            query += " ORDER BY ts DESC"
+            if limit:
+                query += f" LIMIT {int(limit)}"
+
+            cur.execute(query, params)
             rows = cur.fetchall()
 
             # For each conversation, query count & last snippets
             clusters: dict[str, list[FleetMember]] = {k: [] for k in CLUSTER_DISPLAY_NAMES}
 
             for cid, title, ts in rows:
-                title = (title or "(no title)").strip()
-                dt_str = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M") if ts else "n/a"
-
                 cur.execute("SELECT count(*) FROM messages WHERE conversation_id = ?", (cid,))
                 msg_count = cur.fetchone()[0]
+                if msg_count < min_turns:
+                    continue
+
+                title = (title or "(no title)").strip()
+                dt_str = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M") if ts else "n/a"
 
                 cur.execute("""
                     SELECT author, content FROM messages 
@@ -206,6 +222,41 @@ class FleetOrchestrator:
         self.browser_mode = browser_mode
         self.session_token = session_token
         self.model = model
+
+    @property
+    def members(self) -> dict[str, FleetMember]:
+        """Dictionary mapping conversation_id -> FleetMember across all discovered threads."""
+        clusters = self.registry.discover_fleet(min_timestamp=0.0)
+        all_mems: dict[str, FleetMember] = {}
+        for mems in clusters.values():
+            for m in mems:
+                all_mems[m.conversation_id] = m
+        return all_mems
+
+    def status_report(self) -> dict[str, Any]:
+        """Return full fleet status summary report."""
+        return self.status_summary()
+
+    def iterate_tranche(
+        self,
+        prefix: str = "6a",
+        min_turns: int = 50,
+        sort_by: str = "turns",
+    ) -> list[FleetMember]:
+        """Return all members in the target tranche ordered for systematic convergence."""
+        clusters = self.registry.discover_fleet(
+            min_timestamp=0.0,
+            prefix=prefix,
+            min_turns=min_turns,
+        )
+        members: list[FleetMember] = []
+        for mems in clusters.values():
+            members.extend(mems)
+        if sort_by == "turns":
+            members.sort(key=lambda m: m.message_count, reverse=True)
+        elif sort_by == "time":
+            members.sort(key=lambda m: m.remote_update_time, reverse=True)
+        return members
 
     def status_summary(self) -> dict[str, Any]:
         """Produce a structured status dictionary of all clusters and active leads."""
@@ -588,3 +639,15 @@ class AlphaOpportunity:
     frontier_summary: str
     formula_snippet: str | None
     recommended_continuation: str
+
+    @property
+    def score(self) -> float:
+        return self.alpha_score
+
+    @property
+    def message_count(self) -> int:
+        return self.turns
+
+    @property
+    def cluster(self) -> str:
+        return classify_text(f"{self.title} {self.domain}", title=self.title)
