@@ -8,6 +8,7 @@ Implements the zero-residue provenance comparison doctrine from slr.
 from __future__ import annotations
 
 import collections
+from collections import defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
 import struct
@@ -21,6 +22,73 @@ from .pnf_compiler import (
     SHAPE_NAMES,
     SPACY_DEP_TO_SHAPE,
 )
+
+
+RELATIONAL_FRAME_SCHEMA = "re_gpt.pnf.relational_frame.v1"
+
+
+def extract_relational_frames(slots: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Group structured PNF slots without inferring semantics from raw text."""
+    if not isinstance(slots, Sequence) or isinstance(slots, (str, bytes, bytearray)):
+        raise ValueError("slots must be an array of objects")
+
+    grouped: dict[tuple[str, int, str], list[Mapping[str, Any]]] = defaultdict(list)
+    for slot in slots:
+        if not isinstance(slot, Mapping):
+            raise ValueError("slot entries must be objects")
+        sentence_id = str(slot.get("sentence_id") or "").strip()
+        head_lemma = str(slot.get("head_lemma") or "").strip().casefold()
+        if not sentence_id or not head_lemma:
+            raise ValueError("every slot requires sentence_id and head_lemma")
+        try:
+            head_ordinal = int(slot.get("head_ordinal"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("every slot requires an integer head_ordinal") from exc
+        grouped[(sentence_id, head_ordinal, head_lemma)].append(slot)
+
+    frames: list[dict[str, Any]] = []
+    for (sentence_id, head_ordinal, head_lemma), rows in sorted(grouped.items()):
+        arguments: dict[str, list[str]] = defaultdict(list)
+        boundary_metadata: list[dict[str, Any]] = []
+        source_slot_ids: list[str] = []
+
+        for slot in rows:
+            slot_id = str(slot.get("slot_id") or "").strip()
+            if slot_id:
+                source_slot_ids.append(slot_id)
+
+            boundary = slot.get("boundary_metadata")
+            boundary_kind = str(slot.get("boundary_kind") or "").strip()
+            if bool(slot.get("is_boundary")) or boundary_kind or isinstance(boundary, Mapping):
+                item: dict[str, Any] = {
+                    "lemma": str(slot.get("lemma") or "").strip().casefold(),
+                    "boundary_kind": boundary_kind,
+                }
+                role = str(slot.get("argument_role") or slot.get("slot_role") or "").strip()
+                if role:
+                    item["slot_role"] = role
+                if isinstance(boundary, Mapping):
+                    item["metadata"] = dict(boundary)
+                boundary_metadata.append(item)
+                continue
+
+            role = str(slot.get("argument_role") or "").strip()
+            lemma = str(slot.get("lemma") or "").strip().casefold()
+            if role and lemma and lemma not in arguments[role]:
+                arguments[role].append(lemma)
+
+        frames.append(
+            {
+                "schema": RELATIONAL_FRAME_SCHEMA,
+                "sentence_id": sentence_id,
+                "head_ordinal": head_ordinal,
+                "predicate": head_lemma,
+                "arguments": {role: sorted(values) for role, values in sorted(arguments.items())},
+                "boundary_metadata": boundary_metadata,
+                "source_slot_ids": sorted(set(source_slot_ids)),
+            }
+        )
+    return frames
 
 
 @dataclass
@@ -94,6 +162,12 @@ class GapReport:
 
 class ExactGapComparator:
     """Computes exact multiset difference between compiled informal threads and formal files."""
+
+
+    @staticmethod
+    def relational_frames(slots: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        """Expose the shared structural PNF factor-frame contract to gap consumers."""
+        return extract_relational_frames(slots)
 
     def __init__(self, slrw_path: Path | str | None = None) -> None:
         if slrw_path:
