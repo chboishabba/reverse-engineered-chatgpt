@@ -1119,7 +1119,15 @@ class SyncChatGPT(AsyncChatGPT):
                 user_agent=self.user_agent,
                 browser_session=replay,
                 websocket_mode=False,
+                auto_check_websocket=False,
             ) as client:
+                source_cookies = getattr(self.session, "cookies", None)
+                target_cookies = getattr(client.session, "cookies", None)
+                if source_cookies is not None and target_cookies is not None:
+                    try:
+                        target_cookies.update(source_cookies)
+                    except Exception:
+                        pass
                 return await client.list_conversations_page(offset=offset, limit=limit)
 
         return run_async_sync(run)
