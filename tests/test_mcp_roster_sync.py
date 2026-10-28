@@ -9,6 +9,7 @@ import pytest
 from re_gpt.async_chatgpt import AsyncChatGPT
 from re_gpt.errors import UnexpectedResponseError
 from re_gpt.mcp_server import _normalized_timestamp, _unhydrated_targets_by_recency
+from re_gpt.storage import ConversationStorage
 
 
 class _FakeResponse:
@@ -165,3 +166,54 @@ def test_sync_roster_page_delegates_to_async_client(monkeypatch) -> None:
     assert kwargs["session_token"] == "session"
     assert kwargs["auth_token"] == "auth"
     assert kwargs["user_agent"] == "ua"
+
+
+def test_exact_graph_hydration_retains_sqlite_node_coordinates(tmp_path: Path) -> None:
+    db_path = tmp_path / "history.sqlite3"
+    graph = {
+        "id": "c1",
+        "conversation_id": "c1",
+        "title": "Exact graph",
+        "mapping": {
+            "node-user": {
+                "id": "node-user",
+                "parent": None,
+                "children": ["node-assistant"],
+                "message": {
+                    "id": "message-user",
+                    "author": {"role": "user"},
+                    "create_time": 1760000000.0,
+                    "content": {"content_type": "text", "parts": ["hello"]},
+                },
+            },
+            "node-assistant": {
+                "id": "node-assistant",
+                "parent": "node-user",
+                "children": [],
+                "message": {
+                    "id": "message-assistant",
+                    "author": {"role": "assistant"},
+                    "create_time": 1760000001.0,
+                    "content": {"content_type": "text", "parts": ["world"]},
+                },
+            },
+        },
+    }
+
+    with ConversationStorage(db_path=db_path) as storage:
+        storage.persist_chat("c1", graph)
+
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT source_message_id, node_id, parent_node_id
+            FROM messages
+            WHERE conversation_id='c1'
+            ORDER BY message_index
+            """
+        ).fetchall()
+
+    assert rows == [
+        ("message-user", "node-user", None),
+        ("message-assistant", "node-assistant", "node-user"),
+    ]
