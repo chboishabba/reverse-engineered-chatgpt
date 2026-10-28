@@ -1168,6 +1168,12 @@ class AsyncChatGPT:
         )
         return payload
 
+    async def get_conversations(
+        self, offset: Optional[int] = 0, limit: Optional[int] = 28
+    ) -> dict:
+        """Compatibility alias for one authenticated async roster page."""
+        return await self.list_conversations_page(offset=offset, limit=limit)
+
     async def list_all_conversations(self, limit: int = 28) -> list[dict]:
         """Asynchronously retrieve metadata for all conversations.
 
