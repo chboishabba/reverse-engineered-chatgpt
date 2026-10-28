@@ -126,3 +126,42 @@ def test_hydrate_recency_normalizes_iso_and_numeric_timestamps(tmp_path: Path) -
     ]
     assert _normalized_timestamp("2026-01-01T00:00:00Z") > _normalized_timestamp(1750000000.0)
     assert _normalized_timestamp("not-a-time") == float("-inf")
+
+
+def test_sync_roster_page_delegates_to_async_client(monkeypatch) -> None:
+    import re_gpt.sync_chatgpt as sync_module
+    from re_gpt.sync_chatgpt import SyncChatGPT
+
+    captured: dict[str, object] = {}
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs):
+            captured["kwargs"] = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def list_conversations_page(self, offset=0, limit=28):
+            captured["page"] = (offset, limit)
+            return {"items": [{"id": "c1"}]}
+
+    monkeypatch.setattr(sync_module, "AsyncChatGPT", FakeAsyncClient)
+    client = SyncChatGPT(
+        session_token="session",
+        auth_token="auth",
+        user_agent="ua",
+        websocket_mode=False,
+    )
+    client.session = object()
+
+    result = client.get_conversations(offset=4, limit=7)
+
+    assert result == {"items": [{"id": "c1"}]}
+    assert captured["page"] == (4, 7)
+    kwargs = captured["kwargs"]
+    assert kwargs["session_token"] == "session"
+    assert kwargs["auth_token"] == "auth"
+    assert kwargs["user_agent"] == "ua"
