@@ -17,6 +17,7 @@ from typing import Any, Callable, Generator, Optional
 
 from curl_cffi.requests import Session
 
+from .async_bridge import run_async_sync
 from .async_chatgpt import (
     BACKUP_ARKOSE_TOKEN_GENERATOR,
     CHATGPT_API,
@@ -1103,87 +1104,47 @@ class SyncChatGPT(AsyncChatGPT):
     def list_conversations_page(
         self, offset: Optional[int] = 0, limit: Optional[int] = 28
     ) -> dict:
-        """Retrieve a single page of conversations.
+        """Compatibility wrapper over the authenticated async curl_cffi roster path."""
+        async def run() -> dict:
+            replay = getattr(self, "_replayed_browser_snapshot", None) or self.browser_session
+            async with AsyncChatGPT(
+                proxies=self.proxies,
+                session_token=self.session_token,
+                auth_token=self.auth_token,
+                default_model=self.default_model,
+                conversation_mode=self.conversation_mode,
+                timezone=self.timezone,
+                timezone_offset_min=self.timezone_offset_min,
+                client_contextual_info=self.client_contextual_info,
+                user_agent=self.user_agent,
+                browser_session=replay,
+                websocket_mode=False,
+            ) as client:
+                return await client.list_conversations_page(offset=offset, limit=limit)
 
-        Args:
-            offset (Optional[int]): Starting index of the page.
-            limit (Optional[int]): Maximum number of conversations to return.
-
-        Returns:
-            dict: JSON response containing one page of conversations.
-        """
-        params = {
-            "offset": offset,
-            "limit": limit,
-            "order": "updated",
-        }
-        url = CHATGPT_API.format("conversations")
-        headers = dict(self.build_request_headers())
-        headers["Accept"] = "application/json"
-        headers.pop("Content-Type", None)
-        started = time.monotonic()
-        response = self.session.get(url=url, params=params, headers=headers)
-        try:
-            payload = response.json()
-            items = payload.get("items", []) if isinstance(payload, dict) else []
-            elapsed_ms = (time.monotonic() - started) * 1000.0
-            self._debug_log(
-                f"list_conversations_page offset={offset} limit={limit} items={len(items)} elapsed_ms={elapsed_ms:.1f}"
-            )
-            return payload
-        except Exception:
-            if self._looks_like_cloudflare_challenge(response):
-                raise UnexpectedResponseError(
-                    "Failed to decode conversation list response because Cloudflare challenged the request.",
-                    getattr(response, "text", ""),
-                )
-            raise UnexpectedResponseError(
-                "Failed to decode conversation list response.",
-                getattr(response, "text", ""),
-            )
+        return run_async_sync(run)
 
     def list_all_conversations(self, limit: int = 28) -> list[dict]:
-        """Retrieve metadata for all conversations.
+        """Compatibility wrapper over the authenticated async curl_cffi roster path."""
+        async def run() -> list[dict]:
+            replay = getattr(self, "_replayed_browser_snapshot", None) or self.browser_session
+            async with AsyncChatGPT(
+                proxies=self.proxies,
+                session_token=self.session_token,
+                auth_token=self.auth_token,
+                default_model=self.default_model,
+                conversation_mode=self.conversation_mode,
+                timezone=self.timezone,
+                timezone_offset_min=self.timezone_offset_min,
+                client_contextual_info=self.client_contextual_info,
+                user_agent=self.user_agent,
+                browser_session=replay,
+                websocket_mode=False,
+            ) as client:
+                return await client.list_all_conversations(limit=limit)
 
-        Args:
-            limit: Maximum number of conversations to fetch per request.
+        return run_async_sync(run)
 
-        Returns:
-            List of dictionaries containing ``id``, ``title`` and
-            ``last_updated`` for each conversation.
-        """
-
-        conversations: list[dict] = []
-        offset = 0
-        page_count = 0
-        started = time.monotonic()
-
-        while True:
-            data = self.list_conversations_page(offset=offset, limit=limit)
-            items = data.get("items", [])
-            page_count += 1
-
-            for item in items:
-                conversations.append(
-                    {
-                        "id": item.get("id"),
-                        "title": item.get("title"),
-                        "last_updated": item.get("update_time"),
-                    }
-                )
-
-            if len(items) < limit:
-                break
-
-            offset += len(items)
-
-        elapsed_s = max(0.001, time.monotonic() - started)
-        self._debug_log(
-            f"list_all_conversations pages={page_count} total={len(conversations)} rate={len(conversations)/elapsed_s:.2f} conv/s"
-        )
-
-        return conversations
-    
     def check_websocket_availability(self) -> bool:
         """
         Check if WebSocket is available.
