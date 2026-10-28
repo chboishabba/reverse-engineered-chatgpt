@@ -485,6 +485,7 @@ class AsyncChatGPT:
         client_contextual_info: Optional[dict] = None,
         user_agent: Optional[str] = None,
         browser_session: Any = None,
+        auto_check_websocket: bool = True,
     ):
         """
         Initializes an instance of the class.
@@ -503,6 +504,7 @@ class AsyncChatGPT:
             client_contextual_info (Optional[dict]): Client context payload for chats.
             user_agent (Optional[str]): User agent string override.
             browser_session (Any): Optional BrowserSessionSnapshot, dict, or profile/snapshot path to replay.
+            auto_check_websocket (bool): Probe websocket availability during session startup.
         """
         self.proxies = proxies
         self.exit_callback_function = exit_callback_function
@@ -527,6 +529,7 @@ class AsyncChatGPT:
         self._replayed_browser_snapshot = None
 
         self.websocket_mode = websocket_mode
+        self.auto_check_websocket = bool(auto_check_websocket)
         self.ws_loop = None
         self.ws_conversation_map = {}
         self.default_model = default_model
@@ -700,7 +703,11 @@ class AsyncChatGPT:
             else:
                 self.auth_cookie = await self.fetch_free_mode_cookies()
 
-        if not self.websocket_mode and getattr(self, "_replayed_browser_snapshot", None) is None:
+        if (
+            self.auto_check_websocket
+            and not self.websocket_mode
+            and getattr(self, "_replayed_browser_snapshot", None) is None
+        ):
             self.websocket_mode = await self.check_websocket_availability()
 
         if self.websocket_mode:
