@@ -150,3 +150,4 @@ def test_sync_roster_page_delegates_to_async_client(monkeypatch) -> None:
     assert kwargs["session_token"] == "session"
     assert kwargs["auth_token"] == "auth"
     assert kwargs["user_agent"] == "ua"
+    assert kwargs["auto_check_websocket"] is False
