@@ -1125,25 +1125,34 @@ class SyncChatGPT(AsyncChatGPT):
         return run_async_sync(run)
 
     def list_all_conversations(self, limit: int = 28) -> list[dict]:
-        """Compatibility wrapper over the authenticated async curl_cffi roster path."""
-        async def run() -> list[dict]:
-            replay = getattr(self, "_replayed_browser_snapshot", None) or self.browser_session
-            async with AsyncChatGPT(
-                proxies=self.proxies,
-                session_token=self.session_token,
-                auth_token=self.auth_token,
-                default_model=self.default_model,
-                conversation_mode=self.conversation_mode,
-                timezone=self.timezone,
-                timezone_offset_min=self.timezone_offset_min,
-                client_contextual_info=self.client_contextual_info,
-                user_agent=self.user_agent,
-                browser_session=replay,
-                websocket_mode=False,
-            ) as client:
-                return await client.list_all_conversations(limit=limit)
+        """Retrieve all conversation metadata through async-CFFI page calls."""
+        conversations: list[dict] = []
+        offset = 0
+        page_count = 0
+        started = time.monotonic()
 
-        return run_async_sync(run)
+        while True:
+            data = self.list_conversations_page(offset=offset, limit=limit)
+            items = data.get("items", [])
+            page_count += 1
+            for item in items:
+                conversations.append(
+                    {
+                        "id": item.get("id"),
+                        "title": item.get("title"),
+                        "last_updated": item.get("update_time"),
+                    }
+                )
+            if len(items) < limit:
+                break
+            offset += len(items)
+
+        elapsed_s = max(0.001, time.monotonic() - started)
+        self._debug_log(
+            f"list_all_conversations pages={page_count} total={len(conversations)} "
+            f"rate={len(conversations)/elapsed_s:.2f} conv/s"
+        )
+        return conversations
 
     def check_websocket_availability(self) -> bool:
         """
