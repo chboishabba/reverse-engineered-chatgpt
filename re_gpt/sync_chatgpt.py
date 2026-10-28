@@ -1132,6 +1132,12 @@ class SyncChatGPT(AsyncChatGPT):
 
         return run_async_sync(run)
 
+    def get_conversations(
+        self, offset: Optional[int] = 0, limit: Optional[int] = 28
+    ) -> dict:
+        """Compatibility alias routed through the authenticated async roster page."""
+        return self.list_conversations_page(offset=offset, limit=limit)
+
     def list_all_conversations(self, limit: int = 28) -> list[dict]:
         """Retrieve all conversation metadata through async-CFFI page calls."""
         conversations: list[dict] = []
