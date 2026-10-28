@@ -219,15 +219,17 @@ def _sync_roster_via_async_cffi(
             default_model=get_default_model(),
             user_agent=get_default_user_agent(),
             browser_session=snapshot,
+            auto_check_websocket=False,
         ) as client:
             conversations: list[dict[str, Any]] = []
             offset = 0
             page_size = max(1, min(int(page_limit), 100))
             cap = max(1, min(int(max_conversations), 5000))
             while len(conversations) < cap:
+                requested = min(page_size, cap - len(conversations))
                 page = await client.list_conversations_page(
                     offset=offset,
-                    limit=min(page_size, cap - len(conversations)),
+                    limit=requested,
                 )
                 items = page.get("items", [])
                 if not isinstance(items, list):
@@ -245,7 +247,7 @@ def _sync_roster_via_async_cffi(
                             "update_time": item.get("update_time"),
                         }
                     )
-                if len(items) < min(page_size, cap - offset):
+                if len(items) < requested:
                     break
                 offset += len(items)
                 if not items:
