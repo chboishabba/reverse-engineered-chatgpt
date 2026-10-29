@@ -617,3 +617,24 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Round 10/20 adds Agda-first E8 review-status receipt and Lean mirror. No E8 theorem, Monster representation, kernel verification or TOE integration claimed.
+
+## Round 11/20 — Worker Slot 11: comparative phrase/state / `than(rather) · state` (2026-10-29)
+
+### Docs — existing lexical motif reused
+
+- Parent `Assess Round Modules`, sub-motif `than(rather) · state`, reported net benefit 0.590 and one worker. Reuses Worker 01 `ComparativeChangeMotif.ratherThan` rather than creating a duplicate comparison AST.
+- Golden Agda `DASHI/Interop/SemanticThreadRejuvenationExact.agda` on `feat/semantic-rejuvenation-golden`, commit `197d0cda15c17ca8f6de360a18b6554424ace5db`, adds `ComparativeState`, `chooseRather`, `chooseRatherPreservesPhrase`, `chooseRatherSelectsPreferred`. It preserves the phrase and explicitly chooses the preferred string; it does not prove parsing, natural-language entailment or actual UI/runtime state change.
+- Lean secondary mirror `AgdaMirror/SemanticThreadRejuvenation.lean` on `feat/semantic-rejuvenation-mirror`, commit `a96f881948ef07e695ec44f807c39733d174f739`. Both source-written, neither kernel-checked. Golden `{-# OPTIONS --safe #-}` retained; no new postulates, metas or TERMINATING pragmas.
+
+### TODOs — docs → TODOs → code → changelog
+
+- [x] Inspect existing Agda/Lean comparative motif and reuse it in a bounded state projection.
+- [x] Mirror state projection and lemmas in Lean.
+- [ ] Execute both kernels and record exact tool versions, commands and exit codes.
+- [ ] Inspect actual comparative parser and state-transition runtime, test negation/scope and alternatives, and establish provenance for the selected interpretation.
+- [ ] Wire owner into TOE import graph after cycle inspection; no ESD edits.
+- [ ] Reconcile source-repo root ROADMAP.md, planning, TODO and changelog owners; this one roadmap update does not prove cross-repo alignment.
+
+### Changelog
+
+- 2026-10-29: Round 11/20 adds Agda-first comparative phrase/selected-state model and Lean mirror. Kernel, runtime, parser and TOE integration remain unverified.
