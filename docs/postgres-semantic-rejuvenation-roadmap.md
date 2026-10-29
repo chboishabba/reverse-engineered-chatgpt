@@ -480,3 +480,27 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Round 4/20 inspected real max-cut/ternary-27 and Balaban/Ibrahim/Pareto/snowball source owners and verified existing TOE-root imports. No new theorem, runtime code, kernel execution or blocker discharge claimed; root ROADMAP.md not found on either inspected default branch.
+
+## Round 5/20 — Worker Slot 05: SensibLaw redaction / `redact(output) · space` (2026-10-29)
+
+### Docs — bounded deontic/privacy scope
+
+- Parent `SensibLaw Agda Test Case`, one worker, supplied net benefit 0.780. No AST blockers or invariants supplied; do not infer universal privacy or deontic closure.
+- Inspected actual `DASHI/Cognition/PNF/SensibLawGWBv01PostCertificationRoadmapExact.agda` (default branch, blob `86a3d25d9ba61d700cfd504a9e33ccea6cbe9a82`), which expressly prohibits automatic universal certification from bounded GWB receipts. Redaction semantics are a new bounded lane, not inherited certification.
+- Golden safe Agda `DASHI/Cognition/PNF/SensibLawRedactionSpaceExact.agda`, branch `feat/semantic-rejuvenation-golden`, commit `577e7ece3c52bfc5a75889abb5988448182d0ced`, introduces `PrivateDraft`, `PublicOutput`, `redactOutput`, `redactionPreservesPublicText`, `SpacedPublicOutput`, `placeWithSpace`, and `spaceSeparatorPreserved`. Private payload is not carried as a field in the public output, but no global noninterference, sanitization, erasure or legal compliance is proven.
+- Secondary Lean mirror `AgdaMirror/SensibLawRedactionSpace.lean`, branch `feat/semantic-rejuvenation-mirror`, commit `1d04959e2468133ea6125c3de35a9af32fef97ea`. Both are source-written; no kernel execution receipt.
+- The `space` motif is represented only as a literal separator in a structured output, not a whitespace-normalization or tokenizer guarantee. Do not claim that a provenance marker or redaction operation itself proves a deontic permission.
+
+### TODOs — docs → TODOs → code → changelog
+
+- [x] Inspect existing SensibLaw GWB certification boundary and implement a distinct bounded Agda-first public projection.
+- [x] Mirror the exact projection and spacing lemmas in Lean.
+- [ ] Run safe Agda and Lean kernels, record commands, versions, exit codes and proof receipts; repair type errors before promotion.
+- [ ] Locate and reuse actual SensibLaw deontic obligation, authorization, residual and privacy owners; specify threat model and noninterference relation before asserting stronger privacy.
+- [ ] Attach golden Agda module to TOE import graph only after checking cycles and source ownership; do not edit ESD surfaces.
+- [ ] Implement runtime redaction and whitespace regression tests against verified PostgreSQL source records; test sensitive content embedded in public fields, nested structures and source metadata.
+- [ ] Reconcile project-level root roadmap, planning and changelog in actual source owners after finding canonical files. The PostgreSQL roadmap update alone does not establish cross-repository documentation synchronization.
+
+### Changelog
+
+- 2026-10-29: Round 5/20 adds source-written Agda-first SensibLaw public-field redaction and space-separator projection plus Lean mirror; explicitly withholds privacy, deontic, kernel and runtime certification.
