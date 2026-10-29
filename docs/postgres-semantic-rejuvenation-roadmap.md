@@ -671,12 +671,12 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 
 ### TODOs — before implementation
 
-- [ ] Create safe Agda boundary model with R191 ledger closed, R193 package and promotion blocked, with explicit refl witnesses and no postulates/metas/TERMINATING.
-- [ ] Add Lean mirror of exactly the bounded status model.
+- [x] Create safe Agda boundary model with R191 ledger closed, R193 package and promotion blocked, with explicit refl witnesses and no postulates/metas/TERMINATING (commit `274dafbee840514ee4439c9620840bd47fbedd15`).
+- [x] Add Lean mirror of exactly the bounded status model (commit `66f1d548546e2627ddd3b878d8033a81e6c8dd4c`).
 - [ ] Prove actual same-object internal payment and cutoff-uniform signed external forcing payment on existing R193 owner; only then reconsider Package A and Clay promotion. A receipt is not discharge.
 - [ ] Run Agda and Lean kernel checks, inspect exact imports and TOE integration; no ESD edits.
 - [ ] Locate and reconcile canonical ROADMAP.md/planning/changelog in source repositories; current roadmap alone does not prove strict alignment.
 
 ### Changelog
 
-- Pending Round 13 safe Agda and Lean commits; no Clay promotion.
+- 2026-10-29: Source-written safe Agda closure boundary `274dafbee840514ee4439c9620840bd47fbedd15` and Lean mirror `66f1d548546e2627ddd3b878d8033a81e6c8dd4c`. Analytic payments, Package A, Clay promotion, kernel checks, TOE and root-roadmap synchronization remain open.
