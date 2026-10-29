@@ -551,3 +551,25 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Round 7/20 adds source-written Agda-first repeat-redaction and spaced-output preservation, plus Lean mirror. No security, deontic, kernel, runtime or TOE certification claimed.
+
+## Round 8/20 — Worker Slot 08: Assess Round Modules / `text · test` (2026-10-29)
+
+### Docs — expected/observed evidence boundary
+
+- Parent `Assess Round Modules`, sub-motif `text · test`, reported net benefit 0.590 and one worker. This is a typed fixture/result contract, not proof that any external test runner executed.
+- Inspected existing `DASHI/Interop/SemanticThreadRejuvenationExact.agda` and its Lean mirror before extending. Golden safe Agda on `feat/semantic-rejuvenation-golden`, commit `b29668d8b3d5b98c2239ddb5cb5bd11eb10416e5`, adds `TextTestCase`, `TextTestResult`, `canonicalTextTest`, and `canonicalTextTestMatches`. The result requires observed=expected as an equality witness; canonical fixture deliberately uses reflexive text and is not a test of runtime behavior.
+- Lean secondary mirror on `feat/semantic-rejuvenation-mirror`, commit `d3ea5c3504a949c17e1cbea5769585228dd66c10`, matches the Agda declarations. Both source-written; no kernel check receipt.
+- Do not confuse a supplied test-result witness with test execution provenance, independently observed output, or formal verification of the PostgreSQL/AO runtime. Original source attribution and nonpromotion rules remain in force.
+
+### TODOs — docs → TODOs → code → changelog
+
+- [x] Reuse existing golden Agda protocol owner and add typed text expected/observed equality result.
+- [x] Mirror contract in Lean.
+- [ ] Execute Agda and Lean kernels and record exact version, command and exit status.
+- [ ] Inspect actual test-runner and AO assessment owners; capture execution identifier, source revision, runner, timestamp and independently observed output before declaring tests passed.
+- [ ] Add real negative and positive fixtures against parser, topic-collapse and PostgreSQL source paths; separate expected equality from runner attestation.
+- [ ] Attach golden owner to TOE import graph after cycle inspection, without ESD edits; reconcile source-repo planning and root ROADMAP.md when located.
+
+### Changelog
+
+- 2026-10-29: Round 8/20 source-written Agda-first text-test witness contract and Lean mirror. No actual runtime test, kernel verification, TOE integration or full cross-repository roadmap synchronization claimed.
