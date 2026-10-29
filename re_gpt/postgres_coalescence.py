@@ -79,7 +79,7 @@ def discover_coalescence_clusters(conn, candidate_queue, similarity_threshold=0.
     return sorted(clusters,key=lambda c:(-c.similarity,c.topic_id,c.parents))
 
 def build_coalesced_world_capsule(conn, thread_ids, topic_id, *,
-                                  manifold_summary, adjacent_limit=50):
+                                  manifold_summary, adjacent_limit=50, formal_repo_root=None):
     parents = tuple(sorted(set(thread_ids)))
     if not 2 <= len(parents) <= 10:
         raise ValueError("coalescence requires 2–10 distinct parents")
@@ -100,6 +100,6 @@ def build_coalesced_world_capsule(conn, thread_ids, topic_id, *,
     for cid in parents:
         lines.append(f"## Parent conversation:{cid} (source attribution retained)")
         lines.append(build_world_enhanced_capsule(
-            conn,cid,manifold_summary,adjacent_limit=adjacent_limit))
+            conn,cid,manifold_summary,adjacent_limit=adjacent_limit,\n            formal_repo_root=formal_repo_root))
     lines.append("Candidate overlap is not proof equivalence; no parent is retired by this capsule.")
     return "\n".join(lines) + "\n"

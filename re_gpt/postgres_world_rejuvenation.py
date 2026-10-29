@@ -45,7 +45,7 @@ def _manifold_entry(summary, conversation_id):
     return entry
 
 def build_world_enhanced_capsule(conn, conversation_id, manifold_summary=None, *,
-                                 adjacent_limit=50):
+                                 adjacent_limit=50, formal_repo_root=None):
     if not 1 <= adjacent_limit <= 500:
         raise ValueError("adjacent_limit outside safe range")
     entry = _manifold_entry(manifold_summary, conversation_id)
@@ -91,7 +91,7 @@ def build_world_enhanced_capsule(conn, conversation_id, manifold_summary=None, *
     lines.extend(f"- {goal}" for goal in goals)
     if not goals:
         lines.append("- No verified topic goals supplied; do not invent a generic task.")
-    return "\n".join(lines) + "\n"
+    if formal_repo_root is not None:\n        from .automatic_formal_evidence import automatic_formal_evidence\n        lines.append(automatic_formal_evidence(conn, conversation_id, entry, repo_root=formal_repo_root))\n    return "\n".join(lines) + "\n"
 
 def allocate_topic_workers(topics, capacity=20):
     """Golden sublinear width law; eligibility and noTypedMeet are caller gates."""
