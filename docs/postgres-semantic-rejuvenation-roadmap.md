@@ -787,11 +787,11 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 
 ### TODOs — before code
 
-- [ ] Create safe Agda E8 count arithmetic and three concrete equalities; no postulates/metas/TERMINATING.
-- [ ] Mirror in Lean after golden Agda.
+- [x] Create safe Agda E8 count arithmetic and three concrete equalities; no postulates/metas/TERMINATING (commit `227cc980629a5e0cdde99c2b0cbd4a6fd6f62225`).
+- [x] Mirror in Lean after golden Agda (commit `755a40c636994dc84b0a6a59cc4372f95078d1ee`).
 - [ ] Reuse existing `E8RootEnumeration` construction to prove actual unique enumeration and membership, rather than asserting count requests are proofs.
 - [ ] Run both kernels, check TOE imports, and synchronize source-repo canonical ROADMAP/planning/TODO/changelogs; no ESD edits.
 
 ### Changelog
 
-- Pending Round 19 arithmetic commits; E8 enumeration and Monster representation remain unproved.
+- 2026-10-29: Golden Agda candidate-count arithmetic committed `227cc980629a5e0cdde99c2b0cbd4a6fd6f62225`; Lean mirror `755a40c636994dc84b0a6a59cc4372f95078d1ee`. Source-written only: no kernel execution, root enumeration, TOE integration, Monster same-object claim or root-roadmap alignment.
