@@ -528,3 +528,26 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Round 6/20 source-written Agda-first single-node auto-collapse with preservation and idempotence lemmas, plus Lean mirror; parser, runtime, kernel, TOE and broader planning integration pending.
+
+## Round 7/20 — Worker Slot 07: SensibLaw repeat redaction / `redact(output) · redact` (2026-10-29)
+
+### Docs — bounded repeat projection
+
+- Parent `SensibLaw Agda Test Case`, supplied net benefit 0.590 and one worker. This extends the Round 5/20 existing source owner rather than creating a duplicate redaction implementation.
+- Golden Agda `DASHI/Cognition/PNF/SensibLawRedactionSpaceExact.agda` on `feat/semantic-rejuvenation-golden`, commit `f5f7441a9a16b6f36496dd7510eb3ebb8fe37297`, adds `redactPublic`, `redactPublicIdempotent`, `redactAgainPreservesProjection`, `redactSpaced`, `redactSpacedPreservesSeparator`. Existing `{-# OPTIONS --safe #-}` retained; no postulates, holes or TERMINATING pragmas introduced. No kernel execution receipt.
+- Secondary Lean mirror `AgdaMirror/SensibLawRedactionSpace.lean` on `feat/semantic-rejuvenation-mirror`, commit `9a50bbea9cdb82c29ee90d0cecce1f1dfa166f7e`, follows Agda. Not kernel-checked.
+- These are structural no-op laws on already-public output and spacing. They do not prove erasure, noninterference, absence of sensitive substrings in public fields, legally valid redaction or compliance with deontic obligations.
+
+### TODOs — docs → TODOs → code → changelog
+
+- [x] Reuse Round 5 Agda owner for repeat-redaction and spacing laws.
+- [x] Mirror source-written lemmas in Lean without elevating mirror authority.
+- [ ] Execute both kernels and record versions, commands and exit codes.
+- [ ] Inspect existing deontic obligation and privacy owners, and specify actual information-flow threat model before stronger claims.
+- [ ] Add property-based runtime tests: idempotence on public outputs, separator stability, nested structures and intentionally sensitive public-field content.
+- [ ] Attach Agda owner to TOE import graph after cycle inspection; no ESD edits.
+- [ ] Synchronize root ROADMAP.md, source-repo planning and changelogs after locating canonical files; this roadmap alone is not strict cross-repo alignment.
+
+### Changelog
+
+- 2026-10-29: Round 7/20 adds source-written Agda-first repeat-redaction and spaced-output preservation, plus Lean mirror. No security, deontic, kernel, runtime or TOE certification claimed.
