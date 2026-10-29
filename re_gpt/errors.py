@@ -5,8 +5,8 @@ class TokenNotProvided(Exception):
 
 
 class InvalidSessionToken(Exception):
-    def __init__(self):
-        self.message = "Invalid session token provided."
+    def __init__(self, message: str = "Invalid session token provided."):
+        self.message = message
         super().__init__(self.message)
 
 

@@ -28,62 +28,54 @@ from .utils import get_default_model, get_default_user_agent, get_session_token
 
 mcp = FastMCP("re-gpt")
 
+GOLDEN_AGDA_REMINDER = (
+    "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
+    "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
+    "recall the agdas are the golden."
+)
+
 WORKER_PROMPT_PRESETS: dict[str, str] = {
     "max_cut": (
-        "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
-        "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
-        "recall the agdas are the golden. Exactly complete all per max-cut and continue per "
+        f"{GOLDEN_AGDA_REMINDER} Exactly complete all per max-cut and continue per "
         "pareto/snowball/ibrahim. Check the web and latest PRs for inspiration and "
         "cross-pollination -- assume we already have everything we need in-repo. "
         "Keep following your nose until you hit a wall -- do not wait for approval, "
         "and remember our attribution rules."
     ),
     "grug_ste100": (
-        "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
-        "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
-        "recall the agdas are the golden. Apply Grug-brain simplicity and ASD-STE100 Simplified "
+        f"{GOLDEN_AGDA_REMINDER} Apply Grug-brain simplicity and ASD-STE100 Simplified "
         "Technical English: one thought per sentence, active voice, approved unambiguous terms, "
         "zero speculative abstraction, no inline code dumps in prose, and normalize onto "
         "existing in-repo surfaces."
     ),
     "grug": (
-        "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
-        "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
-        "recall the agdas are the golden. Apply Grug-brain simplicity and ASD-STE100 Simplified "
+        f"{GOLDEN_AGDA_REMINDER} Apply Grug-brain simplicity and ASD-STE100 Simplified "
         "Technical English: one thought per sentence, active voice, approved unambiguous terms, "
         "zero speculative abstraction, no inline code dumps in prose, and normalize onto "
         "existing in-repo surfaces."
     ),
     "zkp_qa": (
-        "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
-        "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
-        "recall the agdas are the golden. Frame via ZKP (O/R/C/S/L/P/G/F) with explicit "
+        f"{GOLDEN_AGDA_REMINDER} Frame via ZKP (O/R/C/S/L/P/G/F) with explicit "
         "preconditions, invariants, and postconditions. Converge toward normalized surfaces "
         "per ITIL, ISO 9000/42001/27001/27701/23894/9241, NIST AI RMF, Six Sigma, and "
         "C4/PlantUML. Assign one disjoint nonblocking lane per worker, no skeletons or stubs, "
         "and complete implementation + deterministic verification within the turn."
     ),
     "zkp": (
-        "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
-        "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
-        "recall the agdas are the golden. Frame via ZKP (O/R/C/S/L/P/G/F) with explicit "
+        f"{GOLDEN_AGDA_REMINDER} Frame via ZKP (O/R/C/S/L/P/G/F) with explicit "
         "preconditions, invariants, and postconditions. Converge toward normalized surfaces "
         "per ITIL, ISO 9000/42001/27001/27701/23894/9241, NIST AI RMF, Six Sigma, and "
         "C4/PlantUML. Assign one disjoint nonblocking lane per worker, no skeletons or stubs, "
         "and complete implementation + deterministic verification within the turn."
     ),
     "introspective_viz": (
-        "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
-        "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
-        "recall the agdas are the golden. Apply the introspective method: 1. Model the theory "
+        f"{GOLDEN_AGDA_REMINDER} Apply the introspective method: 1. Model the theory "
         "accurately per actual implementation. 2. Generate a plain-language, physically "
         "intuitive visual proof (Python/HTML/SVG). 3. Inspect the visualization. "
         "4. Formalize new findings in Lean or Agda per repo convention."
     ),
     "converge_toe": (
-        "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
-        "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
-        "recall the agdas are the golden. Converge toward the DASHI TOE: dashi_agda "
+        f"{GOLDEN_AGDA_REMINDER} Converge toward the DASHI TOE: dashi_agda "
         "DASHI/EverythingTOESymmetryResolved369.agda, DASHI/Unifier.agda and DASHI/Unified/. "
         "Assume the content already exists in-repo. Search first for existing, duplicate or near "
         "constructions (GitHub code search; the local referee confirms with dashi-agda-preflight "
@@ -93,11 +85,32 @@ WORKER_PROMPT_PRESETS: dict[str, str] = {
         "Keep attribution for meta-introspector repos."
     ),
     "referee_pass": (
-        "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
-        "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
-        "recall the agdas are the golden. Local referee verification passed (0 errors, 0 warnings). "
+        f"{GOLDEN_AGDA_REMINDER} Local referee verification passed (0 errors, 0 warnings). "
         "Proceed immediately to the next highest-alpha vertical slice per max-cut and "
         "pareto/snowball/ibrahim; push commits and return SHAs + deterministic referee commands."
+    ),
+    "rpd": (
+        f"{GOLDEN_AGDA_REMINDER} So where does that leave us re roadmap/phase/deliverables? "
+        "Please check agdas/repo docs/planning etc."
+    ),
+    "steelman": (
+        f"{GOLDEN_AGDA_REMINDER} So what does the dream/steelman solution look like?"
+    ),
+    "lemmas": (
+        f"{GOLDEN_AGDA_REMINDER} List every required lemma between here -> completed. "
+        "Please check agdas/repo docs/planning etc."
+    ),
+    "surrounds": (
+        f"{GOLDEN_AGDA_REMINDER} Check the parent/child/surrounding/related "
+        "formalisms/repos/docs relevant to our current task and contextualise our "
+        "requirements/goals/situation in terms of our prior-art."
+    ),
+    "docs": (
+        f"{GOLDEN_AGDA_REMINDER} Synchronize and update project documentation, "
+        "ROADMAP.md, planning docs, TODO items, and changelogs per "
+        "update-docs-todo-implement doctrine (Docs → TODOs → Code → Changelog). "
+        "Ensure all planning is up to date, reflect intended behaviors, and verify strict "
+        "alignment across docs, tasks, and implementation."
     ),
 }
 
@@ -155,6 +168,8 @@ def expand_worker_prompt(prompt: str, preset: str | None = None) -> str:
     resolved = "\n\n".join(p for p in parts if p)
     if not resolved:
         raise ValueError("Worker prompt must be non-empty after preset expansion")
+    if not resolved.startswith(GOLDEN_AGDA_REMINDER):
+        resolved = f"{GOLDEN_AGDA_REMINDER}\n\n{resolved}"
     return resolved
 
 
