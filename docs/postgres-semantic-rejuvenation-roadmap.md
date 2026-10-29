@@ -805,11 +805,18 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 
 ### TODOs — before code
 
-- [ ] Implement safe Agda typed fp16 support-gating and fail-closed decision proofs.
-- [ ] Mirror Lean after Agda.
+- [x] Implement safe Agda typed fp16 support-gating and fail-closed decision proofs (commit `850a7e3e69a2cd396e75d67b36af5b489f8f850d`).
+- [x] Mirror Lean after Agda (commit `a4869e47d9f4db6466a4187011d771dd74c4c6d0`).
 - [ ] Inspect and run real device/runtime probes, verify IEEE binary16 rounding and accumulation semantics and numerical error before promotion.
 - [ ] Kernel-check Agda/Lean, record commands/exits, inspect TOE import graph and reconcile source-repo canonical ROADMAP/planning/TODO/changelogs; no ESD edits.
 
 ### Changelog
 
-- Pending Round 20 source commits. No actual fp16 hardware or numerical validation attested.
+- 2026-10-29: Safe Agda FP16 gating committed `850a7e3e69a2cd396e75d67b36af5b489f8f850d`; Lean mirror `a4869e47d9f4db6466a4187011d771dd74c4c6d0`. Source-written only; no GPU probe, numerical error audit, kernel check, TOE integration or canonical root ROADMAP synchronization.
+
+### Twenty-round closure audit
+
+- Round 20/20 completes the *scheduled source-writing slots*, not mathematical or operational closure. Prior slots include bounded metadata models and arithmetic equalities; no executed Agda/Lean kernel receipts were recorded in these round logs.
+- Open cross-round obligations: compile/type-check both repositories; reconcile canonical source-repo ROADMAP/TODO/changelog; integrate approved safe modules into the TOE import graph after cycle checks; implement runtime evidence where promised; complete E8 root enumeration and ratio transitivity/rescaling; preserve the Clay and Monster nonpromotion firewalls.
+- No claim of universal alignment, CI pass, physical theorem closure, hardware fp16 capability or source authority is made.
+
