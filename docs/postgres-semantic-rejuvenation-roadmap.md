@@ -710,12 +710,12 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 
 ### TODOs — before code
 
-- [ ] Add safe Agda proof-carrying `DaysAgo` with explicit witness `reference ≡ elapsed + offset`, preserving the reference and offset without saturating subtraction.
-- [ ] Mirror in Lean after Agda; avoid using an unverified wall-clock interpretation.
+- [x] Add safe Agda proof-carrying `DaysAgo` with explicit witness `reference ≡ elapsed + offset`, preserving the reference and offset without saturating subtraction (commit `51197472862383cba00a416fedadeedb0e84e15c`).
+- [x] Mirror in Lean after Agda; avoid using an unverified wall-clock interpretation (commit `d761bfa3801cfb6becfafa72fb1db3a358e4ca2d`).
 - [ ] Connect to existing temporal/source runtime only after defining calendar/timezone and timestamp provenance semantics.
 - [ ] Run Agda/Lean kernels and record exact versions/commands/exits; inspect TOE import graph before wiring; no ESD edits.
 - [ ] Locate and reconcile source-repo canonical ROADMAP, planning, TODO, and changelog files; this roadmap alone is not full alignment.
 
 ### Changelog
 
-- Pending Round 15 source-written commits; no timestamp semantics or runtime verification claimed.
+- 2026-10-29: Safe Agda relative-day offset contract committed `51197472862383cba00a416fedadeedb0e84e15c` and Lean mirror `d761bfa3801cfb6becfafa72fb1db3a358e4ca2d`. Source-written only; no calendar semantics, kernel execution, runtime test, TOE wiring or root-roadmap reconciliation.
