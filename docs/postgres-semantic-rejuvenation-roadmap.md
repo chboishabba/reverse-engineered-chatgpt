@@ -339,3 +339,25 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Code / changelog
 
 - 2026-10-29: Round 8 exact opaque topic label, source-decoding abstention, and PostgreSQL provenance/round-trip obligations documented. No semantic interpretation, Agda/Lean implementation, runtime change, executed test or kernel verification claimed.
+
+## Round 9/10 — Topic 1 revisited: collapse(auto,last), expand(now) (2026-10-29)
+
+### Docs / semantics
+
+- Topic ID 1, one worker, supplied sizing benefit 0.630. The exact operation labels are `collapse(property: auto)`, `collapse(property: last)`, `expand(temporal: now)`; the operation constructors are distinct. These are syntactic receipts, not verified transformations or equivalences.
+- Golden Agda owner `DASHI/Interop/SemanticThreadRejuvenationExact.agda` on `feat/semantic-rejuvenation-golden` was extended in commit `e0c2f94c08b2c3ac4cad8d3b6532fe2696bde158` with `TopicOperation`, `TopicOnePlan`, `canonicalTopicOne` and three definitional preservation lemmas. `{-# OPTIONS --safe #-}` retained; no postulates, holes or TERMINATING introduced.
+- Secondary Lean mirror `AgdaMirror/SemanticThreadRejuvenation.lean` on `feat/semantic-rejuvenation-mirror` was extended in commit `98d97970ee03294415f0c58e4630f6c93c176027` with matching constructors, plan and `rfl` lemmas. No kernel execution receipt exists yet; these are source-written, not kernel-verified.
+- The new syntax is not evidence that the PostgreSQL PNF/topic runtime performs collapse/expand correctly. Source offsets, temporal interpretation, duplicate handling and label provenance remain separate obligations.
+
+### TODOs — implementation gates
+
+- [x] Reuse existing golden Agda owner and represent the three exact operation labels with distinct typed constructors.
+- [x] Add secondary Lean syntax mirror without claiming runtime correctness.
+- [ ] Run Agda `--safe` and Lean kernel checks; preserve actual commands, versions, stdout and exit statuses.
+- [ ] Inspect the PNF/topic runtime for actual `collapse` and `expand` semantics; implement a deterministic PostgreSQL-only execution contract and round-trip tests if supported by the canonical source data.
+- [ ] Link the new golden declaration to existing TOE import roots after checking module cycles and full import closure; do not edit ESD surfaces.
+- [ ] Reconcile Git/PR lineage and source attribution; no promotion from a source-written declaration or a lexical match to a verified theorem.
+
+### Changelog
+
+- 2026-10-29: Round 9 adds Agda-first Topic 1 operation syntax and three label-preservation lemmas, followed by the Lean mirror. Kernel and runtime verification remain pending; no test execution claimed.
