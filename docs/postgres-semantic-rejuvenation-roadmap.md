@@ -758,3 +758,21 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Golden Agda strict-profile log boundary committed `e45c323923447a1ef596130544edcff599ea5f8c`; Lean mirror committed `54e9e60a99d4b0420ac583ac05cb68f0c1c8a183`. Source-written only: no executed runtime attestation, kernel check, TOE wiring or root-roadmap alignment.
+
+## Round 18/20 — estimate / ratio (2026-10-29)
+
+### Docs — reuse and exact ratio arithmetic
+
+- Parent `Assess Round Modules`, motif `estimate · ratio`, net benefit 0.590, one worker. Inspected actual Agda `DASHI/Empirical/DarkDimensionQuantitativeEnvelopeExact.agda` (already owns `RatioEstimate` with source precision and retrospective-vs-held-out boundary) and `DASHI/Empirical/DarkDimensionModelObservableMatrixExact.agda` (same-observable type boundary). Both lack the safe pragma; do not import them into a safe module without checking the entire import chain. Default-branch Lean search found no `RatioEstimate` owner.
+- Intended independent *arithmetic* safe bridge: positive-denominator ratio represented as exact numerator/denominator pair with cross-multiplication equality certificate for alternative representations. Do not infer numeric measurement, division semantics, uncertainties, empirical evidence, or a model comparison from this arithmetic contract.
+
+### TODOs — before code
+
+- [ ] Implement safe Agda `PositiveDenominatorRatio`, exact cross-product equality relation, reflexivity and symmetry, and representation-preserving rescaling for positive factors.
+- [ ] Mirror in Lean after Agda.
+- [ ] Reconcile with existing empirical `RatioEstimate` only via explicit same-observable/units/uncertainty/source evidence; do not duplicate empirical authority.
+- [ ] Execute both kernels, check TOE import graph and update canonical source-repo ROADMAP/planning/TODO/changelogs; no ESD edits.
+
+### Changelog
+
+- Pending Round 18 Agda and Lean source commits; arithmetic only, no empirical or kernel attestation.
