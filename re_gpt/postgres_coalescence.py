@@ -100,6 +100,7 @@ def build_coalesced_world_capsule(conn, thread_ids, topic_id, *,
     for cid in parents:
         lines.append(f"## Parent conversation:{cid} (source attribution retained)")
         lines.append(build_world_enhanced_capsule(
-            conn,cid,manifold_summary,adjacent_limit=adjacent_limit,\n            formal_repo_root=formal_repo_root))
+            conn, cid, manifold_summary, adjacent_limit=adjacent_limit,
+            formal_repo_root=formal_repo_root))
     lines.append("Candidate overlap is not proof equivalence; no parent is retired by this capsule.")
     return "\n".join(lines) + "\n"
