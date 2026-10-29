@@ -595,3 +595,25 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Round 9/20 adds Agda-first witnessed-result package preservation and Lean mirror; kernel, external acceptance, TOE and root-roadmap alignment remain unverified.
+
+## Round 10/20 — Worker Slot 10: E8 review / receipt (2026-10-29)
+
+### Docs — review evidence and nonpromotion
+
+- Parent `Compare E8 Models`, sub-motif `review · receipt`, net benefit 0.590 and one worker. Consensus supplies zero shared invariants, blockers and frontier targets; this is not proof that an E8 comparison frontier is complete.
+- Inspected actual default-branch source `DASHI/Moonshine/Base369Ternary27SpectralSymmetryIrrepBridgeExact.agda` (blob `abcb5ebd7b99ed45064ccfe26845649984285b18`), `DASHI/Unified/TOE369MaxCutKernelBidiTernaryExact.agda` (blob `92ef32a0a6548e5d81dddbbcb8945c949e735a17`) and `DASHI/Unified/BalabanIbrahimParetoSnowballTOEExact.agda` (blob `cad4c488a13194c9b7e0fbab7dbeb06a5caf6108`). Ternary-27 C3 spectral results are not full E8 isometry or Monster representation results; preserve original mathematical authors and Ibrahim 3B attribution.
+- Golden Agda `DASHI/Moonshine/E8ReviewReceiptBoundaryExact.agda` on `feat/semantic-rejuvenation-golden`, commit `0096bcda26eb30e1c00c02a62bba4123014504e5`, records scoped review metadata and two explicit false-status lemmas. Source-written with `{-# OPTIONS --safe #-}`, no postulates/metas/TERMINATING added; not kernel-checked.
+- Lean mirror `AgdaMirror/E8ReviewReceiptBoundary.lean` on `feat/semantic-rejuvenation-mirror`, commit `1fd14d840c8d527ae6a60c76ee5da9a3c0562149`. Source-written, not kernel-checked. No E8 equivalence, lattice construction or VOA isomorphism proved.
+
+### TODOs — docs → TODOs → code → changelog
+
+- [x] Inspect existing spectral/TOE owners and record bounded E8 review metadata without proof promotion.
+- [x] Mirror receipt in Lean.
+- [ ] Inspect actual E8 lattice and Moonshine VOA theorem-owner declarations and Lean equivalents, then select an explicit missing equivalence/embedding obligation.
+- [ ] Run Agda/Lean kernel checks with version, command, exit status; do not promote receipt metadata to kernel evidence.
+- [ ] Connect to TOE import graph after checking cycles and original attribution, without editing ESD surfaces.
+- [ ] Reconcile actual root ROADMAP.md, planning and changelog files in both source repos; this docs update alone is not strict cross-repo alignment.
+
+### Changelog
+
+- 2026-10-29: Round 10/20 adds Agda-first E8 review-status receipt and Lean mirror. No E8 theorem, Monster representation, kernel verification or TOE integration claimed.
