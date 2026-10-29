@@ -85,4 +85,13 @@ def automatic_formal_evidence(conn, conversation_id, entry, *, repo_root,
         lines.append("- Preflight: " + json.dumps(preflight, ensure_ascii=False))
         lines.append("- AST / itir.formal.certify / itir.ao.gap_check: not invoked; no executable adapter verified.")
         lines.append("- kernel_verified PostgreSQL receipts: unavailable (no verified schema field or attestation join supplied).")
-    symbols = entry.get("formal_symbols", ())\n    if symbols:\n        from .formal_slicer import build_pruned_formal_slice, related_symbol_candidates\n        slice_result = build_pruned_formal_slice(root, symbols,\n            source_files=files)\n        lines.append("## Bounded formal slice (not standalone or kernel verified)")\n        lines.append("```agda\\n" + slice_result.text + "\\n```")\n        for symbol in symbols:\n            lines.append("- Symbol candidates for " + str(symbol) + ": " +\n                json.dumps(related_symbol_candidates(root, str(symbol), source_files=files)))\n    return "\n".join(lines) + "\n"
+    symbols = entry.get("formal_symbols", ())
+    if symbols:
+        from .formal_slicer import build_pruned_formal_slice, related_symbol_candidates
+        slice_result = build_pruned_formal_slice(root, symbols, source_files=files)
+        lines.append("## Bounded formal slice (not standalone or kernel verified)")
+        lines.append("```agda\n" + slice_result.text + "\n```")
+        for symbol in symbols:
+            lines.append("- Symbol candidates for " + str(symbol) + ": " +
+                         json.dumps(related_symbol_candidates(root, str(symbol), source_files=files)))
+    return "\n".join(lines) + "\n"

@@ -24,11 +24,13 @@ def _declarations(source):
     for i, line in enumerate(lines):
         m = pattern.match(line)
         if m:
-            starts.append((i,m.group(1)))
+            name = m.group(1)
+            if not starts or starts[-1][1] != name:
+                starts.append((i, name))
     out = {}
-    for n,(i,name) in enumerate(starts):
+    for n, (i, name) in enumerate(starts):
         end = starts[n+1][0] if n+1 < len(starts) else len(lines)
-        out.setdefault(name,(i+1,"\n".join(lines[i:end]).rstrip()))
+        out[name] = (i + 1, "\n".join(lines[i:end]).rstrip())
     return out
 
 def build_pruned_formal_slice(repo_root, target_symbols, max_depth=2,
