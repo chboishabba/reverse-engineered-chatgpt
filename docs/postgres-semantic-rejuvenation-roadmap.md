@@ -659,3 +659,24 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog (to fill after code)
 
 - 2026-10-29: Agda-first buffered-result protocol committed `eaacd5bd195dd952d4d2432b8e0178a4583f501c`; Lean mirror committed `bce09c3592dcda770a00dd75c2dd0344ae9aea59`. Both source-written; no proof-kernel run, runtime test, TOE integration or cross-repository roadmap alignment claimed.
+
+## Round 13/20 — physics closure vs Clay promotion (2026-10-29)
+
+### Docs — canonical source truth before code
+
+- Parent `Assess Round Modules`, motif `closure · closure(physics)`, benefit 0.590, one worker. Consensus: `round191CompleteProductionEnergyLedgerClosed` true; blockers `round193ClayPromotion` and `round193PackageAClosed` both false, not discharged.
+- Inspected actual default-branch golden candidate owners `DASHI/Physics/Closure/NSTriadKNClayFrontierRound193Validation.agda`, `NSTriadKNClayFrontierRound193Exact.agda`, and `NSTriadKNCriticalExternalDoubleCommutatorCellsRound193Exact.agda`. Existing R191 energy ledger and R193 signed cell expansion are marked closed; R193 self-owner same-object payment, combined external trajectory payment, Package A and Clay promotion remain false. Neither inspected owner has `{-# OPTIONS --safe #-}`. Do not change status flags or assert a Clay theorem from them.
+- GitHub code search found no `round193PackageAClosed` or `NSTriadKNClayFrontierRound193` equivalent in dashi_lean4 default branch. Preserve source/mirror distinction; do not invent theorem authority.
+- Reuse existing proof and status owners. Add a *safe standalone* Round13 boundary summary only if it can represent these facts without importing unsafe owners; a standalone summary is metadata, not a proof of their equality to external owner values.
+
+### TODOs — before implementation
+
+- [ ] Create safe Agda boundary model with R191 ledger closed, R193 package and promotion blocked, with explicit refl witnesses and no postulates/metas/TERMINATING.
+- [ ] Add Lean mirror of exactly the bounded status model.
+- [ ] Prove actual same-object internal payment and cutoff-uniform signed external forcing payment on existing R193 owner; only then reconsider Package A and Clay promotion. A receipt is not discharge.
+- [ ] Run Agda and Lean kernel checks, inspect exact imports and TOE integration; no ESD edits.
+- [ ] Locate and reconcile canonical ROADMAP.md/planning/changelog in source repositories; current roadmap alone does not prove strict alignment.
+
+### Changelog
+
+- Pending Round 13 safe Agda and Lean commits; no Clay promotion.
