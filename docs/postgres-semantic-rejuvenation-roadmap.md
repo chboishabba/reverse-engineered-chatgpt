@@ -292,3 +292,27 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Code and changelog
 
 - 2026-10-29: recorded Round 6 E8-specific reuse candidates, cross-topic polymer/Clay mismatch, incomplete blocker list and three-lane independence gates. Documentation-only change; no mathematical theorem, runtime code, executed tests or kernel verification claimed.
+
+## Round 7/10 — Topic 7: Assess Round Modules (Lead) (2026-10-29)
+
+### Docs — supplied receipts and concurrency challenge
+
+- Lead Topic 7, ten allocated workers, reported sizing benefit 7.911. This is a supplied conductor receipt, not a locally recomputed cost optimum.
+- Shared AST candidates: `KPEntropyFromL2BlockingOrientations`, `PolymerDefinedOnBlockedLattice`. Nine universal blockers are reported, but only five names provided: `KPEntropyFromL2BlockingOrientationsGate`, `clayPromoted`, `clayYangMillsPromoted`, `effectiveActionPolymersSpatialOnlyForA1`, `kpEntropyAtBlockedScaleL2`. Four identities remain absent.
+- Frontier targets: KP entropy gate, `clayPromoted`, `clayYangMillsPromoted`. These three are not evidence of ten independent work packets; no ten-worker dispatch is justified until explicit lane IDs, typed independence, and `noTypedMeet` are established.
+- Under ITIR PR #53, W=10 is a capacity/result receipt, not a target to fill. Recompute using actual sub-eigen dimensions, distinct blockers, goal counts and token costs; sequence dependent/lower-alpha packets under their parent. Reject cloned lanes.
+- Existing inspected Agda `DASHI/Interop/SemanticThreadRejuvenationExact.agda` and Lean `AgdaMirror/SemanticThreadRejuvenation.lean` model lineage/nonpromotion, not polymer/Clay mathematics. Preserve safe Agda golden precedence and exact author/PR provenance.
+
+### TODOs — docs → tasks → implementation → changelog
+
+- [ ] Resolve the four missing blocker identities from the original AST consensus and record full source receipts before claiming nine obligations are understood.
+- [ ] Inspect exact Agda owners, signatures, dependencies and imports for the two invariants and five named blockers; deduplicate Round 5/6/7 overlapping work instead of treating repeats as new progress.
+- [ ] Partition the three named frontier targets by typed prerequisite order; count genuinely independent leaves and verify pairwise `noTypedMeet` before authorizing any of ten workers.
+- [ ] Recalculate PR #53 conductor cost with actual topic alpha, goal ratios, sub-eigen dimensions and token cost; log both requested allocation 10 and admissible dispatch width.
+- [ ] Produce bounded, provenance-linked PostgreSQL world/gap capsules including exact PR/commit lineage and source refs, with no promotion from Git history or lexical similarity to kernel proof.
+- [ ] Extend existing golden Agda only for well-scoped new statements (`{-# OPTIONS --safe #-}`, no postulates, holes or TERMINATING), then mirror checked theorems in Lean, attach to TOE roots and avoid ESD edits.
+- [ ] Execute tests and kernel checks, record exact outcomes and update completed goals only from verified receipts.
+
+### Code / changelog
+
+- 2026-10-29: Round 7 ten-worker claim, repeated two-invariant/five-of-nine blocker receipt and strict concurrency/deduplication gates documented. No Agda/Lean/Python changes, worker dispatch, executed tests or kernel receipts claimed by this documentation update.
