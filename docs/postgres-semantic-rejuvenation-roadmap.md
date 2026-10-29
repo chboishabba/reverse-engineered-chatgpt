@@ -680,3 +680,23 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Source-written safe Agda closure boundary `274dafbee840514ee4439c9620840bd47fbedd15` and Lean mirror `66f1d548546e2627ddd3b878d8033a81e6c8dd4c`. Analytic payments, Package A, Clay promotion, kernel checks, TOE and root-roadmap synchronization remain open.
+
+## Round 14/20 — file / URL request source provenance (2026-10-29)
+
+### Docs — reuse and no network authority promotion
+
+- Parent `Assess Round Modules`, motif `file · url(request)`, benefit 0.590, one worker. Inspected default-branch Agda `DASHI/Interop/PNFBraidTransportField.agda` (`SourceEvent.sourceUrl` and source provenance), `DASHI/Promotion/SIMetrologyExternalSourceLocator.agda` (locator/intake evidence and nonpromotion), and `DASHI/Governance/SafeJustSourceRegistryExact.agda` (bounded source attribution). These existing modules lack `{-# OPTIONS --safe #-}` and cannot be imported into a safe golden module without a separately checked safe chain.
+- Intended bounded contract: typed `FileUrlRequest` with source file label, URL locator, requested action, and explicit unverified status. A request records intent, not fetch success, checksum verification, file existence, source truth, legal authority or kernel verification. URL syntax and SSRF/network policies are not proved.
+- Default-branch code search found no exact `URLRequest`/`FileURL` owner in either dashi_agda or dashi_lean4. Reuse conceptual provenance semantics, not a duplicate authority adapter.
+
+### TODOs — before code
+
+- [ ] Implement safe Agda file-URL request and receipt boundary with nonpromotion lemmas.
+- [ ] Mirror in Lean after golden Agda.
+- [ ] Inspect actual file/URL fetch runner and test successful/failed/redirected requests, path safety, provenance and checksums.
+- [ ] Kernel-check both modules and record exact commands/versions; inspect TOE cycles before import; no ESD edits.
+- [ ] Reconcile source-repo canonical ROADMAP, planning, TODO and changelog paths; do not infer complete alignment from this document.
+
+### Changelog
+
+- Pending Round 14 source-written commits; no file retrieval or authority verified.
