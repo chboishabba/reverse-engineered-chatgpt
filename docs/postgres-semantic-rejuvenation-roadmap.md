@@ -316,3 +316,26 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Code / changelog
 
 - 2026-10-29: Round 7 ten-worker claim, repeated two-invariant/five-of-nine blocker receipt and strict concurrency/deduplication gates documented. No Agda/Lean/Python changes, worker dispatch, executed tests or kernel receipts claimed by this documentation update.
+
+## Round 8/10 — Topic 8: opaque `0xffff1000` labels (2026-10-29)
+
+### Docs — source fidelity and typed abstention
+
+- Topic ID 8, one allocated worker, reported sizing benefit 0.800 (supplied receipt, not independently recomputed).
+- The exact topic label is `0xffff1000() · 0xffff1000(temporal: 0xffff1000) · 0xffff1000(property: 0xffff1000)`. Preserve the raw tokens; **do not decode, normalize to a natural-language concept, or infer temporal/property semantics without a canonical source mapping**. This may be an opaque sentinel or malformed extraction, but neither diagnosis is proven.
+- No shared AST invariants, universal blockers or frontier targets were supplied for this round. Absence of supplied triangulation is not a verified zero result.
+- Inspected golden `DASHI/Interop/SemanticThreadRejuvenationExact.agda`, Lean `AgdaMirror/SemanticThreadRejuvenation.lean` and ITIR fleet runner; the first two prove provenance/nonpromotion contracts rather than a semantics for `0xffff1000`. Do not attach a guessed theorem to TOE imports.
+- Preserve the supplied Git/PR context as candidate lineage, not proof or authoritative decoding; no SQLite/SLRW fallback in PostgreSQL-only rejuvenation.
+
+### TODOs — docs → TODOs → code → changelog
+
+- [ ] Query the canonical PostgreSQL source record for topic ID 8 and its raw text, offsets, encoding, PNF tokens, normalization provenance, and topic assignment revision. Compare raw bytes with rendered `0xffff1000` occurrences.
+- [ ] Search the exact sentinel `0xffff1000` and equivalent escaped spellings in source code, corpus metadata, AST index, topic-label generation and prior round lineage before modifying formal declarations.
+- [ ] Decide via evidence whether it is a legitimate literal symbol, encoding artifact, missing-value sentinel or extractor error; record ambiguity explicitly and do not invent semantic expansion.
+- [ ] If an actual typed interpretation is recovered, locate and reuse matching golden Agda owners first, then extend safe Agda without postulates, metas or TERMINATING; mirror only verified statements in Lean, attach TOE imports, and leave ESD surfaces untouched.
+- [ ] Keep the one-worker lane sequential until an independently verified sub-eigen decomposition exists. No blocker discharge is claimed without named targets.
+- [ ] Add regression tests for literal round-trip and provenance of opaque labels in the PostgreSQL PNF/topic pipeline once the responsible implementation owner is located; record executed receipts.
+
+### Code / changelog
+
+- 2026-10-29: Round 8 exact opaque topic label, source-decoding abstention, and PostgreSQL provenance/round-trip obligations documented. No semantic interpretation, Agda/Lean implementation, runtime change, executed test or kernel verification claimed.
