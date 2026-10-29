@@ -146,3 +146,28 @@ Attribution: search hits, lexical gaps, preflight output, and PostgreSQL candida
 - [ ] Verify exact similarity categories and preserve author attribution, Ibrahim ownership, and ESD import-only boundaries.
 
 Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_automated_formal_capsule.py -v`
+
+## Round 1/10 — Topic 1: collapse(auto,last), expand(now) (2026-10-29)
+
+### Docs → TODOs → Code → Changelog alignment
+
+**Observed**: `postgres_world_rejuvenation.py` accepts a supplied manifold and can attach formal evidence when `formal_repo_root` is supplied. `automatic_formal_evidence.py` uses candidate factors, lexical token gaps, fixed-string search and optional bounded source slices; it does not demonstrate native commit/PR lineage or kernel verification. `DASHI/Interop/SemanticThreadRejuvenationExact.agda` is the golden single-parent lineage/nonpromotion contract; `AgdaMirror/SemanticThreadRejuvenation.lean` is secondary. Neither is a runtime correctness proof.
+
+**Conductor**: Topic 1 has 1 allocated worker and reported sizing benefit 0.630; this is an input receipt, not a recomputed result. ITIR PR #53 defines sequential width 1, frontier-blocker width by distinct blockers, parallel width by sub-eigen dimension, capacity bounded and noTypedMeet gated. PR #52 offers PostgreSQL with an SLRW fallback; the latter is forbidden for this rejuvenation path. Supplied merge commits `b3ce2c5` and `e3f0b7c` require branch reachability verification; PR search still reports #52/#53 open, so do not infer merged state from abbreviated commit messages alone.
+
+**Lineage evidence supplied, not independently verified**: `5a98d42`, `deab692`, `d4607b7`. Candidate lexical PR numbers and commit hashes must be resolved to exact repository, SHA, file/line, PR head/base, author, timestamp and verified receipt before contributing to completed goals. Duplicate historical PR references do not increase proof count.
+
+### TODOs — next convergence gate
+
+- [ ] Locate the actual source branch of the reported `deab692` Git/PR lineage injection; compare with this branch's implementation, then reuse or cherry-pick without duplicate logic.
+- [ ] Add typed lineage inputs to world and coalesced capsules; preserve parent IDs, source revision and PR/commit provenance separately from kernel-verified proof status.
+- [ ] Verify Topic 1's `collapse(property:auto,last)` and `expand(temporal:now)` meanings against actual topic data before transforming anything. No semantic equivalence is implied by labels.
+- [ ] Reconcile `pnf_work_packet_v1.md` lexical PR candidate receipts with the PostgreSQL-only policy; do not adopt its SQLite canonical store.
+- [ ] Confirm Round193 four consensus symbols and two blockers by reading exact declarations and dependent proofs before updating completed-goal counts.
+- [ ] Golden Agda: model bounded provenance, source/PR/commit receipts, explicit nonpromotion and multi-parent lineage with `{-# OPTIONS --safe #-}`; zero postulates, unsolved metas, TERMINATING pragmas. Mirror checked statements in Lean after Agda kernel success; attach to TOE imports without ESD edits.
+- [ ] Verify PostgreSQL schema joins and deterministic integration tests, then run pytest, Agda and Lean; do not claim CI/kernel success without execution.
+- [ ] Update root ROADMAP, planning and changelog in their actual owning repositories after locating canonical paths; root ROADMAP.md was not present on this branch.
+
+### Changelog — source-written documentation only
+
+- 2026-10-29: recorded Round 1/10 topic allocation, conductor/PG spine policy conflict, lineage source reconciliation and remaining Agda/Lean/code verification gates. No runtime, schema, kernel or test change is claimed by this entry.
