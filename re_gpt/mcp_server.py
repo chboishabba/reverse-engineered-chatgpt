@@ -112,6 +112,22 @@ WORKER_PROMPT_PRESETS: dict[str, str] = {
         "Ensure all planning is up to date, reflect intended behaviors, and verify strict "
         "alignment across docs, tasks, and implementation."
     ),
+    "snowball": (
+        f"{GOLDEN_AGDA_REMINDER} Exactly complete all per max-cut and continue per "
+        "pareto/snowball/ibrahim check the web and latest PRs for inspo -- assume we "
+        "already have everything we need in-repo. keep following your nose until you hit "
+        "a wall -- don't wait for my approval re all this and remember our attribution rules "
+        "ensure we have covered all the requested topics then keep going more.. dont worry "
+        "about CI - ensure you have a roadmap doc to keep track of all these."
+    ),
+    "max_cut_snowball": (
+        f"{GOLDEN_AGDA_REMINDER} Exactly complete all per max-cut and continue per "
+        "pareto/snowball/ibrahim check the web and latest PRs for inspo -- assume we "
+        "already have everything we need in-repo. keep following your nose until you hit "
+        "a wall -- don't wait for my approval re all this and remember our attribution rules "
+        "ensure we have covered all the requested topics then keep going more.. dont worry "
+        "about CI - ensure you have a roadmap doc to keep track of all these."
+    ),
 }
 
 _VERBOSE_OPERATION_KEYS = {
