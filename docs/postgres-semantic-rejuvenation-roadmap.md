@@ -171,3 +171,27 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog — source-written documentation only
 
 - 2026-10-29: recorded Round 1/10 topic allocation, conductor/PG spine policy conflict, lineage source reconciliation and remaining Agda/Lean/code verification gates. No runtime, schema, kernel or test change is claimed by this entry.
+
+## Round 2/10 — Topic 2: Explain torque better (2026-10-29)
+
+### Docs — input receipts and scope
+
+- Topic ID 2, lead `Explain torque better`, one allocated worker, reported sizing benefit 0.776. Allocation is supplied, not recomputed.
+- User-reported shared AST invariant: `round191CompleteProductionEnergyLedgerClosed`. Treat as a lookup target until exact Agda owner, declaration, import closure and kernel receipt are verified. A production energy ledger is not automatically a torque theorem.
+- User-reported universal blockers: `round193ClayPromotion` and `round193PackageAClosed`. These may be global Round193 obligations, but they are not automatically typed prerequisites of the torque topic. Require explicit dependency edges and `noTypedMeet` before assigning either blocker to this worker.
+- Supplied PR/commit context: PRs #49–#53 and short SHAs `b3ce2c5`, `e3f0b7c`, `5a98d42`, `deab692`, `d4607b7`. Do not infer merge status or proof discharge from descriptions or abbreviated IDs.
+
+### TODOs — dependency-aware convergence
+
+- [ ] Search golden Agda and Lean for torque, angular momentum, force, lever arm, work, and energy relations before constructing new lemmas. Reuse or unify existing exact owners; preserve mathematical authorship.
+- [ ] Resolve `round191CompleteProductionEnergyLedgerClosed` to an exact qualified Agda declaration and verify whether its typed signature can be reused for a torque explanation; if unrelated, keep it as adjacent context only.
+- [ ] Resolve the two Round193 blockers to exact signatures, dependencies and proof statuses; do not spend Topic 2's sole lane on an untyped global blocker.
+- [ ] Produce a bounded topic-specific formal slice and a clear explanation linking torque to moment arm and angular acceleration only after checking the selected model's assumptions and units.
+- [ ] Encode source/proof/commit lineage and nonpromotion in safe golden Agda (zero postulates, unsolved metas or TERMINATING pragmas); mirror verified Agda statements in Lean and attach to TOE imports without ESD edits.
+- [ ] Reconcile actual lineage injection on the reported commit `deab692`, plus PostgreSQL-only capsule integration, against this branch's code before claiming runtime parity.
+- [ ] Run deterministic tests, preflight, Agda and Lean verification when local checkout and tools are available; record exact receipts.
+
+### Code status and changelog
+
+- No torque-specific implementation, Agda theorem, Lean mirror or runtime behavior was added in this documentation tranche.
+- 2026-10-29: documented Round 2's lead, allocation, consensus symbol, blockers and typed-gating requirements; recorded that source-reported consensus is not a kernel verification receipt.
