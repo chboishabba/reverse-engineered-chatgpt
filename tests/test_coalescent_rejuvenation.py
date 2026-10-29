@@ -53,3 +53,46 @@ def test_missing_goals_blocks_merging():
     summary["conversations"]["a"]["active_goals"]=[]
     with pytest.raises(ValueError,match="shared explicit deliverable"):
         build_coalesced_world_capsule(DB([]),["a","b"],"biology",manifold_summary=summary)
+
+def test_coalescence_triangulation_injection(tmp_path):
+    f1 = tmp_path / "ModA.agda"
+    f2 = tmp_path / "ModB.agda"
+    f1.write_text("""
+module ModA where
+open import Agda.Builtin.Bool using (Bool; true; false)
+clayPromoted : Bool
+clayPromoted = false
+data Gate : Set where
+  UnprovenGate : Gate
+record Rec : Set where
+  field
+    invTrue : Bool
+    invTrueIsTrue : invTrue ≡ true
+""")
+    f2.write_text("""
+module ModB where
+open import Agda.Builtin.Bool using (Bool; true; false)
+clayPromoted : Bool
+clayPromoted = false
+data Gate : Set where
+  UnprovenGate : Gate
+record Rec : Set where
+  field
+    invTrue : Bool
+    invTrueIsTrue : invTrue ≡ true
+""")
+    db=DB([
+        [("node:a","user","Transport requires diffusion.","2026-10-29T00:00:00Z")],
+        [("candidate:world","statement:w","obj","diffusion","message:world:node")],
+        [("node:b","user","Flux requires diffusion.","2026-10-29T00:00:00Z")],
+        [("candidate:world","statement:w","obj","diffusion","message:world:node")],
+    ])
+    capsule = build_coalesced_world_capsule(
+        db, ["b", "a"], "biology", manifold_summary=manifold(), formal_files=[f1, f2]
+    )
+    assert "Formal Family Triangulation" in capsule
+    assert "Shared Invariant Baseline" in capsule
+    assert "Unresolved Gap Intersection" in capsule
+    assert "invTrue" in capsule
+    assert "clayPromoted" in capsule
+

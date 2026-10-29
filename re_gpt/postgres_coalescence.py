@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from itertools import combinations
 from typing import Mapping
 
+from .formal_triangulator import triangulate_formal_family
 from .postgres_world_rejuvenation import _manifold_entry, build_world_enhanced_capsule
 
 @dataclass(frozen=True)
@@ -79,7 +80,8 @@ def discover_coalescence_clusters(conn, candidate_queue, similarity_threshold=0.
     return sorted(clusters,key=lambda c:(-c.similarity,c.topic_id,c.parents))
 
 def build_coalesced_world_capsule(conn, thread_ids, topic_id, *,
-                                  manifold_summary, adjacent_limit=50, formal_repo_root=None):
+                                  manifold_summary, adjacent_limit=50,
+                                  formal_repo_root=None, formal_files=None):
     parents = tuple(sorted(set(thread_ids)))
     if not 2 <= len(parents) <= 10:
         raise ValueError("coalescence requires 2–10 distinct parents")
@@ -97,6 +99,29 @@ def build_coalesced_world_capsule(conn, thread_ids, topic_id, *,
              f"Sub-eigen cluster: {next(iter(subtopics))}",
              "## Shared deliverables"]
     lines.extend(f"- {g}" for g in sorted(common_goals))
+
+    # Optional formal family triangulation across candidate Agda files
+    selected_formal = list(formal_files) if formal_files else []
+    if not selected_formal and formal_repo_root:
+        root = Path(formal_repo_root)
+        if root.is_dir():
+            terms = [str(topic_id), str(next(iter(subtopics)))] + list(common_goals)
+            found = set()
+            for t in terms:
+                found.update(root.glob(f"**/*{t}*.agda"))
+            if len(found) >= 2:
+                selected_formal = sorted(list(found))[:10]
+
+    if len(selected_formal) >= 2:
+        try:
+            triangulation = triangulate_formal_family(
+                selected_formal, family_name=f"{topic_id}_{next(iter(subtopics))}"
+            )
+            lines.append("## Formal Family Triangulation & Consensus Invariants")
+            lines.append(triangulation.render_markdown())
+        except Exception:
+            pass
+
     for cid in parents:
         lines.append(f"## Parent conversation:{cid} (source attribution retained)")
         lines.append(build_world_enhanced_capsule(
