@@ -777,3 +777,21 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Safe Agda ratio relation committed `91b07016a6ea7ca288a75077039a21fbb789a108`; Lean mirror `de8d5db78133153833e65db47e7bde1cbba50bd1`. Rescaling/transitivity remain TODO. Source-written only: no kernel check, empirical evidence, TOE integration or root-roadmap synchronization.
+
+## Round 19/20 — E8 root combinatorial arithmetic, `prove · rfl(rfl)` (2026-10-29)
+
+### Docs — reuse exact owners before implementation
+
+- Inspected actual `DASHI/Algebra/Trit/E8RootEnumeration.agda`, `DASHI/Physics/Closure/LilaE8RootEnumeration.agda`, `DASHI/Physics/Closure/LilaE8RootSystemLatticeReceipt.agda`; default-branch Lean E8 search returned no equivalent. The E8 root request owns expected integer 112, half-integer 128, total 240, but actual root enumeration, disjointness, no-duplicate, norm and Weyl/projection obligations remain. No Monster same-object claim is authorized.
+- The precise bounded target is an independent safe *finite counting arithmetic* module: 28 coordinate pairs × 4 sign choices = 112; 128 even-parity half-sign patterns; 112 + 128 = 240. This does not construct those sets, prove parity or disjointness, or establish E8 lattice completeness. A `refl` on arithmetic is not a theorem about actual enumerated roots.
+
+### TODOs — before code
+
+- [ ] Create safe Agda E8 count arithmetic and three concrete equalities; no postulates/metas/TERMINATING.
+- [ ] Mirror in Lean after golden Agda.
+- [ ] Reuse existing `E8RootEnumeration` construction to prove actual unique enumeration and membership, rather than asserting count requests are proofs.
+- [ ] Run both kernels, check TOE imports, and synchronize source-repo canonical ROADMAP/planning/TODO/changelogs; no ESD edits.
+
+### Changelog
+
+- Pending Round 19 arithmetic commits; E8 enumeration and Monster representation remain unproved.
