@@ -113,3 +113,24 @@ PYTHONPATH=. python -m pytest tests/test_postgres_world_rejuvenation.py -v
 ```
 
 Formal boundary: coalescence does not prove statement identity, theorem equivalence, or semantic authority. Attribution preserves original mathematical authors, repository PR ownership, independent runtime execution and kernel verification. Preserve Ibrahim Monster 3B ownership. No ESD changes.
+
+
+## Automatic formal evidence tranche (2026-10-29)
+
+- [x] Bounded PostgreSQL candidate-factor retrieval for formal-file linked topics.
+- [x] Safe repo-root constrained Agda file lookup; deterministic fixed-string ripgrep search and timeout-bounded `dashi-agda-preflight --json` invocation.
+- [x] Inject formal evidence automatically into single-thread capsules when `formal_repo_root` is supplied, and propagate to coalesced parents.
+- [x] Source-written mock tests `tests/test_automated_formal_capsule.py`.
+- [ ] **Critical**: replace surface-token gap diagnostic with `ExactGapComparator`'s exact (role,lemma,dependency) multiset logic refactored to read PostgreSQL rather than `.slrw`. Existing comparator defaults to a binary `.slrw` file and MUST NOT be called in that mode.
+- [ ] Invoke actual tree-sitter AST symbol index and `itir.formal.inspect` / `itir.formal.certify` / `itir.ao.gap_check` through verified adapters; current ripgrep is source search, not AST proof search.
+- [ ] Obtain verified `kernel_verified` schema/attestation source and join exact topic evidence; current implementation explicitly does not invent these receipts.
+- [ ] Configure `formal_repo_root` in the conductor entrypoint; without it automatic preflight is not activated.
+- [ ] Run tests and real preflight with available local tools; no execution receipt from this session.
+- [ ] Add Agda golden evidence-kind and nonpromotion lemmas, then Lean mirror and TOE imports; current changes are Python-only.
+
+```bash
+PYTHONPATH=. python -m pytest tests/test_automated_formal_capsule.py -v
+PYTHONPATH=. python -m pytest tests/test_postgres_world_rejuvenation.py tests/test_coalescent_rejuvenation.py -v
+```
+
+Attribution: search hits, lexical gaps, preflight output, and PostgreSQL candidate factors are NOT kernel-verified proofs. Preserve dated mathematical sources, independent repository ownership and Ibrahim Monster 3B boundaries. No ESD changes.
