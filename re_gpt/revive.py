@@ -68,19 +68,33 @@ def build_revival_document(
     all_text = " ".join(content for _, _, content, _ in messages)
     prs = sorted(set(PR_RE.findall(all_text)))
 
+    # Automatic Semantic Rejuvenation: thread -> pnf -> world -> state capsule
+    from .semantic_rejuvenation import extract_factors, state_capsule
+    turns_payload = [{"message_index": idx, "content": content} for idx, _, content, _ in messages]
+    factors = extract_factors(turns_payload)
+    capsule_markdown = state_capsule(factors) if factors else ""
+
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     lines: list[str] = [
         f"# Conversation Context Revival: {title}",
         f"- **Parent Conversation ID**: `{conversation_id}`",
         f"- **Total Historical Turns**: {len(messages)}",
+        f"- **Extracted PNF Factors**: {len(factors)}",
         f"- **Archived & Revived At**: {now_iso}",
         "",
         "## Executive Summary & Continuity",
         "This context document captures the complete decisions, reasoning, and implementation",
-        "history from the predecessor conversation. The worker agent should use this memory to",
-        "continue the mission with clean context and zero token degradation.",
+        "history from the predecessor conversation, automatically synthesized via PNF factor",
+        "extraction and world-model state encapsulation. The worker agent should use this memory",
+        "to continue the mission with clean context and zero token degradation.",
         "",
     ]
+    if capsule_markdown:
+        lines.extend([
+            "## Semantic Rejuvenation State Capsule (thread → pnf → world)",
+            capsule_markdown.strip(),
+            "",
+        ])
     if prs:
         lines.extend([
             "## Referenced GitHub Pull Requests",
@@ -89,11 +103,20 @@ def build_revival_document(
         ])
 
     lines.extend([
-        "## Complete Conversation Transcript",
+        "## Conversation Transcript",
         "",
     ])
 
-    for idx, author, content, ctime in messages:
+    if len(messages) > 40:
+        lines.append(
+            f"*(Notice: {len(messages) - 40} earlier turns compressed into semantic PNF capsule above. "
+            "Displaying most recent 40 turns for continuity.)*\n"
+        )
+        recent_messages = messages[-40:]
+    else:
+        recent_messages = messages
+
+    for idx, author, content, ctime in recent_messages:
         t_str = datetime.fromtimestamp(ctime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M") if ctime else ""
         header = f"### Turn {idx} — {author.upper()}" + (f" ({t_str})" if t_str else "")
         lines.append(header)
