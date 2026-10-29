@@ -39,3 +39,31 @@ REJUVENATION_TEST_PG_DSN='postgresql://.../rejuvenation_test' PYTHONPATH=. pytho
 ```
 
 The integration tests are opt-in. No execution or production-schema verification is claimed by this document.
+
+
+## 2026-10-29 semantic spine implementation tranche
+
+- [x] Added `re_gpt.postgres_semantic_registration.register_thread_factors_and_messages`: parameterized inserts into verified `corpus.chat_archive_message`, `pnf.statement_candidate_factor`, and `pnf.candidate_semantic_product`. Canonical node ID required; no authority flags promoted.
+- [x] Added `re_gpt.postgres_pnf_stream.stream_postgres_pnf_corpus`: read-only server-side cursor over canonical PNF factor table, without `.slrw`.
+- [x] Added mocked SQL mapping, rollback and fail-closed coordinate tests.
+- [ ] Execute those tests and verify actual DB constraints/foreign keys, conflicts and row counts.
+- [ ] Integrate streamer into `itir_mcp` consumer and remove its binary-file dependence.
+- [ ] Extend one transaction to `pnf.graph`, `formal.proof_gap`, `operational.rejuvenation_job` and lineage, using verified schemas. The new method currently covers only the three verified registration tables.
+- [ ] Validate the exact-node backfill and the interpretation of `document_ref`, `source_revision_ref`, `full_message_span_ref`, and `dependency_ref` against existing ITIR canonical conventions. Current generated values are deterministic provisional references, not canonical equivalence proofs.
+- [ ] Integrate async curl_cffi send/reconcile, verify AO 20-worker scheduling and the golden Agda/Lean proof boundary.
+- [ ] Replace SQLite-based `revive.py` runtime entrypoint before claiming PostgreSQL-only rejuvenation.
+
+### Deterministic commands
+
+```bash
+PYTHONPATH=. python -m pytest tests/test_postgres_semantic_registration.py -v
+PYTHONPATH=. python -m pytest tests/test_semantic_rejuvenation.py -v
+# Only against a disposable test PostgreSQL database:
+REJUVENATION_TEST_PG_DSN='postgresql://.../rejuvenation_test' PYTHONPATH=. python -m pytest tests/test_postgres_rejuvenation_integration.py -v
+```
+
+### Golden formalism alignment
+
+`DASHI.Interop.SemanticThreadRejuvenationExact` remains the protocol owner; `AgdaMirror.SemanticThreadRejuvenation` is secondary. The runtime now implements candidate-only registration but has not discharged all golden stage transitions. PR #1416 supplies spectral/Pareto quotient machinery; PR #1417 supplies the capacity-bounded conductor. Neither scheduling nor similarity promotes proof authority. Ibrahim attribution and Monster 3B ownership remain unchanged.
+
+Verification: source committed; no fresh PostgreSQL, pytest, Agda or Lean execution receipt claimed.
