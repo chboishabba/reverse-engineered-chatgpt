@@ -268,3 +268,27 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Code and changelog
 
 - 2026-10-29: documented Round 5 two-invariant/five-named-of-nine-blocker triangulation, three frontier targets and missing-data gate. No code or proof modification, kernel check, or test execution occurred in this documentation tranche.
+
+## Round 6/10 — Topic 6: Branch · Compare E8 Models (2026-10-29)
+
+### Docs — authoritative inputs and mismatch
+
+- Lead Topic 6, three allocated workers, reported sizing benefit 2.346. These are supplied conductor outputs, not recomputed.
+- Reported shared AST invariants: `KPEntropyFromL2BlockingOrientations` and `PolymerDefinedOnBlockedLattice`. Their names concern blocked-lattice polymers/KP entropy; **no E8 model equivalence follows** without typed dependencies.
+- Reported nine universal blockers, but only five named: `KPEntropyFromL2BlockingOrientationsGate`, `clayPromoted`, `clayYangMillsPromoted`, `effectiveActionPolymersSpatialOnlyForA1`, `kpEntropyAtBlockedScaleL2`. Four remain unspecified. Frontier selects the first three, not proof discharge.
+- Agda PR search found E8-specific candidate PR #1389 (`E6 F3^5 and E8 E6-A2 comparison max-cut`) and #1312 (`E8 completion boundary and Monster actor scope`). Inspect exact owner declarations before reusing; do not infer a common Monster representation from character matches or analogies. Preserve Ibrahim 3B ownership.
+- Existing inspected golden rejuvenation contract and Lean mirror prove provenance/nonpromotion protocol facts only; neither is an E8 theorem. Golden Agda remains authoritative, Lean follows.
+
+### TODOs — reuse-first and three-worker gates
+
+- [ ] Resolve the actual E8 models, comparison relation (lattice embedding, root-system isomorphism, Lie algebra representation or character agreement), exact source symbols, assumptions and attribution from the Topic 6 PostgreSQL/PNF source references.
+- [ ] Inspect PR #1389 and #1312 source Agda modules and import graph; search Lean mirrors, then reuse/unify before extending. Record source-written, checked and unverified claims distinctly.
+- [ ] Establish whether the two reported polymer/KP invariants have a typed dependency path into the E8 comparison. If absent, retain as unrelated cross-topic candidates and do not schedule their Clay blockers as E8 obligations.
+- [ ] Recover the four missing blocker identities from the upstream AST consensus receipt; abstain rather than invent them.
+- [ ] Allocate three workers only with distinct lane IDs and pairwise `noTypedMeet`, respecting sequential dependencies and PR #53's cost law. Possible E8 model/comparison/provenance work is a planning hypothesis, not an authorized dispatch.
+- [ ] Formalize only a precise evidenced comparison in existing safe golden Agda (`{-# OPTIONS --safe #-}`, zero postulates/metas/TERMINATING), mirror checked results in Lean, and attach to TOE import roots; never edit ESD surfaces.
+- [ ] Reconcile exact PR/commit hashes into PostgreSQL world/gap evidence, preserving authorship and nonpromotion; run kernel and integration checks before any completed status.
+
+### Code and changelog
+
+- 2026-10-29: recorded Round 6 E8-specific reuse candidates, cross-topic polymer/Clay mismatch, incomplete blocker list and three-lane independence gates. Documentation-only change; no mathematical theorem, runtime code, executed tests or kernel verification claimed.
