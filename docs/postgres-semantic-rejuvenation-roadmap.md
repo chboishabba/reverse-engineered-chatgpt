@@ -649,8 +649,8 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 
 ### TODOs — prior to implementation
 
-- [ ] Add safe Agda `BufferedTestResult`, `bufferResult`, `releaseBuffered` and field-preservation/idempotence lemmas by reusing `TextTestResult`.
-- [ ] Mirror exactly in Lean after Agda source write.
+- [x] Add safe Agda `BufferedTestResult`, `bufferResult`, `releaseBuffered` and field-preservation/idempotence lemmas by reusing `TextTestResult` (commit `eaacd5bd195dd952d4d2432b8e0178a4583f501c`).
+- [x] Mirror in Lean after Agda source write (commit `bce09c3592dcda770a00dd75c2dd0344ae9aea59`).
 - [ ] Run both proof kernels, record exact commands and exits; do not promote source-written to verified.
 - [ ] Inspect actual kernel-buffer runtime semantics and bridge to existing Dialectic `Policy.buffer` only with explicit meaning and safe import boundary.
 - [ ] Check TOE import cycles and wire golden owner; do not edit ESD surfaces.
@@ -658,4 +658,4 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 
 ### Changelog (to fill after code)
 
-- Pending Round 12 Agda-first source commit and Lean mirror commit; source-written only until checked.
+- 2026-10-29: Agda-first buffered-result protocol committed `eaacd5bd195dd952d4d2432b8e0178a4583f501c`; Lean mirror committed `bce09c3592dcda770a00dd75c2dd0344ae9aea59`. Both source-written; no proof-kernel run, runtime test, TOE integration or cross-repository roadmap alignment claimed.
