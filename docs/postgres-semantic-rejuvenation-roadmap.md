@@ -504,3 +504,27 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Round 5/20 adds source-written Agda-first SensibLaw public-field redaction and space-separator projection plus Lean mirror; explicitly withholds privacy, deontic, kernel and runtime certification.
+
+## Round 6/20 — Worker Slot 06: UI parsed-text auto-collapse (2026-10-29)
+
+### Docs — behavior and boundaries
+
+- Parent Topic 1 `collapse(property: auto) · collapse(property: last) · expand(temporal: now)`, sub-motif `text(parsed) · collapse(auto)`, supplied conductor benefit 0.590 and one worker.
+- Inspected existing golden `DASHI/Interop/SemanticThreadRejuvenationExact.agda` and secondary `AgdaMirror/SemanticThreadRejuvenation.lean` before extension. The original Topic 1 operation constructors remain syntax only; the new Worker 06 model adds a concrete single-node state transition.
+- Golden Agda commit `ccfc74d361322ca5d4fe3354c1ca92c9fc0bf915` on `feat/semantic-rejuvenation-golden`: `ParsedAutoNode`, `collapseAuto`, `collapseAutoPreservesText`, `collapseAutoHides`, `collapseAutoIdempotent`. `{-# OPTIONS --safe #-}` retained; no postulates, holes or TERMINATING pragmas introduced. Not kernel-checked.
+- Lean mirror commit `d3b756c423c97eb7e8f02e08d55ae33fa19be1ab` on `feat/semantic-rejuvenation-mirror`, matching the bounded node behavior. Not kernel-checked.
+- `parsedText` is an input string, not a validated parser output; the `expanded` flag is not a DOM/layout/React rendering proof. No tree-wide propagation, last-node collapse, temporal-now expansion, or PostgreSQL execution semantics are established.
+
+### TODOs — docs → TODOs → code → changelog
+
+- [x] Reuse existing Topic 1 Agda owner for bounded auto-collapse state transition and idempotence.
+- [x] Mirror the bounded lemmas in Lean.
+- [ ] Execute Agda and Lean kernel checks and record exact commands, versions and exits; fix errors before certification.
+- [ ] Inspect actual UI tree/runtime state owner; implement child preservation, event routing, reactivity and `last`/`now` operations only against verified semantics.
+- [ ] Add UI property tests for repeated collapse, retained parsed text, and unchanged siblings; connect to PostgreSQL topic provenance only after source-coordinate validation.
+- [ ] Integrate golden Agda owner into TOE imports after checking module cycles, without editing ESD surfaces.
+- [ ] Reconcile canonical root ROADMAP.md/planning/changelog in the actual code repositories once found; the current roadmap update does not prove strict cross-repository documentation alignment.
+
+### Changelog
+
+- 2026-10-29: Round 6/20 source-written Agda-first single-node auto-collapse with preservation and idempotence lemmas, plus Lean mirror; parser, runtime, kernel, TOE and broader planning integration pending.
