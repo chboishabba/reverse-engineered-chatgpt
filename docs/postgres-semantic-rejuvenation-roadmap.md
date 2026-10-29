@@ -739,3 +739,22 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Agda-first safe opaque runtime-version contract committed `3704aa250cba495662510a1248790c9380ccac78`; Lean mirror committed `529360502cb2a0ca30793de376900c3333437331`. Source-written only: no binary ABI, runtime execution, kernel check, TOE integration or root-roadmap alignment established.
+
+## Round 17/20 — `log · profile(strict)` (2026-10-29)
+
+### Docs — evidence semantics before code
+
+- Parent `Assess Round Modules`, net benefit 0.590, one worker. Exact `profile(strict)` and `LogProfile` searches found no owner in either repository. Inspected actual Agda `DASHI/Cognition/PNF/TypedEventuallyConsistentFibreSystemExact.agda`, `DASHI/Promotion/EmpiricalReplayAcceptanceCriteria.agda` and `Docs/TypedEventuallyConsistentFibreScheduling.md`. Existing strict-runtime scheduling distinguishes commute/join/braid and rejects unproved batch semantic promotion. Replay criteria explicitly track missing authority and version pins.
+- Intended safe bounded strict-profile log: typed configuration with profile name, strict flag, version and log entry; append operation retains profile/version and marks the entry *recorded but not runtime-verified*. `strict=true` is a requested policy, not evidence that runtime obeyed it. No fake test attestation.
+
+### TODOs — before code
+
+- [ ] Add safe Agda `StrictLogProfile` and `LogEntry`/append protocol with strict configuration preservation and nonverification lemmas.
+- [ ] Mirror in Lean after Agda.
+- [ ] Inspect actual runtime logging/profile implementation, test strict rejection and version pinning with executed receipts.
+- [ ] Run Agda and Lean kernels with versions/exits, check TOE import graph, no ESD edits.
+- [ ] Locate canonical ROADMAP.md, planning, TODO, changelog owners in both source repositories; strict cross-repo alignment not yet established.
+
+### Changelog
+
+- Pending Round 17 source commits; strict runtime compliance not proven.
