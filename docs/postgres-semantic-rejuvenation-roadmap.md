@@ -795,3 +795,21 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Golden Agda candidate-count arithmetic committed `227cc980629a5e0cdde99c2b0cbd4a6fd6f62225`; Lean mirror `755a40c636994dc84b0a6a59cc4372f95078d1ee`. Source-written only: no kernel execution, root enumeration, TOE integration, Monster same-object claim or root-roadmap alignment.
+
+## Round 20/20 — `support · fp16` (2026-10-29)
+
+### Docs — capability request vs actual hardware/runtime support
+
+- Exact `fp16` and `float16` searches of both Agda and Lean default branches returned no hits. Inspected `DASHI/Visualisation/CoarseSliceSearchExact.agda` (int8/float32 storage, int32 accumulation, shortlist exact reranking) and `DASHI/Analysis/FastCauchyRationalRealBackendCutsetExact.agda` (dyadic mathematical approximation, not IEEE fp16). Neither establishes hardware fp16 support, correct rounding, accumulation precision or GPU compatibility.
+- Intended safe bounded model: explicit fp16 request, runtime support receipt and policy decision; deny without a positive receipt; the positive receipt is an input claim rather than independently verified device capability. This avoids asserting ROCm/Vulkan hardware support from metadata.
+
+### TODOs — before code
+
+- [ ] Implement safe Agda typed fp16 support-gating and fail-closed decision proofs.
+- [ ] Mirror Lean after Agda.
+- [ ] Inspect and run real device/runtime probes, verify IEEE binary16 rounding and accumulation semantics and numerical error before promotion.
+- [ ] Kernel-check Agda/Lean, record commands/exits, inspect TOE import graph and reconcile source-repo canonical ROADMAP/planning/TODO/changelogs; no ESD edits.
+
+### Changelog
+
+- Pending Round 20 source commits. No actual fp16 hardware or numerical validation attested.
