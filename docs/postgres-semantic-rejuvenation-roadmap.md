@@ -92,3 +92,24 @@ PYTHONPATH=. python -m pytest tests/test_semantic_rejuvenation.py -v
 ```
 
 Source-written only, no new executed test receipt. PostgreSQL is the only database used by the new module; the legacy runner is not yet retired. Agda remains golden, Lean secondary. Original authors and Ibrahim Monster 3B attribution remain unchanged.
+
+
+## Coalescent manifold rejuvenation (2026-10-29)
+
+- [x] Proposed coalescence clusters from exact PostgreSQL dependency_ref→message_ref join and persisted candidate lemmas, using deterministic complete-link overlap; requires identical topic/sub-eigen and at least one shared explicit deliverable.
+- [x] Multi-parent world capsule retains separate parent provenance, supplied spectral coordinates and adjacent PostgreSQL candidates; no generic TOE prompts.
+- [x] Source-written deterministic tests in `tests/test_coalescent_rejuvenation.py`.
+- [ ] Verify `dependency_ref` is in fact an exact `message_ref` in the production dataset; otherwise use the existing ITIR graph evidence route. No synthetic identity promotion.
+- [ ] Inspect `operational.rejuvenation_job` and `operational.conversation_lineage` actual DDL before multi-parent writes. Do not guess keys or retire parents prematurely.
+- [ ] Implement transactional multi-parent lineage and atomic parent queue transitions once verified; recovery must preserve the ambiguous-send reconciliation barrier.
+- [ ] Integrate with ITIR PR #53 `execute_pareto_conductor`, enforce per-worker lane identity/noTypedMeet and a 20-capacity cap.
+- [ ] Bind actual manifold JSON layout and StatiBaker/Kanban deliverable evidence, run PG integration and pytest. Current proposals are not verified completion.
+- [ ] Add Agda golden coalescence preservation lemmas, then Lean mirror and TOE import; kernel receipts required before calling them verified.
+- [ ] Retire the legacy SQLite runner and all .slrw dependencies only after a validated replacement, never by blind deletion.
+
+```bash
+PYTHONPATH=. python -m pytest tests/test_coalescent_rejuvenation.py -v
+PYTHONPATH=. python -m pytest tests/test_postgres_world_rejuvenation.py -v
+```
+
+Formal boundary: coalescence does not prove statement identity, theorem equivalence, or semantic authority. Attribution preserves original mathematical authors, repository PR ownership, independent runtime execution and kernel verification. Preserve Ibrahim Monster 3B ownership. No ESD changes.
