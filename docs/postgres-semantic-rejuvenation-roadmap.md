@@ -243,3 +243,28 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Code / changelog receipt
 
 - 2026-10-29: Round 4 planning synchronized, including two-worker typed-independence gate and missing-case abstention. No SensibLaw test fixture, Agda proof, Lean theorem, Python code, executed test or kernel check was produced in this documentation-only tranche.
+
+## Round 5/10 — Topic 5: Assess Round Modules (Ancestor) (2026-10-29)
+
+### Docs: evidence and uncertainty
+
+- Topic 5 ancestor, two workers, reported sizing benefit 1.114 (supplied, not independently recomputed).
+- Reported shared invariants: `KPEntropyFromL2BlockingOrientations`, `PolymerDefinedOnBlockedLattice`. Treat as symbol-discovery candidates until exact Agda signatures, owner modules, import closure and kernel receipts are checked.
+- Report says **nine** universal blockers but enumerates only **five**: `KPEntropyFromL2BlockingOrientationsGate`, `clayPromoted`, `clayYangMillsPromoted`, `effectiveActionPolymersSpatialOnlyForA1`, `kpEntropyAtBlockedScaleL2`. Four blocker identities are missing; do not invent or mark them discharged.
+- Frontier targets name the first three blockers only. Frontier selection does not establish their discharge or logical independence.
+- Existing golden rejuvenation contract and Lean mirror concern provenance/nonpromotion, not the Yang-Mills polymer/KP entropy mathematics; these modules are not substitute proofs.
+- Two-worker allocation is capacity-bound and requires distinct typed lanes and `noTypedMeet` under ITIR PR #53; three frontier targets must be scheduled across at most two admissible lanes, not cloned.
+
+### TODOs: Docs → TODOs → Code → Changelog
+
+- [ ] Resolve both reported invariants in actual golden Agda source, inspect type signatures, proof bodies, imports, authorship and any matching Lean mirrors. Reuse exact owners first.
+- [ ] Recover all nine blocker names and source receipts from canonical topic AST/PNF input; record four missing identities as an incomplete triangulation receipt until available.
+- [ ] Construct typed dependency DAG for the five named blockers and their relation to shared invariants. Distinguish a KP entropy gate, polymer spatial-only restriction, and Clay/Yang-Mills promotion obligations; do not equate them by shared vocabulary.
+- [ ] Determine whether two genuinely independent worker lanes exist, then apply `noTypedMeet`, frontier priority, Pareto and token-cost gates before dispatch.
+- [ ] Formalize only evidenced incremental statements in existing `{-# OPTIONS --safe #-}` Agda owners with zero postulates, unsolved metas or TERMINATING pragmas. Mirror checked statements in Lean and wire TOE imports; do not edit ESD surfaces.
+- [ ] Link exact PR/commit and formal-gap receipts to PostgreSQL world capsule without proof promotion; verify abbreviated commit lineage and PR status independently.
+- [ ] Execute targeted Agda/Lean/preflight tests and document actual kernel receipts; no such execution is claimed here.
+
+### Code and changelog
+
+- 2026-10-29: documented Round 5 two-invariant/five-named-of-nine-blocker triangulation, three frontier targets and missing-data gate. No code or proof modification, kernel check, or test execution occurred in this documentation tranche.
