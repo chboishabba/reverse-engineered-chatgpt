@@ -94,4 +94,21 @@ def automatic_formal_evidence(conn, conversation_id, entry, *, repo_root,
         for symbol in symbols:
             lines.append("- Symbol candidates for " + str(symbol) + ": " +
                          json.dumps(related_symbol_candidates(root, str(symbol), source_files=files)))
+    lines.extend(git_and_pr_lineage_evidence(root, timeout=timeout))
     return "\n".join(lines) + "\n"
+
+
+def git_and_pr_lineage_evidence(repo_root: Path, timeout: int = 4) -> list[str]:
+    """Capture recent Git commits and active GitHub pull requests into world evidence."""
+    lines = ["## Git Lineage & Active PR Context"]
+    res = _run(["git", "log", "-n", "5", "--oneline"], repo_root, timeout)
+    if res["status"] == "ok" and res["output"].strip():
+        lines.append("- Recent Git Commits:")
+        for l in res["output"].strip().splitlines()[:5]:
+            lines.append(f"  - `{l}`")
+    pr_res = _run(["gh", "pr", "list", "--limit", "5"], repo_root, timeout)
+    if pr_res["status"] == "ok" and pr_res["output"].strip():
+        lines.append("- Active GitHub Pull Requests:")
+        for l in pr_res["output"].strip().splitlines()[:5]:
+            lines.append(f"  - {l}")
+    return lines

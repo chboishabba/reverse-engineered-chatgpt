@@ -39,3 +39,20 @@ def test_missing_and_unsafe_formal_paths_are_explicit(tmp_path):
 def test_no_formal_target_never_claims_verification(tmp_path):
     text=automatic_formal_evidence(DB(),"thread",{},repo_root=tmp_path)
     assert "no formal claim" in text
+
+def test_git_and_pr_lineage_included(tmp_path, monkeypatch):
+    p = tmp_path / "DASHI" / "Test.agda"
+    p.parent.mkdir()
+    p.write_text("module DASHI.Test where\n")
+    def fake_run(argv, cwd, timeout):
+        if argv[0] == "git":
+            return {"status": "ok", "output": "abc1234 feat: recent commit message\n"}
+        if argv[0] == "gh":
+            return {"status": "ok", "output": "#53 AO: sublinear topic metasystem\n"}
+        return {"status": "ok", "output": ""}
+    monkeypatch.setattr("re_gpt.automatic_formal_evidence._run", fake_run)
+    text = automatic_formal_evidence(DB(), "thread", {"formal_files": ["DASHI/Test.agda"]}, repo_root=tmp_path)
+    assert "Git Lineage & Active PR Context" in text
+    assert "abc1234 feat: recent commit message" in text
+    assert "#53 AO: sublinear topic metasystem" in text
+
