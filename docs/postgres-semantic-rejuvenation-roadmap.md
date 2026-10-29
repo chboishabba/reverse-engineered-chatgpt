@@ -573,3 +573,25 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Round 8/20 source-written Agda-first text-test witness contract and Lean mirror. No actual runtime test, kernel verification, TOE integration or full cross-repository roadmap synchronization claimed.
+
+## Round 9/20 — Worker Slot 09: Assess Round Modules / `package · satisfy` (2026-10-29)
+
+### Docs — package boundary and exact reuse
+
+- Parent `Assess Round Modules`, sub-motif `package · satisfy`, reported net benefit 0.590 and one worker. This reuses Round 8's `TextTestResult` rather than fabricating a test-runner or external package certification.
+- Golden safe Agda `DASHI/Interop/SemanticThreadRejuvenationExact.agda` on `feat/semantic-rejuvenation-golden`, commit `1b1c9a5dc7ace422fd023579c98849070632762d`, adds `AssessedPackage`, `packageSatisfied`, `packagePreservesObserved`, `packagePreservesExpected`. These statements prove only structural preservation of existing expected/observed data; the supplied witness already came from the caller.
+- Lean secondary mirror `AgdaMirror/SemanticThreadRejuvenation.lean` on `feat/semantic-rejuvenation-mirror`, commit `5d779a85465338f249ba2c9dbfc2843a666e075e`. Both source-written, neither kernel checked.
+- No claims of runtime test execution, package signing, external acceptance, deontic satisfaction or proof promotion. No new postulates, holes or TERMINATING pragmas introduced.
+
+### TODOs — docs → TODOs → code → changelog
+
+- [x] Inspect existing golden and mirror test-result owner, then reuse its equality witness in an assessed-package container.
+- [x] Mirror exact package projection lemmas in Lean.
+- [ ] Run Agda and Lean kernels and record tool versions, commands and exits.
+- [ ] Inspect actual AO package and acceptance criteria owners; model external evidence as distinct from an internal equality witness.
+- [ ] Test real package manifests, source revisions and runner attestations; reject unsupported `satisfy` claims.
+- [ ] Reconcile canonical source-repo ROADMAP/planning/changelog and TOE imports after cycle inspection; never edit ESD surfaces.
+
+### Changelog
+
+- 2026-10-29: Round 9/20 adds Agda-first witnessed-result package preservation and Lean mirror; kernel, external acceptance, TOE and root-roadmap alignment remain unverified.
