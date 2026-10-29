@@ -638,3 +638,24 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Round 11/20 adds Agda-first comparative phrase/selected-state model and Lean mirror. Kernel, runtime, parser and TOE integration remain unverified.
+
+## Round 12/20 — Worker Slot 12: `kernel · buffer` (2026-10-29)
+
+### Docs — intent, provenance and boundary (before code)
+
+- Inspected actual `DASHI/Reasoning/DialecticMotifKernel.agda` on default branch: `Kernel.run`, `Kernel.commutes-ι`, `_∘K_`, `ProjectionInvariant`, `Policy.buffer`, and `policy M5 = buffer` exist. That owner lacks `{-# OPTIONS --safe #-}`; do **not** import it into a safe golden module or claim its policy buffer is a physical memory buffer.
+- Inspected the existing safe golden `DASHI/Interop/SemanticThreadRejuvenationExact.agda` and Lean mirror. Round 12 introduces a separate bounded **buffered test-result protocol**, retaining the witnessed result and recording an explicit `Bool` pending flag; `releaseBuffered` clears the flag without modifying result text. This is not GPU buffer correctness, kernel execution, or an implementation of Dialectic policy M5.
+- GitHub default-branch `ROADMAP.md` lookup in both `dashi_agda` and `dashi_lean4` returned 404. Do not invent or overwrite canonical roadmaps. Existing docs owner is this roadmap, but strict cross-repository alignment remains unverified.
+
+### TODOs — prior to implementation
+
+- [ ] Add safe Agda `BufferedTestResult`, `bufferResult`, `releaseBuffered` and field-preservation/idempotence lemmas by reusing `TextTestResult`.
+- [ ] Mirror exactly in Lean after Agda source write.
+- [ ] Run both proof kernels, record exact commands and exits; do not promote source-written to verified.
+- [ ] Inspect actual kernel-buffer runtime semantics and bridge to existing Dialectic `Policy.buffer` only with explicit meaning and safe import boundary.
+- [ ] Check TOE import cycles and wire golden owner; do not edit ESD surfaces.
+- [ ] Locate canonical planning and changelog files in both source repos and reconcile them, or record their absence.
+
+### Changelog (to fill after code)
+
+- Pending Round 12 Agda-first source commit and Lean mirror commit; source-written only until checked.
