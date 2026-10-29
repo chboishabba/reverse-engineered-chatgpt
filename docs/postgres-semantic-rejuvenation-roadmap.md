@@ -384,3 +384,27 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Round 10 adds source-written Agda-first perpendicular torque model and Lean mirror; reconciles physics scope with Round 191/193 blocker receipts. Kernel execution, runtime integration and TOE import-graph closure remain pending.
+
+## Round 1/20 — Worker Slot 01: Assess Round Modules / `than(rather) · change` (2026-10-29)
+
+### Docs — exact receipt and bounded meaning
+
+- Lead parent `Assess Round Modules`, motif `than(rather) · change`, reported conductor net benefit 1.382 and allocated workers 3. This is a supplied allocation, not a recomputed independent-lane certificate.
+- Source motif tokens are preserved as typed syntax; comparative preference is not asserted equivalent to mutation, and neither establishes a temporal change in the PostgreSQL corpus.
+- Golden Agda owner `DASHI/Interop/SemanticThreadRejuvenationExact.agda` on `feat/semantic-rejuvenation-golden` extended in commit `b9ff21f0526d4826a9089b2b234ccdce5c1f8409`: `ComparativeChangeMotif`, `Worker01Motif`, `canonicalWorker01` and two definitional preservation lemmas. Existing `{-# OPTIONS --safe #-}` retained, no postulates, holes or TERMINATING added. Kernel not executed.
+- Lean mirror `AgdaMirror/SemanticThreadRejuvenation.lean` on `feat/semantic-rejuvenation-mirror` extended in commit `5e2b7a4e1d1b083d8ba5aaa1911d0b9689dd2567`. Source-written only; Lean kernel not executed.
+- Git lineage `7caa7a1` and reported PRs #47–#51 require exact branch/reachability verification. The prior ITIR branch `agent/sublinear-metasystem-dioxus-v1` returned a GitHub 404 on this check, so no current fleet-runner contents are claimed from it.
+
+### TODOs — docs → tasks → code → changelog
+
+- [x] Reuse existing golden Agda provenance owner to model the motif with distinct typed constructors and preservation lemmas.
+- [x] Mirror the exact bounded syntax in Lean, keeping Agda authoritative.
+- [ ] Resolve canonical PostgreSQL topic/PNF source offsets and confirm whether `than(rather)` expresses a preference, a comparison, or another source-specific operator; abstain until evidence is present.
+- [ ] Verify `noTypedMeet` and actual distinct work packets before dispatching three workers; avoid cloning the same motif across slots.
+- [ ] Check Agda and Lean kernels, and inspect existing round-module owners for duplicate motifs; consolidate and attach to TOE imports without editing ESD surfaces.
+- [ ] Verify exact Git/PR provenance and lineage injection, including the reported `7caa7a1`, without promoting lexical matches or source-written proofs to kernel verification.
+- [ ] Add PostgreSQL-only regression tests for raw motif round-trip and typed semantics once the runtime owner and source evidence are identified.
+
+### Changelog
+
+- 2026-10-29: Round 1/20 Worker 01 source-written Agda-first motif syntax and Lean mirror; recorded outstanding semantic, scheduling, kernel, TOE and PostgreSQL verification gates. No tests or kernel checks claimed.
