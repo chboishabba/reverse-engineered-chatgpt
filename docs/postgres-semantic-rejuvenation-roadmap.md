@@ -719,3 +719,23 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Safe Agda relative-day offset contract committed `51197472862383cba00a416fedadeedb0e84e15c` and Lean mirror `d761bfa3801cfb6becfafa72fb1db3a358e4ca2d`. Source-written only; no calendar semantics, kernel execution, runtime test, TOE wiring or root-roadmap reconciliation.
+
+## Round 16/20 — opaque `0xffff1000 · version` (2026-10-29)
+
+### Docs — distinguish address-like token from proven runtime semantics
+
+- Parent `Topic 8`, motif `0xffff1000 · version`, net benefit 0.590, one worker. Exact `0xffff1000`/`ffff1000` search in both Agda and Lean default branches returned no hits. This is an opaque token, not evidence of a callable function, mapped memory address, machine architecture or ABI.
+- Inspected `DASHI/Core/VersionedStateGraphExact.agda` (commit/branch history versioning) and `DASHI/ComputerScience/BinaryBalancedTernarySubcarrierExact.agda` (bit embedding, not ABI); neither gives semantics for this token. Preserve the difference between versioned metadata and verified binary execution.
+- Intended bounded owner: safe Agda opaque symbol with version and explicit unresolved/executable=false status; a version update preserves the symbol and does not authorize execution. Lean mirrors only after Agda.
+
+### TODOs — before implementation
+
+- [ ] Add safe Agda opaque runtime-token version boundary and preservation/nonexecution lemmas.
+- [ ] Mirror exact contract in Lean.
+- [ ] Identify a real binary/ABI/runtime owner and address mapping before assigning semantics; test actual versioning with runtime evidence.
+- [ ] Run both kernels, record commands/exits, wire TOE only after cycle checks, and do not edit ESD surfaces.
+- [ ] Reconcile canonical source-repo ROADMAP.md/planning/TODO/changelog owners; this roadmap is not proof of cross-repo alignment.
+
+### Changelog
+
+- Pending Round 16 source commits. No ABI or runtime behavior verified.
