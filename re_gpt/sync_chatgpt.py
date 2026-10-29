@@ -1135,7 +1135,8 @@ class SyncChatGPT(AsyncChatGPT):
                 auto_check_websocket=False,
             ) as client:
                 source_cookies = getattr(self.session, "cookies", None)
-                target_cookies = getattr(client.session, "cookies", None)
+                target_session = getattr(client, "session", None)
+                target_cookies = getattr(target_session, "cookies", None) if target_session is not None else None
                 if source_cookies is not None and target_cookies is not None:
                     try:
                         target_cookies.update(source_cookies)
