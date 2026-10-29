@@ -768,11 +768,12 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 
 ### TODOs — before code
 
-- [ ] Implement safe Agda `PositiveDenominatorRatio`, exact cross-product equality relation, reflexivity and symmetry, and representation-preserving rescaling for positive factors.
-- [ ] Mirror in Lean after Agda.
+- [x] Implement safe Agda `PositiveDenominatorRatio`, exact cross-product equality relation, reflexivity and symmetry (commit `91b07016a6ea7ca288a75077039a21fbb789a108`).
+- [ ] Prove representation-preserving rescaling for positive factors (not implemented in this round).
+- [x] Mirror in Lean after Agda (commit `de8d5db78133153833e65db47e7bde1cbba50bd1`).
 - [ ] Reconcile with existing empirical `RatioEstimate` only via explicit same-observable/units/uncertainty/source evidence; do not duplicate empirical authority.
 - [ ] Execute both kernels, check TOE import graph and update canonical source-repo ROADMAP/planning/TODO/changelogs; no ESD edits.
 
 ### Changelog
 
-- Pending Round 18 Agda and Lean source commits; arithmetic only, no empirical or kernel attestation.
+- 2026-10-29: Safe Agda ratio relation committed `91b07016a6ea7ca288a75077039a21fbb789a108`; Lean mirror `de8d5db78133153833e65db47e7bde1cbba50bd1`. Rescaling/transitivity remain TODO. Source-written only: no kernel check, empirical evidence, TOE integration or root-roadmap synchronization.
