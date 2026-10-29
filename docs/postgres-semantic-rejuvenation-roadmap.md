@@ -67,3 +67,49 @@ REJUVENATION_TEST_PG_DSN='postgresql://.../rejuvenation_test' PYTHONPATH=. pytho
 `DASHI.Interop.SemanticThreadRejuvenationExact` remains the protocol owner; `AgdaMirror.SemanticThreadRejuvenation` is secondary. The runtime now implements candidate-only registration but has not discharged all golden stage transitions. PR #1416 supplies spectral/Pareto quotient machinery; PR #1417 supplies the capacity-bounded conductor. Neither scheduling nor similarity promotes proof authority. Ibrahim attribution and Monster 3B ownership remain unchanged.
 
 Verification: source committed; no fresh PostgreSQL, pytest, Agda or Lean execution receipt claimed.
+
+
+## Topic-centric PostgreSQL conductor tranche (2026-10-29)
+
+- [x] `re_gpt.postgres_world_rejuvenation.load_postgres_processing_queue` queries active candidate thread IDs from `corpus.chat_archive_message` (no SQLite).
+- [x] `build_world_enhanced_capsule` uses thread SVO extraction, required externally supplied spectral coordinates, PostgreSQL candidate lemma adjacency and supplied topic goals. Missing manifold coordinates fail closed.
+- [x] `allocate_topic_workers` mirrors golden PR #1417 topic-shape width fixtures, W<=20, and eligibility gating.
+- [x] Mock unit tests in `tests/test_postgres_world_rejuvenation.py`.
+- [ ] Confirm the actual `docs/fleet/fleet_hierarchical_pareto_summary.json` shape. It was not available at the inspected ITIR default branch; current adapter accepts a `conversations` mapping or list with explicit coordinates.
+- [ ] Read `operational.rejuvenation_job` actual columns/state contract and incorporate its eligible/pending job selection. Current queue only reads active corpus candidates.
+- [ ] Wire into `itir_mcp.fleet_round_runner.execute_pareto_conductor` on the appropriate ITIR feature branch. PR #53 already owns dynamic conductor; avoid copying that scheduler.
+- [ ] Derive topic deliverables from verified StatiBaker/Kanban sources instead of requiring caller-supplied `active_goals`.
+- [ ] Confirm spectral coordinate names and actual source of lambda_1/2/3; do not infer them from candidate strings.
+- [ ] Add topic-specific dispatch receipts, noTypedMeet, worker lane identity and remote reconciliation; this module currently only computes candidate allocations.
+- [ ] Run pytest, PG integration and Agda/Lean kernel parity checks. Do not activate unattended AO yet.
+
+### Verification
+
+```bash
+PYTHONPATH=. python -m pytest tests/test_postgres_world_rejuvenation.py -v
+PYTHONPATH=. python -m pytest tests/test_postgres_semantic_registration.py -v
+PYTHONPATH=. python -m pytest tests/test_semantic_rejuvenation.py -v
+```
+
+Source-written only, no new executed test receipt. PostgreSQL is the only database used by the new module; the legacy runner is not yet retired. Agda remains golden, Lean secondary. Original authors and Ibrahim Monster 3B attribution remain unchanged.
+
+
+## Coalescent manifold rejuvenation (2026-10-29)
+
+- [x] Proposed coalescence clusters from exact PostgreSQL dependency_ref→message_ref join and persisted candidate lemmas, using deterministic complete-link overlap; requires identical topic/sub-eigen and at least one shared explicit deliverable.
+- [x] Multi-parent world capsule retains separate parent provenance, supplied spectral coordinates and adjacent PostgreSQL candidates; no generic TOE prompts.
+- [x] Source-written deterministic tests in `tests/test_coalescent_rejuvenation.py`.
+- [ ] Verify `dependency_ref` is in fact an exact `message_ref` in the production dataset; otherwise use the existing ITIR graph evidence route. No synthetic identity promotion.
+- [ ] Inspect `operational.rejuvenation_job` and `operational.conversation_lineage` actual DDL before multi-parent writes. Do not guess keys or retire parents prematurely.
+- [ ] Implement transactional multi-parent lineage and atomic parent queue transitions once verified; recovery must preserve the ambiguous-send reconciliation barrier.
+- [ ] Integrate with ITIR PR #53 `execute_pareto_conductor`, enforce per-worker lane identity/noTypedMeet and a 20-capacity cap.
+- [ ] Bind actual manifold JSON layout and StatiBaker/Kanban deliverable evidence, run PG integration and pytest. Current proposals are not verified completion.
+- [ ] Add Agda golden coalescence preservation lemmas, then Lean mirror and TOE import; kernel receipts required before calling them verified.
+- [ ] Retire the legacy SQLite runner and all .slrw dependencies only after a validated replacement, never by blind deletion.
+
+```bash
+PYTHONPATH=. python -m pytest tests/test_coalescent_rejuvenation.py -v
+PYTHONPATH=. python -m pytest tests/test_postgres_world_rejuvenation.py -v
+```
+
+Formal boundary: coalescence does not prove statement identity, theorem equivalence, or semantic authority. Attribution preserves original mathematical authors, repository PR ownership, independent runtime execution and kernel verification. Preserve Ibrahim Monster 3B ownership. No ESD changes.
