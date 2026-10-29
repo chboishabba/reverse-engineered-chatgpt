@@ -408,3 +408,27 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Round 1/20 Worker 01 source-written Agda-first motif syntax and Lean mirror; recorded outstanding semantic, scheduling, kernel, TOE and PostgreSQL verification gates. No tests or kernel checks claimed.
+
+## Round 2/20 — Worker Slot 02: Angular Dynamics / `marker(citation) · result(compact)` (2026-10-29)
+
+### Docs — source/claim/proof separation
+
+- Parent `Explain torque better`, reported conductor benefit 1.379 and three allocated workers (not independently verified as three disjoint lanes).
+- The source motif separates a citation marker from a compact result. A marker is a provenance string, not a proof certificate or evidence of a verified external reference.
+- Golden Agda `DASHI/Interop/TorqueMomentArmExact.agda` on `feat/semantic-rejuvenation-golden`, commit `fe4820670cd0a49e0d3f98b2969be50b59ce4364`, extends the existing nonnegative perpendicular-load model with `CitedCompactTorque`, `citedResultSound`, `makeCitedCompactTorque`, `compactResultPreserved`. `resultExact` is an explicit equality witness that the compact result matches the modeled `torqueMagnitude`; it does not validate the source, units, vector mechanics or runtime.
+- Secondary Lean mirror `AgdaMirror/TorqueMomentArmExact.lean` on `feat/semantic-rejuvenation-mirror`, commit `9172c26e37202ded48699070a53dd35608c3deec`, follows the Agda contract. Both are source-written only; no kernel checks executed.
+- Shared `round191CompleteProductionEnergyLedgerClosed` and blockers `round193ClayPromotion`, `round193PackageAClosed` are still reported AST candidates, with no demonstrated typed implication from this bounded citation/torque model. No Clay or Package A discharge claimed.
+
+### TODOs — docs → TODOs → code → changelog
+
+- [x] Reuse existing safe Agda torque owner and add a citation-separated compact result with exactness witness.
+- [x] Mirror that result in Lean without promoting citation metadata to proof authority.
+- [ ] Run Agda and Lean kernel checks with recorded commands, versions and exit codes; repair any type-checking issues before marking the results verified.
+- [ ] Search existing angular dynamics, continuum mechanics and Round 191/193 Agda owners for duplicates and actual dependency edges; reuse/unify and attach to TOE import graph without ESD edits.
+- [ ] Resolve real citation marker format, source offsets, and compact result serialization from PostgreSQL PNF/topic data; add round-trip tests after runtime-owner inspection.
+- [ ] Verify pairwise `noTypedMeet` before dispatching three workers; do not clone citation/result work to fill capacity.
+- [ ] Preserve original mathematical authors, independent repo proof ownership and exact Git/PR lineage; do not infer verified physics from a compact receipt.
+
+### Changelog
+
+- 2026-10-29: Round 2/20 adds source-written Agda-first citation/compact-result exactness contract and Lean mirror, with explicit provenance/nonpromotion boundary. Kernel, runtime and TOE integration pending.
