@@ -749,12 +749,12 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 
 ### TODOs — before code
 
-- [ ] Add safe Agda `StrictLogProfile` and `LogEntry`/append protocol with strict configuration preservation and nonverification lemmas.
-- [ ] Mirror in Lean after Agda.
+- [x] Add safe Agda `StrictLogProfile` and `LogEntry`/append protocol with strict configuration preservation and nonverification lemmas (commit `e45c323923447a1ef596130544edcff599ea5f8c`).
+- [x] Mirror in Lean after Agda (commit `54e9e60a99d4b0420ac583ac05cb68f0c1c8a183`).
 - [ ] Inspect actual runtime logging/profile implementation, test strict rejection and version pinning with executed receipts.
 - [ ] Run Agda and Lean kernels with versions/exits, check TOE import graph, no ESD edits.
 - [ ] Locate canonical ROADMAP.md, planning, TODO, changelog owners in both source repositories; strict cross-repo alignment not yet established.
 
 ### Changelog
 
-- Pending Round 17 source commits; strict runtime compliance not proven.
+- 2026-10-29: Golden Agda strict-profile log boundary committed `e45c323923447a1ef596130544edcff599ea5f8c`; Lean mirror committed `54e9e60a99d4b0420ac583ac05cb68f0c1c8a183`. Source-written only: no executed runtime attestation, kernel check, TOE wiring or root-roadmap alignment.
