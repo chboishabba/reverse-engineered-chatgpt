@@ -456,3 +456,27 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Round 3/20 inspected actual TOE/Unifier sources and identified E8 comparison/Monster-scope PR entrypoints. Documentation-only discovery; no new mathematical theorem, Agda/Lean implementation, kernel execution, or blocker discharge claimed.
+
+## Round 4/20 — Worker Slot 04: Max Cut Combinatorial Partitioning / `repos · content` (2026-10-29)
+
+### Docs — real repository content and exact reuse
+
+- Parent `Implement Max Cut Changes`, sub-motif `repos · content`, reported conductor net benefit 1.245 and three workers. No shared invariants, blockers or frontier targets supplied; missing AST targets are not proof of a closed frontier.
+- Inspected default-branch actual contents of `DASHI/Unified/TOE369MaxCutKernelBidiTernaryExact.agda` (blob `92ef32a0a6548e5d81dddbbcb8945c949e735a17`) and `DASHI/Unified/BalabanIbrahimParetoSnowballTOEExact.agda` (blob `cad4c488a13194c9b7e0fbab7dbeb06a5caf6108`). The former reuses ternary-27 geometry, C3/Fourier, Monster 3B phase transport, full-grade/projected action max-cut and kernel-BIDI owners; the latter reuses Balaban and Ibrahim recognition/character-execution/inertia/historical-discriminator boundaries. Both preserve exact nonpromotion firewalls and original theorem ownership.
+- `DASHI/EverythingTOESymmetryResolved369.agda` and `DASHI/Unifier.agda` already import both unified modules, as confirmed by earlier actual source inspection. No new TOE import is needed merely to make these existing facades reachable.
+- The topic motif `repos · content` is lexical metadata, not a typed max-cut objective, graph, partition, optimality proof or a new theorem. Avoid duplicate placeholder declarations and claims of Max-Cut approximation guarantees.
+- Attempted root `ROADMAP.md` on default branches of both `dashi_agda` and `dashi_lean4`; both returned 404. Do not claim those roots updated. Locate canonical planning docs before writing replacements.
+
+### TODOs — docs → TODOs → code → changelog
+
+- [x] Inspect actual Agda max-cut and Pareto/snowball owners, not just PR titles; confirm their reachability from both TOE roots.
+- [ ] Inspect exact proof-owner declarations in the full-grade and projected-action modules, determine whether the requested partition problem is a graph cut, representation action separation, or provenance cut; choose one concrete unmet lemma from evidence.
+- [ ] Search Lean mirror repository for existing corresponding owners and inspect their actual source before implementing a mirror.
+- [ ] Reuse → unify → extend → construct; only add safe golden Agda theorem statements after a concrete mathematical obligation is found. No postulates, metas or TERMINATING; do not edit ESD surfaces.
+- [ ] Verify actual independent worker packets and `noTypedMeet` before assigning three lanes; otherwise execute sequentially.
+- [ ] Run Agda and Lean kernel checks with exact receipts and update source owners' canonical planning/changelog files only after the code changes.
+- [ ] Reconcile Git/PR and original author attribution, including Ibrahim 3B, with strict nonpromotion from characters/fingerprints to same-object Monster action.
+
+### Changelog
+
+- 2026-10-29: Round 4/20 inspected real max-cut/ternary-27 and Balaban/Ibrahim/Pareto/snowball source owners and verified existing TOE-root imports. No new theorem, runtime code, kernel execution or blocker discharge claimed; root ROADMAP.md not found on either inspected default branch.
