@@ -700,3 +700,22 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Safe golden Agda request boundary committed `d67c1fabda2348bb769595b8ee502eb5ee16e22b`; Lean mirror committed `aa8bf88c14a89eb2020c13d9825b8365de140740`. Source-written only: no network retrieval, checksum verification, kernel check, TOE wiring or root-roadmap reconciliation.
+
+## Round 15/20 — `ago · ago(day)` (2026-10-29)
+
+### Docs — temporal meaning before implementation
+
+- Parent `Assess Round Modules`, net benefit 0.590, one worker. Exact `ago(day)`, `daysAgo`, `TemporalAgo` symbols absent in default-branch GitHub code search of both Agda and Lean. Inspected existing `DASHI/Visual/TemporalAxisExact.agda` (timestamps, not commit ordinals, determine time), `DASHI/Core/TemporalSemanticGraphExact.agda` (renderer-neutral temporal graph), `DASHI/Interop/PNFBraidTransportField.agda` (`TimeSliceRevision` source chronology) and the safe Agda/Lean `SemanticThreadRejuvenation` owners.
+- Intended bounded relative-day model: use Nat day ordinals, define `n days ago` as an offset from an explicit reference ordinal with a proof that the requested offset does not exceed the reference. No wall-clock claim, timezone inference, calendar correctness, parser correctness, or external Git timestamp verification.
+
+### TODOs — before code
+
+- [ ] Add safe Agda proof-carrying `DaysAgo` with explicit witness `reference ≡ elapsed + offset`, preserving the reference and offset without saturating subtraction.
+- [ ] Mirror in Lean after Agda; avoid using an unverified wall-clock interpretation.
+- [ ] Connect to existing temporal/source runtime only after defining calendar/timezone and timestamp provenance semantics.
+- [ ] Run Agda/Lean kernels and record exact versions/commands/exits; inspect TOE import graph before wiring; no ESD edits.
+- [ ] Locate and reconcile source-repo canonical ROADMAP, planning, TODO, and changelog files; this roadmap alone is not full alignment.
+
+### Changelog
+
+- Pending Round 15 source-written commits; no timestamp semantics or runtime verification claimed.
