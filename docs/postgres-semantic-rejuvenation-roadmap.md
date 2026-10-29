@@ -691,12 +691,12 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 
 ### TODOs — before code
 
-- [ ] Implement safe Agda file-URL request and receipt boundary with nonpromotion lemmas.
-- [ ] Mirror in Lean after golden Agda.
+- [x] Implement safe Agda file-URL request and receipt boundary with nonpromotion lemmas (commit `d67c1fabda2348bb769595b8ee502eb5ee16e22b`).
+- [x] Mirror in Lean after golden Agda (commit `aa8bf88c14a89eb2020c13d9825b8365de140740`).
 - [ ] Inspect actual file/URL fetch runner and test successful/failed/redirected requests, path safety, provenance and checksums.
 - [ ] Kernel-check both modules and record exact commands/versions; inspect TOE cycles before import; no ESD edits.
 - [ ] Reconcile source-repo canonical ROADMAP, planning, TODO and changelog paths; do not infer complete alignment from this document.
 
 ### Changelog
 
-- Pending Round 14 source-written commits; no file retrieval or authority verified.
+- 2026-10-29: Safe golden Agda request boundary committed `d67c1fabda2348bb769595b8ee502eb5ee16e22b`; Lean mirror committed `aa8bf88c14a89eb2020c13d9825b8365de140740`. Source-written only: no network retrieval, checksum verification, kernel check, TOE wiring or root-roadmap reconciliation.
