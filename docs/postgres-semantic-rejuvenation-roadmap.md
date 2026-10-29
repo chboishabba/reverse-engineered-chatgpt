@@ -195,3 +195,27 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 
 - No torque-specific implementation, Agda theorem, Lean mirror or runtime behavior was added in this documentation tranche.
 - 2026-10-29: documented Round 2's lead, allocation, consensus symbol, blockers and typed-gating requirements; recorded that source-reported consensus is not a kernel verification receipt.
+
+## Round 3/10 — Topic 3: Implement Max Cut Changes (2026-10-29)
+
+### Docs / scope
+
+- Lead Topic 3, one worker, reported sizing benefit 0.741; these are supplied conductor inputs, not independently recomputed.
+- AST triangulation reports zero shared invariants, zero universal blockers and no frontier targets. **Absence of returned candidates is not evidence that the repository has no matching proofs.** Preserve discovery uncertainty.
+- The title `Implement Max Cut Changes` is ambiguous across graph optimization, geometric max-cut, proof-governance max-cut and repository-specific convergence. Do not select an owner by title alone. Resolve from source conversation IDs, PNF typed factors, formal files and exact PR/commit lineage before editing mathematics.
+- Latest GitHub PR search contains several distinct max-cut lanes, including R2P2/369 Fourier symmetry, Alexander horned C3 topology and foundational monodromy. These are candidates for reuse-first inspection, not interchangeable theorems.
+- Preserve PostgreSQL-only world/gap search, exact source provenance and original author/PR proof ownership. No ESD surface edits; imports only.
+
+### TODO / implementation gates
+
+- [ ] Retrieve Topic 3's canonical conversation/PNF source coordinates, target files, named obligations and typed scope; disambiguate which max-cut construction is intended.
+- [ ] Inspect relevant golden Agda declarations and their import graph; run related_symbols/discovery and AST dedup before constructing or extending lemmas.
+- [ ] Check `dashi_lean4` for existing mirror and only mirror verified golden statements; enforce `{-# OPTIONS --safe #-}`, zero postulates, unsolved metas and TERMINATING pragmas.
+- [ ] Reconcile supplied Git short hashes `b3ce2c5`, `e3f0b7c`, `5a98d42`, `deab692`, `d4607b7` against exact commit/PR provenance. Do not count Git or similarity as kernel evidence.
+- [ ] If a typed max-cut obligation is established, implement in existing Agda owner first, then Lean, Python integration, focused tests and TOE import roots. Keep docs and changelog in step with actual changes.
+- [ ] Verify PR #53 one-worker allocation against typed `noTypedMeet` and cost law; do not fabricate blocker lanes when the frontier is empty.
+- [ ] Execute local tests and kernel checks before marking any implementation or theorem discharged.
+
+### Code / changelog receipt
+
+- 2026-10-29: Round 3 source and plan reconciled. No code, Agda, Lean, theorem, test execution or kernel verification is claimed in this documentation-only tranche.
