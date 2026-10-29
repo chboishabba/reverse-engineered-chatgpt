@@ -30,54 +30,74 @@ mcp = FastMCP("re-gpt")
 
 WORKER_PROMPT_PRESETS: dict[str, str] = {
     "max_cut": (
-        "Exactly complete all per max-cut and continue per pareto/snowball/ibrahim. "
-        "Check the web and latest PRs for inspiration and cross-pollination -- assume we "
-        "already have everything we need in-repo. Keep following your nose until you hit "
-        "a wall -- do not wait for approval, and remember our attribution rules."
+        "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
+        "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
+        "recall the agdas are the golden. Exactly complete all per max-cut and continue per "
+        "pareto/snowball/ibrahim. Check the web and latest PRs for inspiration and "
+        "cross-pollination -- assume we already have everything we need in-repo. "
+        "Keep following your nose until you hit a wall -- do not wait for approval, "
+        "and remember our attribution rules."
     ),
     "grug_ste100": (
-        "Apply Grug-brain simplicity and ASD-STE100 Simplified Technical English: one "
-        "thought per sentence, active voice, approved unambiguous terms, zero speculative "
-        "abstraction, no inline code dumps in prose, and normalize onto existing in-repo surfaces."
+        "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
+        "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
+        "recall the agdas are the golden. Apply Grug-brain simplicity and ASD-STE100 Simplified "
+        "Technical English: one thought per sentence, active voice, approved unambiguous terms, "
+        "zero speculative abstraction, no inline code dumps in prose, and normalize onto "
+        "existing in-repo surfaces."
     ),
     "grug": (
-        "Apply Grug-brain simplicity and ASD-STE100 Simplified Technical English: one "
-        "thought per sentence, active voice, approved unambiguous terms, zero speculative "
-        "abstraction, no inline code dumps in prose, and normalize onto existing in-repo surfaces."
+        "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
+        "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
+        "recall the agdas are the golden. Apply Grug-brain simplicity and ASD-STE100 Simplified "
+        "Technical English: one thought per sentence, active voice, approved unambiguous terms, "
+        "zero speculative abstraction, no inline code dumps in prose, and normalize onto "
+        "existing in-repo surfaces."
     ),
     "zkp_qa": (
-        "Frame via ZKP (O/R/C/S/L/P/G/F) with explicit preconditions, invariants, and "
-        "postconditions. Converge toward normalized surfaces per ITIL, ISO 9000/42001/27001/"
-        "27701/23894/9241, NIST AI RMF, Six Sigma, and C4/PlantUML. Assign one disjoint "
-        "nonblocking lane per worker, no skeletons or stubs, and complete implementation + "
-        "deterministic verification within the turn."
+        "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
+        "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
+        "recall the agdas are the golden. Frame via ZKP (O/R/C/S/L/P/G/F) with explicit "
+        "preconditions, invariants, and postconditions. Converge toward normalized surfaces "
+        "per ITIL, ISO 9000/42001/27001/27701/23894/9241, NIST AI RMF, Six Sigma, and "
+        "C4/PlantUML. Assign one disjoint nonblocking lane per worker, no skeletons or stubs, "
+        "and complete implementation + deterministic verification within the turn."
     ),
     "zkp": (
-        "Frame via ZKP (O/R/C/S/L/P/G/F) with explicit preconditions, invariants, and "
-        "postconditions. Converge toward normalized surfaces per ITIL, ISO 9000/42001/27001/"
-        "27701/23894/9241, NIST AI RMF, Six Sigma, and C4/PlantUML. Assign one disjoint "
-        "nonblocking lane per worker, no skeletons or stubs, and complete implementation + "
-        "deterministic verification within the turn."
+        "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
+        "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
+        "recall the agdas are the golden. Frame via ZKP (O/R/C/S/L/P/G/F) with explicit "
+        "preconditions, invariants, and postconditions. Converge toward normalized surfaces "
+        "per ITIL, ISO 9000/42001/27001/27701/23894/9241, NIST AI RMF, Six Sigma, and "
+        "C4/PlantUML. Assign one disjoint nonblocking lane per worker, no skeletons or stubs, "
+        "and complete implementation + deterministic verification within the turn."
     ),
     "introspective_viz": (
-        "Apply the introspective method: 1. Model the theory accurately per actual "
-        "implementation. 2. Generate a plain-language, physically intuitive visual proof "
-        "(Python/HTML/SVG). 3. Inspect the visualization. 4. Formalize new findings in "
-        "Lean or Agda per repo convention."
+        "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
+        "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
+        "recall the agdas are the golden. Apply the introspective method: 1. Model the theory "
+        "accurately per actual implementation. 2. Generate a plain-language, physically "
+        "intuitive visual proof (Python/HTML/SVG). 3. Inspect the visualization. "
+        "4. Formalize new findings in Lean or Agda per repo convention."
     ),
     "converge_toe": (
-        "Converge toward the DASHI TOE: dashi_agda DASHI/EverythingTOESymmetryResolved369.agda, "
-        "DASHI/Unifier.agda and DASHI/Unified/. Assume the content already exists in-repo. "
-        "Search first for existing, duplicate or near constructions (GitHub code search; the local "
-        "referee confirms with dashi-agda-preflight related_symbols/discover/round_lineage). "
-        "Order: reuse, then unify duplicates, then extend, then construct new. Attach every new "
-        "result to the TOE import graph. Do not edit ESD surfaces (dashi_digital_esd repo, "
-        "*digital_esd* and *ESD* modules); import only. Keep attribution for meta-introspector repos."
+        "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
+        "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
+        "recall the agdas are the golden. Converge toward the DASHI TOE: dashi_agda "
+        "DASHI/EverythingTOESymmetryResolved369.agda, DASHI/Unifier.agda and DASHI/Unified/. "
+        "Assume the content already exists in-repo. Search first for existing, duplicate or near "
+        "constructions (GitHub code search; the local referee confirms with dashi-agda-preflight "
+        "related_symbols/discover/round_lineage). Order: reuse, then unify duplicates, then extend, "
+        "then construct new. Attach every new result to the TOE import graph. Do not edit ESD "
+        "surfaces (dashi_digital_esd repo, *digital_esd* and *ESD* modules); import only. "
+        "Keep attribution for meta-introspector repos."
     ),
     "referee_pass": (
-        "Local referee verification passed (0 errors, 0 warnings). Proceed immediately "
-        "to the next highest-alpha vertical slice per max-cut and pareto/snowball/ibrahim; "
-        "push commits and return SHAs + deterministic referee commands."
+        "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
+        "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
+        "recall the agdas are the golden. Local referee verification passed (0 errors, 0 warnings). "
+        "Proceed immediately to the next highest-alpha vertical slice per max-cut and "
+        "pareto/snowball/ibrahim; push commits and return SHAs + deterministic referee commands."
     ),
 }
 
