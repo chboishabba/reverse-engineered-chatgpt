@@ -730,12 +730,12 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 
 ### TODOs — before implementation
 
-- [ ] Add safe Agda opaque runtime-token version boundary and preservation/nonexecution lemmas.
-- [ ] Mirror exact contract in Lean.
+- [x] Add safe Agda opaque runtime-token version boundary and preservation/nonexecution lemmas (commit `3704aa250cba495662510a1248790c9380ccac78`).
+- [x] Mirror exact contract in Lean (commit `529360502cb2a0ca30793de376900c3333437331`).
 - [ ] Identify a real binary/ABI/runtime owner and address mapping before assigning semantics; test actual versioning with runtime evidence.
 - [ ] Run both kernels, record commands/exits, wire TOE only after cycle checks, and do not edit ESD surfaces.
 - [ ] Reconcile canonical source-repo ROADMAP.md/planning/TODO/changelog owners; this roadmap is not proof of cross-repo alignment.
 
 ### Changelog
 
-- Pending Round 16 source commits. No ABI or runtime behavior verified.
+- 2026-10-29: Agda-first safe opaque runtime-version contract committed `3704aa250cba495662510a1248790c9380ccac78`; Lean mirror committed `529360502cb2a0ca30793de376900c3333437331`. Source-written only: no binary ABI, runtime execution, kernel check, TOE integration or root-roadmap alignment established.
