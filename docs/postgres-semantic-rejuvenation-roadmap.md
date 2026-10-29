@@ -432,3 +432,27 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Round 2/20 adds source-written Agda-first citation/compact-result exactness contract and Lean mirror, with explicit provenance/nonpromotion boundary. Kernel, runtime and TOE integration pending.
+
+## Round 3/20 — Worker Slot 03: E8 lattices and Moonshine VOA / `theorem · prove` (2026-10-29)
+
+### Docs — actual repository-owner inspection
+
+- Parent `Branch · Compare E8 Models`, sub-motif `theorem · prove`, supplied conductor net benefit 1.300 and three workers. Shared invariants, universal blockers and frontier targets were not supplied; do not equate this missing AST receipt with proven completeness.
+- Inspected the actual default-branch source bodies of `DASHI/EverythingTOESymmetryResolved369.agda` and `DASHI/Unifier.agda`. Both already import existing symmetry/representation/physics source owners, and explicitly preserve Balaban RG continuum and Clay nonpromotion boundaries. Neither is a license to assert a new E8 or Monster theorem from a generic topic label.
+- Existing directly relevant Agda PRs: #1389 `TOE: converge E6 F3^5 and E8 E6-A2 comparison max-cut`; #1312 `TOE: converge E8 completion boundary and Monster actor scope`. Their titles were found through repository PR search; exact proof-owning file paths and declarations were **not** retrieved in this pass. PR #1414 also mentions Moonshine, but its title alone is not a proof receipt.
+- Do not create a duplicate `theorem · prove` constructor or empty proof wrapper: it would merely encode lexical labels and would not formalize E8 lattices or VOA structures. Golden Agda owners must be discovered and reused first, with Lean following the verified source.
+- Preserve mathematical source attribution, independent repo authorship, Ibrahim Monster 3B ownership, and the strict separation of character fingerprints, analogies, receipts and same-object representations.
+
+### TODOs — docs → TODOs → code → changelog
+
+- [x] Inspect actual TOE aggregate and Unifier source files and identify existing E8/Moonshine PR entrypoints.
+- [ ] Retrieve PR #1389 and #1312 changed-file lists, then inspect the complete relevant Agda modules and Lean mirrors; run `dashi-agda-preflight related_symbols/discover/round_lineage` where available.
+- [ ] Identify one precise existing theorem statement and its unmet hypothesis, then reuse → unify → extend before constructing anything new. Do not invent a theorem from `theorem · prove`.
+- [ ] Record full AST source, dependencies, `noTypedMeet` evidence and actual independent work packets before treating the three-worker allocation as justified.
+- [ ] Update golden Agda `{-# OPTIONS --safe #-}` owners with no postulates, unsolved metas or TERMINATING, then Lean mirror and TOE imports after cycle checks. Do not edit ESD surfaces.
+- [ ] Run kernel checks and record exact commands, versions, output and exit codes. No kernel verification is claimed for this round.
+- [ ] Reconcile relevant root `ROADMAP.md`, planning and changelog in each proof-owning repository after a concrete theorem change, rather than claim they were updated without repository inspection.
+
+### Changelog
+
+- 2026-10-29: Round 3/20 inspected actual TOE/Unifier sources and identified E8 comparison/Monster-scope PR entrypoints. Documentation-only discovery; no new mathematical theorem, Agda/Lean implementation, kernel execution, or blocker discharge claimed.
