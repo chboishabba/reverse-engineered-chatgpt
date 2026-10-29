@@ -495,7 +495,7 @@ class MutationService:
         reconcile_attempts: int = 3,
         reconcile_interval: float = 1.0,
         follow: bool = False,
-        follow_timeout: float = 60.0,
+        follow_timeout: float = 1800.0,
     ) -> dict[str, Any]:
         local_attachments = [LocalAttachment.from_path(path) for path in attachments]
         with MutationOperationStore(self.db_path) as operations:
@@ -652,7 +652,7 @@ class MutationService:
         reconcile_attempts: int = 3,
         reconcile_interval: float = 1.0,
         follow: bool = False,
-        follow_timeout: float = 60.0,
+        follow_timeout: float = 1800.0,
     ) -> dict[str, Any]:
         prompt = str(prompt or "").strip()
         if not prompt:
@@ -684,7 +684,7 @@ class MutationService:
         cdp_endpoint: str | None = None,
         browser_timeout: int = 60,
         follow: bool = False,
-        follow_timeout: float = 60.0,
+        follow_timeout: float = 1800.0,
     ) -> dict[str, Any]:
         conversation = str(conversation or "").strip()
         parent_node_id = str(parent_node_id or "").strip()
@@ -724,7 +724,7 @@ class MutationService:
         cdp_endpoint: str | None = None,
         browser_timeout: int = 60,
         follow: bool = False,
-        follow_timeout: float = 60.0,
+        follow_timeout: float = 1800.0,
     ) -> dict[str, Any]:
         conversation = str(conversation or "").strip()
         user_node_id = str(user_node_id or "").strip()
@@ -764,7 +764,7 @@ class MutationService:
         cdp_endpoint: str | None = None,
         browser_timeout: int = 60,
         follow: bool = False,
-        follow_timeout: float = 60.0,
+        follow_timeout: float = 1800.0,
     ) -> dict[str, Any]:
         conversation = str(conversation or "").strip()
         user_node_id = str(user_node_id or "").strip()
@@ -815,7 +815,7 @@ class MutationService:
         reconcile_attempts: int = 3,
         reconcile_interval: float = 1.0,
         follow: bool = False,
-        follow_timeout: float = 60.0,
+        follow_timeout: float = 1800.0,
         progress_callback: Any = None,
     ) -> dict[str, Any]:
         prompt = prompt.strip()
@@ -1076,7 +1076,7 @@ def continue_thread(
     reconcile_attempts: int = 3,
     reconcile_interval: float = 1.0,
     follow: bool = False,
-    follow_timeout: float = 60.0,
+    follow_timeout: float = 1800.0,
     progress_callback: Any = None,
     stream: bool = False,
     output: Path | str | None = None,
@@ -1140,7 +1140,7 @@ def new_conversation(
     reconcile_attempts: int = 3,
     reconcile_interval: float = 1.0,
     follow: bool = False,
-    follow_timeout: float = 60.0,
+    follow_timeout: float = 1800.0,
     stream: bool = False,
     output: Path | str | None = None,
     db_path: Path | str = DEFAULT_DB_PATH,

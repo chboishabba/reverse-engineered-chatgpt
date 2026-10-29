@@ -30,7 +30,7 @@ mcp = FastMCP("re-gpt")
 
 GOLDEN_AGDA_REMINDER = (
     "Check dashi_lean4 and dashi_agda and formalise the current problem in terms of "
-    "relevant in-repo machinery. and ensure to keep the formalism in-step with the impl. "
+    "relevant in-repo machinery. and ensure to keep the formalism and docs in-step with the impl. "
     "recall the agdas are the golden."
 )
 

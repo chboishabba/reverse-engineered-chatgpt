@@ -668,7 +668,7 @@ class AsyncChatGPT:
         return os.environ.get(name, "").strip()
 
     async def __aenter__(self):
-        timeout = float(os.environ.get("RE_GPT_TIMEOUT", "180.0"))
+        timeout = float(os.environ.get("RE_GPT_TIMEOUT", "1800.0"))
         self.session = AsyncSession(
             impersonate="chrome142", timeout=timeout, proxies=self.proxies
         )

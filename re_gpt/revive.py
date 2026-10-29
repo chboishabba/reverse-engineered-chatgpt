@@ -144,7 +144,7 @@ def revive_thread(
     write_transport: str = "async",
     dom_fallback: bool = False,
     follow: bool = True,
-    follow_timeout: float = 180.0,
+    follow_timeout: float = 1800.0,
     progress_callback: Any = None,
     stream: bool = False,
     output: Path | str | None = None,

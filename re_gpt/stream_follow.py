@@ -22,7 +22,11 @@ class SSEProgressDecoder:
         self.conversation_id: str | None = None
         self.user_message_id: str | None = None
         self.assistant_message_id: str | None = None
+        self.assistant_channel: str | None = None
+        self.current_content_type: str | None = None
+        self.current_recipient: str | None = None
         self.assistant_text = ""
+        self.thinking_text = ""
         self.terminal_observed = False
         self.terminal_reason: str | None = None
 
@@ -51,12 +55,102 @@ class SSEProgressDecoder:
             self.conversation_id = str(conv_id)
 
         msg_type = str(event.get("type") or "").strip().lower()
-        if msg_type in {"message_stream_complete", "conversation_completed"}:
+        if msg_type in {"conversation_completed"}:
             self._terminal(msg_type, output)
 
-        top_status = str(event.get("status") or "").strip().lower()
-        if top_status == "finished_successfully":
-            self._terminal("finished_successfully", output)
+        message = event.get("message")
+        if not isinstance(message, Mapping) and isinstance(v, Mapping):
+            message = v.get("message")
+        if isinstance(message, Mapping):
+            message_id = str(message.get("id") or "").strip() or None
+            author = message.get("author")
+            role = str(author.get("role") or "").strip() if isinstance(author, Mapping) else ""
+            if role == "user" and message_id:
+                self.user_message_id = message_id
+            elif role == "assistant" and message_id:
+                self.assistant_message_id = message_id
+
+            content = message.get("content")
+            content = content if isinstance(content, Mapping) else {}
+            content_type = str(content.get("content_type") or "").strip().lower()
+            channel = str(message.get("channel") or "").strip().lower()
+            recipient = str(message.get("recipient") or "").strip()
+
+            if role == "assistant":
+                if channel:
+                    self.assistant_channel = channel
+                if content_type:
+                    self.current_content_type = content_type
+                if recipient:
+                    self.current_recipient = recipient
+
+            if channel == "analysis" or content_type in {"thoughts", "reasoning", "reasoning_recap"}:
+                self._emit({
+                    "kind": "thinking",
+                    "message_id": message_id,
+                    "content_type": content_type or None,
+                }, output)
+
+            if (
+                "tool" in content_type
+                or (recipient and recipient not in {"all", "assistant", "user"})
+                or content_type in {"computer_initialize_state", "computer_output"}
+            ):
+                self._emit({
+                    "kind": "tool_invocation",
+                    "message_id": message_id,
+                    "recipient": recipient or None,
+                    "content_type": content_type or None,
+                }, output)
+
+            parts = content.get("parts")
+            text = ""
+            if isinstance(parts, list):
+                text = "".join(part for part in parts if isinstance(part, str))
+            if role == "assistant" and message_id and text:
+                is_thinking_block = (
+                    channel == "analysis"
+                    or content_type in {"thoughts", "reasoning", "reasoning_recap"}
+                )
+                is_tool_block = (
+                    "tool" in content_type
+                    or content_type in {"computer_initialize_state", "computer_output"}
+                    or bool(recipient and recipient not in {"all", "assistant", "user", ""})
+                )
+                prior = self._last_text.get(message_id, "")
+                if text.startswith(prior):
+                    delta = text[len(prior):]
+                else:
+                    delta = text
+                self._last_text[message_id] = text
+                if is_thinking_block:
+                    self.thinking_text = text
+                    if delta:
+                        self._emit({
+                            "kind": "thinking",
+                            "message_id": message_id,
+                            "delta": delta,
+                            "channel": channel or "analysis",
+                        }, output)
+                elif not is_tool_block:
+                    self.assistant_text = text
+                    if delta:
+                        self._emit({
+                            "kind": "token_delta",
+                            "message_id": message_id,
+                            "delta": delta,
+                            "channel": channel or None,
+                        }, output)
+
+            status = str(message.get("status") or "").strip().lower()
+            is_thinking_or_tool = (
+                channel == "analysis"
+                or content_type in {"thoughts", "reasoning", "reasoning_recap", "tool_call", "computer_output"}
+                or bool(recipient and recipient not in {"all", "assistant", "user", ""})
+            )
+            if role == "assistant" and status == "finished_successfully" and bool(message.get("end_turn")):
+                if not is_thinking_or_tool:
+                    self._terminal("finished_successfully", output)
 
         patches: list[Mapping[str, Any]] = []
         if isinstance(v, list):
@@ -68,108 +162,53 @@ class SSEProgressDecoder:
             p = str(patch.get("p") or "")
             op = str(patch.get("o") or "")
             pval = patch.get("v")
+
+            is_thinking = (
+                self.assistant_channel == "analysis"
+                or self.current_content_type in {"thoughts", "reasoning", "reasoning_recap"}
+            )
+            is_tool = (
+                self.current_content_type in {"tool_call", "computer_output"}
+                or bool(self.current_recipient and self.current_recipient not in {"all", "assistant", "user", ""})
+            )
+
             if p == "/message/status" and str(pval).lower() == "finished_successfully":
-                self._terminal("finished_successfully", output)
+                if not is_thinking and not is_tool:
+                    self._terminal("finished_successfully", output)
             elif p == "/message/end_turn" and bool(pval):
-                self._terminal("finished_successfully", output)
+                if not is_thinking and not is_tool:
+                    self._terminal("finished_successfully", output)
             elif p.startswith("/message/content/parts/") or p == "/message/content/parts":
                 delta_str = str(pval) if pval is not None else ""
+                msg_id = self.assistant_message_id
+                prior = self._last_text.get(msg_id or "", "")
                 if op == "append" and delta_str:
-                    msg_id = self.assistant_message_id
-                    prior = self._last_text.get(msg_id or "", "")
                     new_text = prior + delta_str
+                elif op == "replace" and delta_str:
+                    new_text = delta_str
+                else:
+                    new_text = prior
+
+                if delta_str and new_text != prior:
+                    delta = new_text[len(prior):] if new_text.startswith(prior) else new_text
                     if msg_id:
                         self._last_text[msg_id] = new_text
-                    self.assistant_text = new_text
-                    self._emit({
-                        "kind": "token_delta",
-                        "message_id": msg_id,
-                        "delta": delta_str,
-                        "channel": getattr(self, "assistant_channel", None) or "final",
-                    }, output)
-                elif op == "replace" and delta_str:
-                    msg_id = self.assistant_message_id
-                    prior = self._last_text.get(msg_id or "", "")
-                    if delta_str.startswith(prior):
-                        delta = delta_str[len(prior):]
+                    if is_thinking:
+                        self.thinking_text = new_text
+                        self._emit({
+                            "kind": "thinking",
+                            "message_id": msg_id,
+                            "delta": delta,
+                            "channel": self.assistant_channel or "analysis",
+                        }, output)
                     else:
-                        delta = delta_str
-                    if msg_id:
-                        self._last_text[msg_id] = delta_str
-                    self.assistant_text = delta_str
-                    if delta:
+                        self.assistant_text = new_text
                         self._emit({
                             "kind": "token_delta",
                             "message_id": msg_id,
                             "delta": delta,
-                            "channel": getattr(self, "assistant_channel", None) or "final",
+                            "channel": self.assistant_channel or "final",
                         }, output)
-
-        message = event.get("message")
-        if not isinstance(message, Mapping) and isinstance(v, Mapping):
-            message = v.get("message")
-        if not isinstance(message, Mapping):
-            return
-
-        message_id = str(message.get("id") or "").strip() or None
-        author = message.get("author")
-        role = str(author.get("role") or "").strip() if isinstance(author, Mapping) else ""
-        if role == "user" and message_id:
-            self.user_message_id = message_id
-        elif role == "assistant" and message_id:
-            self.assistant_message_id = message_id
-
-        content = message.get("content")
-        content = content if isinstance(content, Mapping) else {}
-        content_type = str(content.get("content_type") or "").strip().lower()
-        channel = str(message.get("channel") or "").strip().lower()
-        recipient = str(message.get("recipient") or "").strip()
-        status = str(message.get("status") or "").strip().lower()
-
-        if role == "assistant" and channel:
-            self.assistant_channel = channel
-
-        if channel == "analysis" or content_type in {"thoughts", "reasoning", "reasoning_recap"}:
-            self._emit({
-                "kind": "thinking",
-                "message_id": message_id,
-                "content_type": content_type or None,
-            }, output)
-
-        if (
-            "tool" in content_type
-            or (recipient and recipient not in {"all", "assistant", "user"})
-            or content_type in {"computer_initialize_state", "computer_output"}
-        ):
-            self._emit({
-                "kind": "tool_invocation",
-                "message_id": message_id,
-                "recipient": recipient or None,
-                "content_type": content_type or None,
-            }, output)
-
-        parts = content.get("parts")
-        text = ""
-        if isinstance(parts, list):
-            text = "".join(part for part in parts if isinstance(part, str))
-        if role == "assistant" and message_id and text:
-            prior = self._last_text.get(message_id, "")
-            if text.startswith(prior):
-                delta = text[len(prior):]
-            else:
-                delta = text
-            self._last_text[message_id] = text
-            self.assistant_text = text
-            if delta:
-                self._emit({
-                    "kind": "token_delta",
-                    "message_id": message_id,
-                    "delta": delta,
-                    "channel": channel or None,
-                }, output)
-
-        if role == "assistant" and status == "finished_successfully" and bool(message.get("end_turn")):
-            self._terminal("finished_successfully", output)
 
     def feed(self, chunk: bytes | str) -> list[dict[str, Any]]:
         text = self._utf8_decoder.decode(bytes(chunk), final=False) if isinstance(chunk, (bytes, bytearray)) else str(chunk)

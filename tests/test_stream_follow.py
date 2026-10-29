@@ -120,3 +120,72 @@ def test_decoder_handles_nested_envelope_and_json_patch_deltas() -> None:
     assert decoder.assistant_message_id == "asst-99"
     assert decoder.terminal_observed is True
 
+
+def test_reasoning_and_tool_use_do_not_terminate_early_or_contaminate_assistant_text() -> None:
+    decoder = SSEProgressDecoder()
+    # 1. First reasoning chunk
+    step1 = _data({
+        "message": {
+            "id": "thought-1",
+            "author": {"role": "assistant"},
+            "channel": "analysis",
+            "content": {"content_type": "thoughts", "parts": ["Let me analyze the proofs."]},
+            "status": "in_progress",
+        }
+    })
+    # 2. End of first reasoning block (should NOT terminate!)
+    step2 = _data({
+        "message": {
+            "id": "thought-1",
+            "author": {"role": "assistant"},
+            "channel": "analysis",
+            "content": {"content_type": "thoughts", "parts": ["Let me analyze the proofs."]},
+            "status": "finished_successfully",
+            "end_turn": True,
+        }
+    })
+    # 3. Tool invocation (should NOT terminate!)
+    step3 = _data({
+        "message": {
+            "id": "tool-call-1",
+            "author": {"role": "assistant"},
+            "recipient": "dashi_agda_preflight",
+            "content": {"content_type": "tool_call", "parts": ["discover()"]},
+            "status": "finished_successfully",
+            "end_turn": True,
+        }
+    })
+    # 4. Second reasoning block (should NOT terminate!)
+    step4 = _data({
+        "message": {
+            "id": "thought-2",
+            "author": {"role": "assistant"},
+            "channel": "analysis",
+            "content": {"content_type": "thoughts", "parts": ["Verification passed. Generating final response."]},
+            "status": "finished_successfully",
+            "end_turn": True,
+        }
+    })
+    # Feed steps 1-4
+    events1 = decoder.feed(step1 + step2 + step3 + step4)
+    assert decoder.terminal_observed is False
+    assert decoder.assistant_text == ""
+    assert "Verification passed" in decoder.thinking_text
+
+    # 5. Final response
+    step5 = _data({
+        "message": {
+            "id": "asst-final",
+            "author": {"role": "assistant"},
+            "channel": "final",
+            "content": {"content_type": "text", "parts": ["The proof is complete with 0 errors."]},
+            "status": "finished_successfully",
+            "end_turn": True,
+        }
+    }) + "data: [DONE]\n\n"
+
+    events2 = decoder.feed(step5)
+    assert decoder.terminal_observed is True
+    assert decoder.assistant_text == "The proof is complete with 0 errors."
+
+
