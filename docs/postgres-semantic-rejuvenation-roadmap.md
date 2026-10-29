@@ -134,3 +134,15 @@ PYTHONPATH=. python -m pytest tests/test_postgres_world_rejuvenation.py tests/te
 ```
 
 Attribution: search hits, lexical gaps, preflight output, and PostgreSQL candidate factors are NOT kernel-verified proofs. Preserve dated mathematical sources, independent repository ownership and Ibrahim Monster 3B boundaries. No ESD changes.
+
+## Bounded formal slicing tranche
+
+- [x] Source-written bounded lexical fallback in `re_gpt/formal_slicer.py`, including file/line receipts and explicit non-standalone status.
+- [x] Capsule embedding when topic supplies `formal_symbols` and `formal_files`.
+- [x] Deterministic tests in `tests/test_formal_slicer.py` (not yet executed).
+- [ ] Bind verified agda_preflight AST index and related-symbol APIs. Repository paths inspected did not expose the requested API.
+- [ ] Prove dependency closure including imports, constructors, fixities and scoped names; kernel-check generated standalone modules.
+- [ ] Add Agda golden formal model, Lean mirror, and TOE imports.
+- [ ] Verify exact similarity categories and preserve author attribution, Ibrahim ownership, and ESD import-only boundaries.
+
+Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_automated_formal_capsule.py -v`
