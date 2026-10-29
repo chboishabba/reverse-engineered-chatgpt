@@ -219,3 +219,27 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Code / changelog receipt
 
 - 2026-10-29: Round 3 source and plan reconciled. No code, Agda, Lean, theorem, test execution or kernel verification is claimed in this documentation-only tranche.
+
+## Round 4/10 — Topic 4: SensibLaw Agda Test Case (2026-10-29)
+
+### Docs — topic and evidence boundaries
+
+- Lead topic 4, two allocated workers, reported sizing benefit 1.536; supplied scheduler receipt, not recomputed.
+- The round supplies no AST consensus symbols, explicit blockers, target case, source judgment, or expected legal result. Do not invent a SensibLaw test case or infer legal validity from a generic proof contract.
+- Existing golden `DASHI/Interop/SemanticThreadRejuvenationExact.agda` and Lean mirror are about provenance/lineage, not SensibLaw legal reasoning. Reuse only their typed nonpromotion and PostgreSQL-only authority boundaries if relevant.
+- Agda PR search found legal-compliance/safe-just governance PR #1430 and related #1424, and PNF exact-work admission PR #1427. They are research candidates; neither proves a particular SensibLaw case.
+- Two workers require explicit independent lane IDs and `noTypedMeet` evidence under ITIR PR #53. Never duplicate the same case/proof lane merely to fill capacity.
+
+### TODOs — Docs → TODOs → Code → Changelog
+
+- [ ] Retrieve Topic 4's exact SensibLaw case fixture, source judgment, legal issue, jurisdiction, expected outcome and evidence provenance from the canonical PostgreSQL corpus; abstain on missing fields.
+- [ ] Search actual golden Agda SensibLaw/case comparison/legal-governance owners, their signatures, dependencies and TOE imports; deduplicate before adding any new declaration.
+- [ ] Partition two workers into independent typed lanes only after `noTypedMeet` (e.g., source/citation provenance versus substantive rule applicability, if those are genuinely distinct in the source case).
+- [ ] Formalize case-specific assumptions and testable outcome in safe Agda with no postulates, holes or termination pragmas; never infer judicial correctness from type checking alone.
+- [ ] Mirror only the validated golden Agda contract in Lean; align Python SensibLaw fixture, PostgreSQL source refs and formal gap receipts, with no ESD edits.
+- [ ] Reconcile Git/PR lineage commits against exact repository SHAs, author, PR status and kernel/test receipts; do not treat PR descriptions as verified proof.
+- [ ] Run focused tests and kernel checks and record executed receipts before marking any case test complete.
+
+### Code / changelog receipt
+
+- 2026-10-29: Round 4 planning synchronized, including two-worker typed-independence gate and missing-case abstention. No SensibLaw test fixture, Agda proof, Lean theorem, Python code, executed test or kernel check was produced in this documentation-only tranche.
