@@ -361,3 +361,26 @@ Run: `PYTHONPATH=. python -m pytest tests/test_formal_slicer.py tests/test_autom
 ### Changelog
 
 - 2026-10-29: Round 9 adds Agda-first Topic 1 operation syntax and three label-preservation lemmas, followed by the Lean mirror. Kernel and runtime verification remain pending; no test execution claimed.
+
+## Round 10/10 — Topic 2: Explain torque better (2026-10-29)
+
+### Docs — bounded physical statement and provenance
+
+- Topic 2 lead, one worker, supplied sizing benefit 0.776. A perpendicular load of moment arm `r` and perpendicular force magnitude `F⊥` has nonnegative scalar torque magnitude `τ = r × F⊥`. This is a deliberately bounded model; it is not the general vector relation `τ⃗ = r⃗ × F⃗`, an angular acceleration theorem, or a unit-checked physics engine.
+- Golden Agda source created: `DASHI/Interop/TorqueMomentArmExact.agda`, branch `feat/semantic-rejuvenation-golden`, commit `026765ced1d679b22eef00c88b9067e662d2f1f1`. It defines `PerpendicularLoad`, `torqueMagnitude`, `EqualPerpendicularLoads`, `equalLoadsEqualTorque`, `zeroArmZeroTorque`, `zeroForceZeroTorque`. Source uses `{-# OPTIONS --safe #-}` and no postulates, holes or TERMINATING pragmas. No kernel execution claimed.
+- Secondary Lean mirror created: `AgdaMirror/TorqueMomentArmExact.lean`, branch `feat/semantic-rejuvenation-mirror`, commit `051856c4b232368ad43b4529495b02a0035181c6`. Source-written only; kernel not executed.
+- Reported shared invariant `round191CompleteProductionEnergyLedgerClosed` and universal blockers `round193ClayPromotion`, `round193PackageAClosed` are **not** proved by this model and have no demonstrated typed dependency on it. Keep as separate AST candidates until their exact Agda owners and signatures are inspected.
+
+### TODOs — docs → tasks → code → changelog
+
+- [x] Encode elementary scalar perpendicular-load torque and two zero-case lemmas in safe golden Agda.
+- [x] Mirror the same bounded statements in Lean without elevating Lean over Agda.
+- [ ] Run `agda` and `lean` on both new modules; record compiler versions, exact command, output and exit status. Source-written does not mean kernel-verified.
+- [ ] Inspect existing physical torque and angular momentum modules for duplicate owners and consolidate if found; attach the new Agda module to TOE import roots after checking cycles. Never edit ESD surfaces.
+- [ ] Resolve the exact signatures and dependencies of `round191CompleteProductionEnergyLedgerClosed`, `round193ClayPromotion` and `round193PackageAClosed`; do not mark Clay or Package A blockers discharged by an unrelated torque lemma.
+- [ ] If required by the actual source problem, extend to typed units, vector cross product and work/energy relations in existing owners, using proof-carrying assumptions rather than invented physics claims.
+- [ ] Verify any PostgreSQL PNF/topic mapping and tests for Topic 2, preserving original authorship, exact Git/PR lineage and nonpromotion boundaries.
+
+### Changelog
+
+- 2026-10-29: Round 10 adds source-written Agda-first perpendicular torque model and Lean mirror; reconciles physics scope with Round 191/193 blocker receipts. Kernel execution, runtime integration and TOE import-graph closure remain pending.
