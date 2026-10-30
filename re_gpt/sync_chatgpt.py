@@ -1046,6 +1046,14 @@ class SyncChatGPT(AsyncChatGPT):
 
         Returns: authentication token.
         """
+        if self.auth_token:
+            return self.auth_token
+        if not self.session_token:
+            try:
+                from .utils import get_session_token
+                self.session_token = get_session_token()
+            except Exception:
+                pass
         response = self._request_auth_session()
         try:
             response.raise_for_status()
@@ -1085,6 +1093,14 @@ class SyncChatGPT(AsyncChatGPT):
         raise UnexpectedResponseError(
             "accessToken missing in auth response", response.text
         )
+
+    def get_access_token(self) -> str:
+        """Fetch or return the authentication token."""
+        return self.fetch_auth_token()
+
+    def _get_access_token(self) -> str:
+        """Fetch or return the authentication token (convenience alias)."""
+        return self.fetch_auth_token()
 
     def set_custom_instructions(
         self,

@@ -525,6 +525,12 @@ class AsyncChatGPT:
                     browser_session = snapshot
             except Exception:
                 pass
+            if browser_session is None:
+                try:
+                    from .utils import get_session_token
+                    self.session_token = get_session_token()
+                except Exception:
+                    pass
         self.browser_session = browser_session
         self._replayed_browser_snapshot = None
 
@@ -1084,6 +1090,14 @@ class AsyncChatGPT:
 
         Returns: authentication token.
         """
+        if self.auth_token:
+            return self.auth_token
+        if not self.session_token:
+            try:
+                from .utils import get_session_token
+                self.session_token = get_session_token()
+            except Exception:
+                pass
         response = await self._request_auth_session()
         try:
             response.raise_for_status()
@@ -1130,6 +1144,14 @@ class AsyncChatGPT:
         raise UnexpectedResponseError(
             "accessToken missing in auth response", response.text
         )
+
+    async def get_access_token(self) -> str:
+        """Fetch or return the authentication token."""
+        return await self.fetch_auth_token()
+
+    async def _get_access_token(self) -> str:
+        """Fetch or return the authentication token (convenience alias)."""
+        return await self.fetch_auth_token()
 
     async def set_custom_instructions(
         self,

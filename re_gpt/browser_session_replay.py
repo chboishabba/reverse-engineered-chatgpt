@@ -469,6 +469,13 @@ async def capture_browser_session_snapshot_async(
     cookie_list = [dict(c) for c in (cookies or []) if isinstance(c, Mapping)]
     cookie_lookup = {str(c.get("name") or ""): str(c.get("value") or "") for c in cookie_list}
     access_token = str(env_info.get("accessToken") or captured_access_token or "").strip() or None
+    if not access_token:
+        try:
+            from .async_chatgpt import AsyncChatGPT
+            async with AsyncChatGPT() as client:
+                access_token = await client.fetch_auth_token()
+        except Exception:
+            pass
     account_id = str(captured_headers.get("chatgpt-account-id") or env_info.get("accountId") or cookie_lookup.get("_account") or "").strip() or None
     device_id = str(captured_headers.get("oai-did") or cookie_lookup.get("oai-did") or "").strip() or None
     user_agent = str(captured_headers.get("user-agent") or env_info.get("userAgent") or "").strip() or None
