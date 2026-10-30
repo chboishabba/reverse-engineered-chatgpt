@@ -152,6 +152,21 @@ class SSEProgressDecoder:
         text = ""
         if isinstance(parts, list):
             text = "".join(part for part in parts if isinstance(part, str))
+        # Tool calls/results are separate from answer deltas. Preserve the
+        # provided source body for the caller's redaction/visibility policy.
+        # Private analysis is deliberately excluded, not re-labelled as text.
+        if text and channel != "analysis" and (
+            (role == "assistant" and recipient and recipient not in {"all", "assistant", "user"})
+            or role in {"tool", "function"}
+        ):
+            self._emit({
+                "kind": "tool_invocation" if role == "assistant" else "tool_result",
+                "message_id": message_id,
+                "recipient": recipient or role,
+                "body": text,
+                "channel": channel or None,
+            }, output)
+
         if role == "assistant" and message_id and text:
             prior = self._last_text.get(message_id, "")
             if text.startswith(prior):
