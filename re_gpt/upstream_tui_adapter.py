@@ -149,7 +149,8 @@ def collect_remote_catalog(chatgpt, *, page_size: int = 100, max_pages: int = 10
     return collected
 
 
-def load_upstream_tui(filename: Path, *, control_socket: Path | None = None):
+def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
+                      replace_control_socket: bool = False):
     if not filename.is_file():
         raise FileNotFoundError(filename)
     spec = importlib.util.spec_from_file_location("chatgpt_upstream_terminal_ui", filename)
@@ -250,7 +251,7 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None):
         if control_socket is None:
             tui.run()
         else:
-            server = TuiStateServer(tui, control_socket)
+            server = TuiStateServer(tui, control_socket, replace_stale=replace_control_socket)
             server.start()
             try:
                 tui.run()
@@ -265,9 +266,14 @@ def main(argv=None):
     parser.add_argument("--conversation-id")
     parser.add_argument("--model")
     parser.add_argument("--control-socket", type=Path, help="Opt-in local TUI state/control Unix socket")
+    parser.add_argument("--replace-control-socket", action="store_true",
+                        help="Replace an unreachable, owner-owned control socket")
     args = parser.parse_args(argv)
     callbacks = ReGptTuiCallbacks(model=args.model)
-    run_tui = load_upstream_tui(args.upstream_tui, control_socket=args.control_socket)
+    if args.replace_control_socket and args.control_socket is None:
+        parser.error("--replace-control-socket requires --control-socket")
+    run_tui = load_upstream_tui(args.upstream_tui, control_socket=args.control_socket,
+                                replace_control_socket=args.replace_control_socket)
     run_tui(callbacks.list_conversations, callbacks.load_conversation,
             callbacks.send_prompt, conversation_id=args.conversation_id,
             model=args.model, upload_image=None, rename_conversation=None,

@@ -14,9 +14,10 @@ import threading
 
 
 class TuiStateServer:
-    def __init__(self, tui, socket_path: Path):
+    def __init__(self, tui, socket_path: Path, *, replace_stale: bool = False):
         self.tui = tui
         self.path = Path(socket_path).expanduser()
+        self.replace_stale = replace_stale
         self.stop_event = threading.Event()
         self.worker = None
         self.socket = None
@@ -26,8 +27,28 @@ class TuiStateServer:
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         if directory.is_symlink() or directory.stat().st_mode & 0o077:
             raise PermissionError("TUI control socket directory must be owner-only")
-        if self.path.exists() or self.path.is_symlink():
-            raise FileExistsError("Refusing to replace an existing TUI control socket")
+        if self.path.is_symlink():
+            raise FileExistsError("Refusing to replace a symlinked TUI control socket")
+        if self.path.exists():
+            if not self.replace_stale:
+                raise FileExistsError("Refusing to replace an existing TUI control socket")
+            stat = self.path.stat()
+            if not self.path.is_socket() or stat.st_uid != os.getuid():
+                raise FileExistsError("Refusing to replace a non-owned TUI control socket")
+            probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                probe.settimeout(0.25)
+                probe.connect(str(self.path))
+            except (ConnectionRefusedError, FileNotFoundError):
+                self.path.unlink(missing_ok=True)
+            except OSError as exc:
+                raise FileExistsError(
+                    "Refusing to replace a TUI control socket whose owner cannot be verified"
+                ) from exc
+            else:
+                raise FileExistsError("Refusing to replace a live TUI control socket")
+            finally:
+                probe.close()
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.bind(str(self.path))
         os.chmod(self.path, 0o600)

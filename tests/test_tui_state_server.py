@@ -1,6 +1,10 @@
 """Offline contract checks for programmatic TUI state."""
 from types import SimpleNamespace
 from threading import RLock
+import socket
+
+import pytest
+
 from re_gpt.tui_state_server import TuiStateServer
 
 
@@ -34,6 +38,29 @@ def test_unsupported_action_rejected():
 
 
 def test_selection_requires_nonnegative_index():
-    import pytest
     with pytest.raises(ValueError):
         TuiStateServer(Dummy(), "/tmp/not-used").handle({"action": "select", "index": -1})
+
+
+def test_replace_stale_socket_requires_explicit_opt_in(tmp_path):
+    path = tmp_path / "control.sock"
+    stale = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    stale.bind(str(path))
+    stale.close()
+
+    with pytest.raises(FileExistsError):
+        TuiStateServer(Dummy(), path).start()
+
+    server = TuiStateServer(Dummy(), path, replace_stale=True)
+    server.start()
+    assert path.is_socket()
+    server.close()
+
+
+def test_replace_stale_socket_refuses_live_socket(tmp_path):
+    path = tmp_path / "control.sock"
+    first = TuiStateServer(Dummy(), path)
+    first.start()
+    with pytest.raises(FileExistsError, match="live"):
+        TuiStateServer(Dummy(), path, replace_stale=True).start()
+    first.close()
