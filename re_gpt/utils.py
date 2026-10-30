@@ -170,11 +170,53 @@ def _read_stitched_session_token_file(path: Path) -> str:
     return "".join(parts)
 
 
+def _extract_browser_session_fallback() -> str:
+    """Safely inspect live Firefox and Chrome cookie jars for active ChatGPT session tokens."""
+    import glob
+    import shutil
+    import sqlite3
+
+    ff_dirs = [
+        Path.home() / ".mozilla" / "firefox",
+        Path("/run/user") / str(os.getuid() if hasattr(os, "getuid") else 1000) / "psd",
+    ]
+    candidate_dbs: list[Path] = []
+    for d in ff_dirs:
+        if d.is_dir():
+            candidate_dbs.extend(d.glob("*firefox*default*/cookies.sqlite"))
+            candidate_dbs.extend(d.glob("*.default*/cookies.sqlite"))
+
+    for db in candidate_dbs:
+        if not db.is_file():
+            continue
+        tmp_db = Path(f"/tmp/.ff_cookie_{os.getpid()}_{time.time_ns()}.sqlite")
+        try:
+            shutil.copy2(db, tmp_db)
+            con = sqlite3.connect(tmp_db)
+            cur = con.cursor()
+            r0 = cur.execute("SELECT value FROM moz_cookies WHERE name = '__Secure-next-auth.session-token.0'").fetchone()
+            r1 = cur.execute("SELECT value FROM moz_cookies WHERE name = '__Secure-next-auth.session-token.1'").fetchone()
+            if r0 and r1:
+                return str(r0[0]) + str(r1[0])
+            elif r0:
+                return str(r0[0])
+        except Exception:
+            pass
+        finally:
+            if tmp_db.is_file():
+                try:
+                    tmp_db.unlink()
+                except OSError:
+                    pass
+
+    return ""
+
+
 def get_session_token(config_path: str = "config.ini") -> str:
     """Retrieve the ChatGPT session token.
 
-    The search order is ``config.ini`` in the current working directory and
-    ``~/.chatgpt_session`` in the user's home directory.
+    The search order is ``config.ini`` in the current working directory,
+    ``~/.chatgpt_session_new``, ``~/.chatgpt_session``, and live browser jars.
 
     Args:
         config_path (str, optional): Path to the configuration file. Defaults
@@ -205,6 +247,14 @@ def get_session_token(config_path: str = "config.ini") -> str:
     token = _read_stitched_session_token_file(session_file)
     if token:
         return token
+
+    browser_token = _extract_browser_session_fallback()
+    if browser_token:
+        try:
+            session_file.write_text(browser_token, encoding="utf-8")
+        except Exception:
+            pass
+        return browser_token
 
     raise TokenNotProvided()
 
