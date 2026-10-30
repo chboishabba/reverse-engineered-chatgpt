@@ -32,3 +32,17 @@ Create a low-DOM terminal presentation of authenticated ChatGPT conversations, *
 The highest-alpha cut lies between the existing canonical re-gpt read/operation boundary and a terminal renderer. Reuse upstream persistence and downstream formal read models. Test bounded projections and interruption states before choosing a full TUI toolkit. Avoid CI claims: no runtime or Agda/Lean verification established by this document.
 ## Source-written continuation (2026-10-30)
 Added `re_gpt/terminal_view.py`, a pipe-friendly read-only projection of stdin to original source, source-indexed segment JSONL, or math-source lines. It is intentionally not a second chat transport, TUI framework, or PG store. The scanner was corrected to consider `\\(`/`\\[` openers and to bound fence-prefix scanning. Local CLI execution was unavailable because the checkout cannot be materialized from GitHub in this runtime; these remain source-written changes. Follow-up: execute tests against an actual checkout, add capability-negotiated formula renderer, and wire canonical re-gpt streaming/read UI after production SLR read models are checked. No CI/kernel claims.
+
+## Upstream TUI reuse: implementation tranche (2026-10-30)
+
+The upstream `tritao/chatgpt-web/chatgpt_tui.py` exports `run_tui(list_conversations, load_conversation, send_prompt, ...)` with callable injection. The implementation uses this **existing** callback seam in `re_gpt/upstream_tui_adapter.py`: it loads the unmodified module from an explicitly supplied checkout and delegates network reads to `GraphBroker` and mutations to `MutationService`. There is no need to copy upstream TUI, Chrome signing service, browser automation, daemon or history cache. Original author attribution: tritao/chatgpt-web, https://github.com/tritao/chatgpt-web, inspected 2026-10-30.
+
+Example after separately obtaining upstream code and installing its prompt-toolkit/Rich dependencies:
+
+```sh
+python -m re_gpt.upstream_tui_adapter --upstream-tui /path/to/chatgpt-web/chatgpt_tui.py --conversation-id UUID
+```
+
+The current upstream TUI has no incorporated local math graphics; `terminal_projection` remains a separate source-only stage pending graphics negotiation. Existing docs and status are **not** claims of full ChatGPT feature parity. CLI image descriptors, rename and canonical PG history query remain explicit follow-up adapters. `SyncChatGPT.list_conversations_page` currently provides a bounded remote picker, not a substitute for ITIR PostgreSQL.
+
+Critical safety: continuation uses `write_transport=async, dom_fallback=False` and emits `commit_unknown` as a hold, never a resend; no credential material enters UI callbacks. Current adapter has **source-written/offline-test-only** status. GitHub tool writes were available but local checkout/test execution was blocked by network DNS. No CI or Agda/Lean kernel verification claimed. Next discriminator: execute isolated mock callback tests, then test actual re-gpt session with one sacrificial thread and review operation receipt. Upstream repository tree had no LICENSE file; dynamic loading from a separately installed checkout avoids embedding its code, and any later distribution must establish reuse permissions.
