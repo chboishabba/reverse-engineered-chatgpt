@@ -153,7 +153,7 @@ def cancel_queued(job_id,*,connect=_connect):
                 "reason":"only queued, unstarted jobs can be cancelled"}
     finally: conn.close()
 
-def execute_local_job(prompt):
+def execute_local_job(prompt,conversation_id=None):
     """Opt-in configured agent CLI; input via stdin, never shell."""
     raw=os.environ.get("ITIR_LOCAL_AGENT_ARGV")
     if not raw:
@@ -183,7 +183,7 @@ def process_one(*,connect=_connect,service_factory=MutationService):
                      dict(event),connect=connect)
     try:
         if job.get("provider")=="local":
-            response=execute_local_job(job["prompt"])
+            response=execute_local_job(job["prompt"],cid)
             emit({"kind":"agent_response","provider":"local","body":response})
             finish(jid,"complete",receipt={"state":"complete","provider":"local"},connect=connect)
             emit({"kind":"job_terminal","state":"complete","provider":"local"})
