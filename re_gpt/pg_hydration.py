@@ -68,8 +68,11 @@ def roster_page(*, page_size=100, pages=1, connect=_connect, client_factory=None
         raise ValueError("invalid roster bounds")
     if client_factory is None:
         from .sync_chatgpt import SyncChatGPT
-        from .utils import get_session_token
-        client_factory = lambda: SyncChatGPT(session_token=get_session_token())
+        from .browser_session_replay import load_browser_session_snapshot
+        snapshot = load_browser_session_snapshot()
+        if snapshot is None:
+            raise RuntimeError("No owned session snapshot available for roster synchronization")
+        client_factory = lambda: SyncChatGPT(browser_session=snapshot, websocket_mode=False)
     items = []
     seen = set()
     with client_factory() as client:
