@@ -25,11 +25,14 @@ def activity_from_progress(event):
         return None
     recipient = str(event.get("recipient") or event.get("content_type") or "tool")
     summary = {
-        "thinking": "Reasoning in progress (private details unavailable)",
-        "reasoning_summary": "Reasoning summary available",
+        "thinking": "Reasoning activity",
+        "reasoning_summary": "Reasoning summary",
         "tool_invocation": "Tool: " + recipient[:120],
         "tool_result": "Tool result: " + recipient[:120],
     }[kind]
+    detail = event.get("body") or event.get("summary")
+    if isinstance(detail, str) and detail.strip():
+        summary = detail[:160]
     return {"kind": kind, "summary": summary, "message_id": event.get("message_id"),
             "arguments": redact(event["arguments"]) if "arguments" in event else None,
             "result": redact(event["result"]) if "result" in event else None,

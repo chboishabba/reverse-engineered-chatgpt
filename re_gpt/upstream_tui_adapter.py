@@ -12,10 +12,15 @@ import importlib.util
 from pathlib import Path
 from typing import Any
 
-from .conversation_sync import ConversationRevisionWatcher
+from .pg_conversation_subscriptions import PGConversationSubscriber
+from .pg_turn_worker import queue_turn
+from .workspace_routing import parse_route
+from .workspace_projection import read_workspace_conversation
+from .workspace_auto_policy import get_mode, set_mode, queue_auto_turn
 from .pg_conversation_read import list_synced_roster, read_pg_conversation
 from .pg_hydration import roster_page, hydrate_one, hydrate_pending
 from .terminal_activity import activity_from_progress
+from .terminal_rich_display import terminal_display
 from .tui_state_server import TuiStateServer
 from .mutation_service import MutationService
 from .storage import extract_ordered_messages
@@ -41,9 +46,10 @@ def project_chat(conversation_id: str, graph: dict[str, Any]) -> dict[str, Any]:
 class ReGptTuiCallbacks:
     """No authority beyond existing re-gpt read and MutationService writes."""
 
-    def __init__(self, *, model: str | None = None) -> None:
+    def __init__(self, *, model: str | None = None, server_jobs: bool = False) -> None:
         self.service = MutationService(model=model)
         self._roster_refresh_started = False
+        self.server_jobs = server_jobs
 
     def list_conversations(self) -> list[dict[str, Any]]:
         # Remote catalog is a *non-authoritative* temporary picker source.
@@ -66,18 +72,38 @@ class ReGptTuiCallbacks:
     def load_conversation(self, conversation_id: str) -> dict[str, Any]:
         """Synchronize the selected graph before serving its PG projection."""
         try:
+            return read_workspace_conversation(conversation_id)
+        except KeyError:
+            # Selected-but-unhydrated roster entries are prioritized; already
+            # hydrated reads never depend on network/session availability.
             hydrate_one(conversation_id)
-        except Exception:
-            # An already-hydrated thread remains readable during a transient
-            # network/session failure; a missing thread still fails closed.
             return read_pg_conversation(conversation_id)
-        return read_pg_conversation(conversation_id)
 
     def send_prompt(self, conversation_id, prompt, attachments, on_event, register_connection):
         # Do not reuse tritao's HTTP sender; no automatic retries or DOM.
         if attachments:
             raise NotImplementedError(
                 "Clipboard attachment descriptors need explicit re-gpt staging adapter")
+        route = parse_route(prompt)
+        if route.targets != ("chatgpt",) and (not self.server_jobs or not conversation_id):
+            raise RuntimeError("Agent routing requires --server-jobs and an existing conversation")
+        if self.server_jobs and conversation_id:
+            if "ao" in route.targets:
+                raise RuntimeError("AO routing requires a typed lane and explicit worker identity")
+            if "local" in route.targets:
+                import os
+                if not os.environ.get("ITIR_LOCAL_AGENT_ARGV"):
+                    raise RuntimeError("Configure ITIR_LOCAL_AGENT_ARGV before @local or @both")
+            jobs = (queue_auto_turn(conversation_id,route.prompt)["jobs"]
+                    if not route.explicit else
+                    [queue_turn(conversation_id,route.prompt,provider=provider)
+                     for provider in route.targets])
+            on_event({"type": "queued_jobs", "jobs": jobs})
+            on_event({"type": "replace", "text":
+                      "[Queued: " + ", ".join(j["provider"] + " " + j["job_id"] for j in jobs) + "]"})
+            return {"conversation_id": conversation_id, "conversation": None,
+                    "previous_ids": [], "jobs": jobs}
+        prompt = route.prompt
         if conversation_id:
             def progress(event):
                 channel = str(event.get("channel") or "final")
@@ -169,7 +195,13 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             self.activity_log = []
-            self.revisions = ConversationRevisionWatcher(interval=sync_interval)
+            self.revisions = PGConversationSubscriber(interval=sync_interval)
+            self._event_buffers = {}
+            self._pending_job_ids = {}
+
+        def render_message(self, role, text, width, separated, active):
+            return super().render_message(
+                role, terminal_display(text), width, separated, active)
 
         def resume_conversation(self, conversation_id):
             previous = self.conversation_id
@@ -178,12 +210,61 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
             self.revisions.watch(conversation_id, self._apply_remote_revision)
             return super().resume_conversation(conversation_id)
 
-        def _apply_remote_revision(self, _receipt):
+        def _apply_remote_revision(self, receipt):
             def apply():
-                if self.busy or self.loading_conversation or not self.conversation_id:
+                if (not self.conversation_id
+                        or receipt.get("conversation_id") != self.conversation_id):
+                    return
+                if self.busy or self.loading_conversation:
+                    self.event_loop.call_later(0.5, apply)
+                    return
+                terminals=[e for e in receipt.get("events", [])
+                           if e.get("kind")=="job_terminal"]
+                if terminals:
+                    latest=terminals[-1].get("payload") or {}
+                    if latest.get("state")=="commit_unknown":
+                        self.status="Commit uncertain: reconcile existing operation; do not resend"
+                    elif latest.get("sync_state")=="sync_pending":
+                        self.status="Committed; canonical PG sync pending"
+                needs_reload = (receipt.get("source_changed")
+                    or any(e.get("kind")=="agent_response"
+                           or (e.get("kind")=="job_terminal"
+                               and (e.get("payload") or {}).get("sync_state")=="hydrated")
+                           for e in receipt.get("events", [])))
+                if not needs_reload:
+                    for event in receipt.get("events", []):
+                        kind = event.get("kind")
+                        if kind in {"tool_invocation", "tool_result", "thinking", "reasoning_summary"}:
+                            activity = activity_from_progress(event.get("payload") or {})
+                            if activity is not None:
+                                activity["operation_id"] = event.get("operation_id")
+                                self.activity_log.append(activity)
+                    if len(self.activity_log) > 500:
+                        del self.activity_log[:-500]
+                    # Stream deltas belong to their immutable PG operation IDs,
+                    # never to a global TUI last-message pointer.
+                    for event in receipt.get("events", []):
+                        if event.get("kind") == "token_delta":
+                            op = event.get("operation_id")
+                            key = (receipt["conversation_id"], op)
+                            delta = event.get("payload", {}).get("delta")
+                            if isinstance(delta, str) and op:
+                                self._event_buffers[key] = (
+                                    self._event_buffers.get(key, "") + delta)
+                    allowed = set(self._pending_job_ids.get(self.conversation_id, ()))
+                    current_buffers = {key: value for key, value in self._event_buffers.items()
+                                       if key[0] == self.conversation_id and key[1] in allowed}
+                    if current_buffers and self.messages:
+                        # Current conversation is verified above; preserve the
+                        # source conversation's immutable event attribution.
+                        with self.lock:
+                            if self.messages[-1].get("role") == "assistant":
+                                op = next(reversed(current_buffers))
+                                self.messages[-1]["text"] = current_buffers[op]
+                        self.app.invalidate()
                     return
                 try:
-                    conversation = read_pg_conversation(self.conversation_id)
+                    conversation = read_workspace_conversation(self.conversation_id)
                     messages = [visible for message in conversation["messages"]
                                 if (visible := module.visible_chat_message(message)) is not None]
                 except Exception:
@@ -209,6 +290,23 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
             self.app.run(pre_run=started)
 
         def handle_command(self, command):
+            if command.strip().startswith("/auto"):
+                _, _, requested = command.strip().partition(" ")
+                if not self.conversation_id:
+                    self.status = "Select a conversation before changing /auto"
+                elif not requested:
+                    self.status = "Auto response: " + get_mode(self.conversation_id)
+                else:
+                    try:
+                        import os
+                        if requested != "off" and not os.environ.get("ITIR_LOCAL_AGENT_ARGV"):
+                            raise RuntimeError("Local agent executable is not configured")
+                        result = set_mode(self.conversation_id, requested)
+                        self.status = "Auto response: " + result["mode"]
+                    except Exception as exc:
+                        self.status = "Auto policy refused: " + str(exc)[:110]
+                self.app.invalidate()
+                return
             if command.strip() == "/activity":
                 import json
                 with self.lock:
@@ -269,6 +367,11 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
 
             def with_activity(conversation_id, text, files, on_event, register):
                 def dispatch(event):
+                    if event.get("type") == "queued_jobs":
+                        ids = [job.get("job_id") for job in event.get("jobs", [])]
+                        self._pending_job_ids.setdefault(conversation_id, []).extend(
+                            jid for jid in ids if isinstance(jid, str))
+                        return
                     if event.get("type") == "activity":
                         activity = event.get("activity") or {}
                         with self.lock:
@@ -310,13 +413,14 @@ def main(argv=None):
     parser.add_argument("--upstream-tui", type=Path, required=True)
     parser.add_argument("--conversation-id")
     parser.add_argument("--model")
+    parser.add_argument("--server-jobs", action="store_true", help="Queue existing-thread turns to an independent PG worker")
     parser.add_argument("--control-socket", type=Path, help="Opt-in local TUI state/control Unix socket")
     parser.add_argument("--replace-control-socket", action="store_true",
                         help="Replace an unreachable, owner-owned control socket")
     parser.add_argument("--sync-interval", type=float, default=15.0,
                         help="Seconds between idle active-thread reconciliations")
     args = parser.parse_args(argv)
-    callbacks = ReGptTuiCallbacks(model=args.model)
+    callbacks = ReGptTuiCallbacks(model=args.model, server_jobs=args.server_jobs)
     if args.replace_control_socket and args.control_socket is None:
         parser.error("--replace-control-socket requires --control-socket")
     if args.sync_interval < 2:
