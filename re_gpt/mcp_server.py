@@ -496,6 +496,65 @@ def chatgpt_get_access_token(auto_refresh: bool = True) -> dict[str, Any]:
 
 
 @mcp.tool()
+def chatgpt_cdp_capture(
+    cdp_url: str = "http://127.0.0.1:9222",
+    timeout: float = 5.0,
+    save: bool = True,
+    profile_dir: str | None = None,
+    snapshot_path: str | None = None,
+) -> dict[str, Any]:
+    """Directly capture authenticated ChatGPT session, tokens, cookies, and sentinel state from Chrome via Chrome DevTools Protocol (CDP)."""
+    from .async_bridge import run_async_sync
+    from .browser_session_replay import save_browser_session_snapshot
+    from .cdp_sentinel import capture_snapshot_via_cdp
+    from .session_lifecycle import SessionLifecycle
+
+    async def run() -> Any:
+        return await capture_snapshot_via_cdp(
+            cdp_url=cdp_url,
+            profile_dir=profile_dir,
+            timeout=timeout,
+        )
+
+    try:
+        snap = run_async_sync(run)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": f"CDP capture exception: {exc}",
+            "cdp_url": cdp_url,
+        }
+
+    if snap is None:
+        return {
+            "ok": False,
+            "error": f"No active ChatGPT tab or connection refused at CDP endpoint {cdp_url}",
+            "cdp_url": cdp_url,
+            "hint": "Ensure Chrome is running with --remote-debugging-port=9222 and has an active chatgpt.com tab.",
+        }
+
+    if save:
+        try:
+            save_browser_session_snapshot(
+                snap,
+                profile_dir=profile_dir,
+                snapshot_path=snapshot_path,
+            )
+        except Exception as exc:
+            return {
+                "ok": False,
+                "error": f"Failed saving snapshot: {exc}",
+            }
+
+    status = SessionLifecycle().status_from_snapshot(snap)
+    return {
+        "ok": True,
+        "cdp_url": cdp_url,
+        "session": status,
+    }
+
+
+@mcp.tool()
 def chatgpt_protocol_fingerprint(observations: list[dict[str, Any]]) -> dict[str, Any]:
     """Build a value-free structural protocol fingerprint from redacted observations."""
     return build_protocol_fingerprint(observations)
