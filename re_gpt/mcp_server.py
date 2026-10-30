@@ -458,16 +458,36 @@ def chatgpt_session_doctor(profile_dir: str | None = None, snapshot_path: str | 
 
 
 @mcp.tool()
-def chatgpt_get_access_token() -> dict[str, Any]:
-    """Retrieve the active ChatGPT access token, automatically resolving from ~/.chatgpt_session or local session snapshot."""
+def chatgpt_get_access_token(auto_refresh: bool = True) -> dict[str, Any]:
+    """Retrieve the active ChatGPT access token, automatically resolving or refreshing via CDP / browser session snapshot."""
+    from .session_lifecycle import SessionLifecycle
     from .async_chatgpt import AsyncChatGPT
     from .async_bridge import run_async_sync
+
+    lifecycle = SessionLifecycle()
+    status = lifecycle.status()
+    if status.get("state") == "stale" and auto_refresh:
+        try:
+            lifecycle.refresh()
+        except Exception:
+            pass
 
     async def run() -> str:
         async with AsyncChatGPT() as client:
             return await client.fetch_auth_token()
 
-    token = run_async_sync(run)
+    try:
+        token = run_async_sync(run)
+    except Exception:
+        if auto_refresh:
+            try:
+                lifecycle.refresh()
+                token = run_async_sync(run)
+            except Exception:
+                token = ""
+        else:
+            token = ""
+
     return {
         "ok": bool(token),
         "access_token": token,

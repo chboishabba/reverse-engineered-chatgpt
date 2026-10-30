@@ -16,7 +16,10 @@ def _guarded(method: Callable[..., Any]) -> Callable[..., Any]:
         # The default snapshot path matters too: direct transports load it even
         # when callers omit profile_dir. Missing/opaque-expiry state is allowed;
         # only a provably expired persisted credential blocks dispatch.
-        SessionLifecycle().assert_precommit_ready(profile_dir=kwargs.get("profile_dir"))
+        SessionLifecycle().assert_precommit_ready(
+            profile_dir=kwargs.get("profile_dir"),
+            auto_refresh=True,
+        )
         return method(self, *args, **kwargs)
     return wrapper
 

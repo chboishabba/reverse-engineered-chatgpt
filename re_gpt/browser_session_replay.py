@@ -223,6 +223,22 @@ def save_browser_session_snapshot(
         os.chmod(target, 0o600)
     except OSError:
         pass
+
+    # Keep ~/.chatgpt_session in sync with fresh browser cookies
+    try:
+        cookie_map = snapshot.cookie_map()
+        stitched = ""
+        if "__Secure-next-auth.session-token.0" in cookie_map and "__Secure-next-auth.session-token.1" in cookie_map:
+            stitched = cookie_map["__Secure-next-auth.session-token.0"] + cookie_map["__Secure-next-auth.session-token.1"]
+        elif "__Secure-next-auth.session-token" in cookie_map:
+            stitched = cookie_map["__Secure-next-auth.session-token"]
+        if stitched:
+            session_file = Path.home() / ".chatgpt_session"
+            session_file.write_text(stitched, encoding="utf-8")
+            session_file.chmod(0o600)
+    except Exception:
+        pass
+
     return target
 
 
