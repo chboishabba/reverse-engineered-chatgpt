@@ -12,7 +12,8 @@ import importlib.util
 from pathlib import Path
 from typing import Any
 
-from .conversation_sync import ConversationRevisionWatcher
+from .pg_conversation_subscriptions import PGConversationSubscriber
+from .pg_turn_worker import queue_turn
 from .pg_conversation_read import list_synced_roster, read_pg_conversation
 from .pg_hydration import roster_page, hydrate_one, hydrate_pending
 from .terminal_activity import activity_from_progress
@@ -41,9 +42,10 @@ def project_chat(conversation_id: str, graph: dict[str, Any]) -> dict[str, Any]:
 class ReGptTuiCallbacks:
     """No authority beyond existing re-gpt read and MutationService writes."""
 
-    def __init__(self, *, model: str | None = None) -> None:
+    def __init__(self, *, model: str | None = None, server_jobs: bool = False) -> None:
         self.service = MutationService(model=model)
         self._roster_refresh_started = False
+        self.server_jobs = server_jobs
 
     def list_conversations(self) -> list[dict[str, Any]]:
         # Remote catalog is a *non-authoritative* temporary picker source.
@@ -78,6 +80,12 @@ class ReGptTuiCallbacks:
         if attachments:
             raise NotImplementedError(
                 "Clipboard attachment descriptors need explicit re-gpt staging adapter")
+        if self.server_jobs and conversation_id:
+            job = queue_turn(conversation_id, prompt)
+            on_event({"type": "replace", "text":
+                      "[Queued server job " + job["job_id"] + "]"})
+            return {"conversation_id": conversation_id, "conversation": None,
+                    "previous_ids": [], "job_id": job["job_id"]}
         if conversation_id:
             def progress(event):
                 channel = str(event.get("channel") or "final")
@@ -169,7 +177,8 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             self.activity_log = []
-            self.revisions = ConversationRevisionWatcher(interval=sync_interval)
+            self.revisions = PGConversationSubscriber(interval=sync_interval)
+            self._event_buffers = {}
 
         def resume_conversation(self, conversation_id):
             previous = self.conversation_id
@@ -178,9 +187,29 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
             self.revisions.watch(conversation_id, self._apply_remote_revision)
             return super().resume_conversation(conversation_id)
 
-        def _apply_remote_revision(self, _receipt):
+        def _apply_remote_revision(self, receipt):
             def apply():
-                if self.busy or self.loading_conversation or not self.conversation_id:
+                if (self.busy or self.loading_conversation or not self.conversation_id
+                        or receipt.get("conversation_id") != self.conversation_id):
+                    return
+                if not receipt.get("source_changed"):
+                    # Stream deltas belong to their immutable PG operation IDs,
+                    # never to a global TUI last-message pointer.
+                    for event in receipt.get("events", []):
+                        if event.get("kind") == "token_delta":
+                            op = event.get("operation_id")
+                            delta = event.get("payload", {}).get("delta")
+                            if isinstance(delta, str) and op:
+                                self._event_buffers[op] = (
+                                    self._event_buffers.get(op, "") + delta)
+                    if self._event_buffers and self.messages:
+                        # Current conversation is verified above; preserve the
+                        # source conversation's immutable event attribution.
+                        with self.lock:
+                            if self.messages[-1].get("role") == "assistant":
+                                op = next(reversed(self._event_buffers))
+                                self.messages[-1]["text"] = self._event_buffers[op]
+                        self.app.invalidate()
                     return
                 try:
                     conversation = read_pg_conversation(self.conversation_id)
@@ -310,13 +339,14 @@ def main(argv=None):
     parser.add_argument("--upstream-tui", type=Path, required=True)
     parser.add_argument("--conversation-id")
     parser.add_argument("--model")
+    parser.add_argument("--server-jobs", action="store_true", help="Queue existing-thread turns to an independent PG worker")
     parser.add_argument("--control-socket", type=Path, help="Opt-in local TUI state/control Unix socket")
     parser.add_argument("--replace-control-socket", action="store_true",
                         help="Replace an unreachable, owner-owned control socket")
     parser.add_argument("--sync-interval", type=float, default=15.0,
                         help="Seconds between idle active-thread reconciliations")
     args = parser.parse_args(argv)
-    callbacks = ReGptTuiCallbacks(model=args.model)
+    callbacks = ReGptTuiCallbacks(model=args.model, server_jobs=args.server_jobs)
     if args.replace_control_socket and args.control_socket is None:
         parser.error("--replace-control-socket requires --control-socket")
     if args.sync_interval < 2:
