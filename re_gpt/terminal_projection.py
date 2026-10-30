@@ -58,7 +58,7 @@ def split_math(source: str) -> tuple[Segment, ...]:
                 add("code", i, end + 1)
                 i = last = end + 1
                 continue
-        if i and source[i-1] == "\\":
+        if i and source[i-1] == "\\" and source[i] not in "[(":
             i += 1
             continue
         candidate = None
