@@ -32,7 +32,7 @@ def split_math(source: str) -> tuple[Segment, ...]:
         if i == 0 or source[i - 1] == "\n":
             stripped = source[i:].lstrip(" ")
             indent = len(source[i:]) - len(stripped)
-            if indent <= 3 and stripped.startswith(("&&&", "~~~", "```")):
+            if indent <= 3 and stripped.startswith(("~~~", "```")):
                 # A fenced code block is opaque, including contained math.
                 fence = stripped[:3]
                 beginning = i
@@ -88,7 +88,7 @@ def split_math(source: str) -> tuple[Segment, ...]:
                 break
             else:
                 pass
-            if i == last and i > end if end >= 0 else False:
+            if end >= 0 and i == end + len(closer):
                 continue
         i += 1
     add("text", last, n)
