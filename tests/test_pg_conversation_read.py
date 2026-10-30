@@ -20,7 +20,7 @@ def test_catalog_uses_bound_parameters_and_closes_connection():
     assert result[0]["message_count"] == 8
     sql, params = cursor.execute.call_args.args
     assert "%s" in sql and "math" not in sql
-    assert params[:3] == ("math", "%math%", "%math%")
+    assert params[:4] == ("conversation:%", "math", "%math%", "%math%")
     conn.close.assert_called_once()
 
 

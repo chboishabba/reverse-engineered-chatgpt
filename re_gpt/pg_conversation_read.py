@@ -49,13 +49,14 @@ def list_pg_conversations(*, query: str = "", limit: int = 100, offset: int = 0,
                        count(*) AS message_count
                 FROM corpus.chat_archive_message
                 WHERE identity_verified IS TRUE
-                  AND conversation_ref LIKE 'conversation:%'
+                  AND conversation_ref LIKE %s
                   AND (%s = '' OR thread_title ILIKE %s
                        OR conversation_ref ILIKE %s)
                 GROUP BY conversation_ref
                 ORDER BY updated DESC
                 LIMIT %s OFFSET %s
-                """, (query, "%" + query + "%", "%" + query + "%", limit, offset))
+                """, ("conversation:%", query, "%" + query + "%",
+                      "%" + query + "%", limit, offset))
             rows = cursor.fetchall()
         return [{"id": str(r[0]), "title": str(r[1] or "Untitled"),
                  "update_time": str(r[2] or ""), "message_count": int(r[3])}
