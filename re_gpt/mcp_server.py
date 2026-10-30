@@ -458,6 +458,24 @@ def chatgpt_session_doctor(profile_dir: str | None = None, snapshot_path: str | 
 
 
 @mcp.tool()
+def chatgpt_get_access_token() -> dict[str, Any]:
+    """Retrieve the active ChatGPT access token, automatically resolving from ~/.chatgpt_session or local session snapshot."""
+    from .async_chatgpt import AsyncChatGPT
+    from .async_bridge import run_async_sync
+
+    async def run() -> str:
+        async with AsyncChatGPT() as client:
+            return await client.fetch_auth_token()
+
+    token = run_async_sync(run)
+    return {
+        "ok": bool(token),
+        "access_token": token,
+        "token_length": len(token) if token else 0,
+    }
+
+
+@mcp.tool()
 def chatgpt_protocol_fingerprint(observations: list[dict[str, Any]]) -> dict[str, Any]:
     """Build a value-free structural protocol fingerprint from redacted observations."""
     return build_protocol_fingerprint(observations)
