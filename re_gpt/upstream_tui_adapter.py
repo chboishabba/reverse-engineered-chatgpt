@@ -189,10 +189,22 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
 
         def _apply_remote_revision(self, receipt):
             def apply():
-                if (self.busy or self.loading_conversation or not self.conversation_id
+                if (not self.conversation_id
                         or receipt.get("conversation_id") != self.conversation_id):
                     return
+                if self.busy or self.loading_conversation:
+                    self.event_loop.call_later(0.5, apply)
+                    return
                 if not receipt.get("source_changed"):
+                    for event in receipt.get("events", []):
+                        kind = event.get("kind")
+                        if kind in {"tool_invocation", "tool_result", "thinking", "reasoning_summary"}:
+                            activity = activity_from_progress(event.get("payload") or {})
+                            if activity is not None:
+                                activity["operation_id"] = event.get("operation_id")
+                                self.activity_log.append(activity)
+                    if len(self.activity_log) > 500:
+                        del self.activity_log[:-500]
                     # Stream deltas belong to their immutable PG operation IDs,
                     # never to a global TUI last-message pointer.
                     for event in receipt.get("events", []):
