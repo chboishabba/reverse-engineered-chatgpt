@@ -218,8 +218,18 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
                 if self.busy or self.loading_conversation:
                     self.event_loop.call_later(0.5, apply)
                     return
+                terminals=[e for e in receipt.get("events", [])
+                           if e.get("kind")=="job_terminal"]
+                if terminals:
+                    latest=terminals[-1].get("payload") or {}
+                    if latest.get("state")=="commit_unknown":
+                        self.status="Commit uncertain: reconcile existing operation; do not resend"
+                    elif latest.get("sync_state")=="sync_pending":
+                        self.status="Committed; canonical PG sync pending"
                 needs_reload = (receipt.get("source_changed")
-                    or any(e.get("kind") in {"agent_response","job_terminal"}
+                    or any(e.get("kind")=="agent_response"
+                           or (e.get("kind")=="job_terminal"
+                               and (e.get("payload") or {}).get("sync_state")=="hydrated")
                            for e in receipt.get("events", [])))
                 if not needs_reload:
                     for event in receipt.get("events", []):
