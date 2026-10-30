@@ -194,6 +194,8 @@ def hydrate_pending(*, limit=5, connect=_connect, fetcher=fetch_exact_graph):
         raise ValueError("invalid batch limit")
     conn = connect()
     try:
+        with conn.transaction():
+            ensure_roster_table(conn)
         with conn.cursor() as cur:
             cur.execute("""SELECT conversation_id FROM ops.chat_hydration_roster
                 WHERE state='queued' ORDER BY observed_at DESC
@@ -206,6 +208,13 @@ def hydrate_pending(*, limit=5, connect=_connect, fetcher=fetch_exact_graph):
         try:
             results.append(hydrate_one(cid, connect=connect, fetcher=fetcher))
         except Exception as exc:
+            failed = connect()
+            try:
+                with failed.transaction():
+                    with failed.cursor() as cur:
+                        cur.execute("UPDATE ops.chat_hydration_roster SET state='error', attempt_count=attempt_count+1, last_error=%s WHERE conversation_id=%s", (type(exc).__name__, cid))
+            finally:
+                failed.close()
             results.append({"conversation_id": cid, "state": "error",
                             "error_class": type(exc).__name__})
     return {"attempted": len(results), "results": results}
