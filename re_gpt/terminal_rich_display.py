@@ -2,6 +2,7 @@
 from __future__ import annotations
 import html
 import re
+from .terminal_math_layout import unicode_math
 
 CITE = re.compile(r"<Cite\b[^>]*?/>", re.I)
 LINK = re.compile(r'<Link\b[^>]*?\burl="([^"]+)"[^>]*>(.*?)</Link>', re.I | re.S)
@@ -16,7 +17,7 @@ def _math_unicode(source: str) -> str:
     for command in sorted(COMMANDS, key=len, reverse=True):
         result = result.replace(command, COMMANDS[command])
     result = re.sub(r"\\(?:begin|end)\{(?:aligned|align\*?|gathered)\}", "", result)
-    return result.replace("\\\\", "\n").replace("&", "").strip()
+    return unicode_math(result)
 
 def terminal_display(source: str) -> str:
     """Improve Rich's display of MDX/math; never mutate persisted source.
