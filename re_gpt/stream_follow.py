@@ -146,6 +146,8 @@ class SSEProgressDecoder:
                 "message_id": message_id,
                 "recipient": recipient or None,
                 "content_type": content_type or None,
+                "stage": "running",
+                "action_summary": (recipient or content_type or "tool")[:160],
             }, output)
 
         parts = content.get("parts")
