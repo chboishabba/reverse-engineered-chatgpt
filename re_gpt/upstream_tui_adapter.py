@@ -48,44 +48,6 @@ class ReGptTuiCallbacks:
         with SyncChatGPT(session_token=get_session_token()) as chatgpt:
             return collect_remote_catalog(chatgpt)
 
-
-def collect_remote_catalog(chatgpt, *, page_size: int = 100, max_pages: int = 10):
-    """Bounded remote catalog fallback until the sole PG history API is wired.
-
-    Reject missing/invalid response shapes and duplicate-page loops. A genuine
-    empty first page is an explicit diagnostic, not 'no matching conversations'.
-    """
-    if not (1 <= page_size <= 100 and 1 <= max_pages <= 100):
-        raise ValueError("invalid catalog bounds")
-    collected = []
-    seen = set()
-    for page_index in range(max_pages):
-        payload = chatgpt.list_conversations_page(offset=page_index * page_size, limit=page_size)
-        if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
-            raise RuntimeError("ChatGPT catalog returned an unexpected response shape")
-        raw = payload["items"]
-        if page_index == 0 and not raw:
-            raise RuntimeError(
-                "ChatGPT remote catalog returned zero conversations; "
-                "canonical ITIR PostgreSQL history has not yet been connected to the picker"
-            )
-        new = 0
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            identifier = item.get("id")
-            if not isinstance(identifier, str) or not identifier:
-                continue
-            if identifier not in seen:
-                collected.append(item)
-                seen.add(identifier)
-                new += 1
-        if not raw or len(raw) < page_size or new == 0:
-            break
-    if not collected:
-        raise RuntimeError("ChatGPT catalog returned no usable conversation IDs")
-    return collected
-
     def load_conversation(self, conversation_id: str) -> dict[str, Any]:
         # No browser fallback; graph broker validates canonical read.
         result = fetch_exact_graph(conversation_id, adapter_order=("async", "sync"))
@@ -125,6 +87,44 @@ def collect_remote_catalog(chatgpt, *, page_size: int = 100, max_pages: int = 10
         if assistant:
             on_event({"type": "replace", "text": str(assistant)})
         return {"conversation_id": resolved_id, "conversation": rendered, "previous_ids": []}
+
+
+def collect_remote_catalog(chatgpt, *, page_size: int = 100, max_pages: int = 10):
+    """Bounded remote catalog fallback until the sole PG history API is wired.
+
+    Reject missing/invalid response shapes and duplicate-page loops. A genuine
+    empty first page is an explicit diagnostic, not 'no matching conversations'.
+    """
+    if not (1 <= page_size <= 100 and 1 <= max_pages <= 100):
+        raise ValueError("invalid catalog bounds")
+    collected = []
+    seen = set()
+    for page_index in range(max_pages):
+        payload = chatgpt.list_conversations_page(offset=page_index * page_size, limit=page_size)
+        if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
+            raise RuntimeError("ChatGPT catalog returned an unexpected response shape")
+        raw = payload["items"]
+        if page_index == 0 and not raw:
+            raise RuntimeError(
+                "ChatGPT remote catalog returned zero conversations; "
+                "canonical ITIR PostgreSQL history has not yet been connected to the picker"
+            )
+        new = 0
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            identifier = item.get("id")
+            if not isinstance(identifier, str) or not identifier:
+                continue
+            if identifier not in seen:
+                collected.append(item)
+                seen.add(identifier)
+                new += 1
+        if not raw or len(raw) < page_size or new == 0:
+            break
+    if not collected:
+        raise RuntimeError("ChatGPT catalog returned no usable conversation IDs")
+    return collected
 
 
 def load_upstream_tui(filename: Path):
