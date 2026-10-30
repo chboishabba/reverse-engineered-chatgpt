@@ -50,7 +50,7 @@ def queue_auto_turn(cid,prompt,*,connect=_connect):
     return {"mode":mode,"jobs":[queue_turn(cid,prompt,provider=provider,connect=connect)
                                   for provider in targets]}
 
-def maybe_enqueue_local_review(cid,*,connect=_connect,read=read_pg_conversation):
+def maybe_enqueue_local_review(cid,*,parent_job_id=None,connect=_connect,read=read_pg_conversation):
     if get_mode(cid,connect=connect)!="local_after": return None
     from .pg_turn_worker import queue_turn
     source=read(cid)
@@ -60,4 +60,6 @@ def maybe_enqueue_local_review(cid,*,connect=_connect,read=read_pg_conversation)
     return queue_turn(cid,
         "Review the following completed ChatGPT response, with source attribution. "
         "Respond independently, do not impersonate the remote assistant:\n\n"+
-        str(last["text"]),provider="local",actor="auto_review",connect=connect)
+        str(last["text"])[:120000],provider="local",actor="auto_review",
+        job_id=parent_job_id+":auto-review" if parent_job_id else None,
+        connect=connect)
