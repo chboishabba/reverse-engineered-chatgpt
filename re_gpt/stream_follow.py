@@ -181,6 +181,7 @@ class SSEProgressDecoder:
                     "message_id": message_id,
                     "delta": delta,
                     "channel": channel or None,
+                    "recipient": recipient or None,
                 }, output)
 
         if role == "assistant" and status == "finished_successfully" and bool(message.get("end_turn")):
