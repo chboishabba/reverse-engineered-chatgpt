@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from .graph_broker import fetch_exact_graph
+from .pg_conversation_read import list_pg_conversations, list_synced_roster, read_pg_conversation
+from .pg_hydration import roster_page, hydrate_one, hydrate_pending
 from .terminal_activity import activity_from_progress
 from .tui_state_server import TuiStateServer
 from .mutation_service import MutationService
@@ -42,17 +44,34 @@ class ReGptTuiCallbacks:
 
     def __init__(self, *, model: str | None = None) -> None:
         self.service = MutationService(model=model)
+        self._roster_refresh_started = False
 
     def list_conversations(self) -> list[dict[str, Any]]:
         # Remote catalog is a *non-authoritative* temporary picker source.
         # Never translate malformed/empty pages into a misleading search miss.
-        with SyncChatGPT(session_token=get_session_token()) as chatgpt:
-            return collect_remote_catalog(chatgpt)
+        # PG always answers immediately; network discovery never blocks the picker.
+        if not self._roster_refresh_started:
+            from threading import Thread
+            self._roster_refresh_started = True
+            def refresh():
+                try:
+                    roster_page(pages=3)
+                    hydrate_pending(limit=5)
+                except Exception:
+                    pass  # Diagnostic and retry belong in persisted PG roster state.
+                finally:
+                    self._roster_refresh_started = False
+            Thread(target=refresh, daemon=True, name="re-gpt-pg-roster-refresh").start()
+        return list_synced_roster(limit=500)
 
     def load_conversation(self, conversation_id: str) -> dict[str, Any]:
         # No browser fallback; graph broker validates canonical read.
-        result = fetch_exact_graph(conversation_id, adapter_order=("async", "sync"))
-        return project_chat(conversation_id, result.graph)
+        try:
+            return read_pg_conversation(conversation_id)
+        except KeyError:
+            # A selected roster-only thread gets priority over the background queue.
+            hydrate_one(conversation_id)
+            return read_pg_conversation(conversation_id)
 
     def send_prompt(self, conversation_id, prompt, attachments, on_event, register_connection):
         # Do not reuse tritao's HTTP sender; no automatic retries or DOM.
@@ -79,7 +98,12 @@ class ReGptTuiCallbacks:
                 f"Operation {result.get('operation_id')} state={state}; "
                 "do not resend. Reconcile using re-gpt operation status.")
         resolved_id = result.get("conversation_id") or conversation_id
-        # A read is safe; no second mutation is sent on a failed read.
+        # Commit is already proven. Rehydrate the selected conversation into PG
+        # before projecting it; a failed read must never repeat the POST.
+        try:
+            hydrate_one(resolved_id)
+        except Exception:
+            pass  # Keep already committed answer visible; receipt remains in re-gpt.
         try:
             rendered = self.load_conversation(resolved_id)
         except Exception:
