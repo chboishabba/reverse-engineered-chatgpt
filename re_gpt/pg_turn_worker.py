@@ -127,7 +127,16 @@ def process_one(*,connect=_connect,service_factory=MutationService):
                  "conversation_id":result.get("conversation_id") or cid,
                  "state":state}
         finish(jid,final,receipt=receipt,connect=connect)
-        emit({"kind":"job_terminal","state":final,**receipt})
+        sync_state="pending"
+        if final=="complete":
+            try:
+                from .pg_hydration import hydrate_one
+                hydrate_one(cid)
+                sync_state="hydrated"
+            except Exception:
+                sync_state="sync_pending"
+        emit({"kind":"job_terminal","state":final,
+              "sync_state":sync_state,**receipt})
         return {"job_id":jid,"state":final,"events":seq}
     except Exception as exc:
         # A transport exception does not prove the server rejected the write.
