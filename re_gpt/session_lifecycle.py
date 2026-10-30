@@ -14,6 +14,7 @@ from .browser_session_replay import (
     BrowserSessionSnapshot,
     capture_browser_session_snapshot_async,
     load_browser_session_snapshot,
+    save_browser_session_snapshot,
 )
 
 DEFAULT_EXPIRY_SKEW_SECONDS = 30.0
@@ -193,6 +194,43 @@ class SessionLifecycle:
         if not save and snapshot is not None:
             return self.status_from_snapshot(snapshot)
         return self.status(profile_dir=profile_dir, snapshot_path=snapshot_path)
+
+    def refresh_cffi(
+        self,
+        *,
+        profile_dir: Path | str | None = None,
+        snapshot_path: Path | str | None = None,
+    ) -> dict[str, Any]:
+        """Renew bearer access via the owned session cookie using curl_cffi only.
+
+        Does not open or drive a browser, expose secrets, or retry rejected
+        authentication. A failed request leaves the snapshot unchanged.
+        """
+        snapshot = self.snapshot_loader(profile_dir=profile_dir, snapshot_path=snapshot_path)
+        if snapshot is None:
+            raise StaleSessionError("No owned session snapshot; interactive sign-in required")
+        cookie = snapshot.cookie_map().get("__Secure-next-auth.session-token")
+        if not cookie:
+            raise StaleSessionError("No complete session cookie available for CFFI renewal")
+
+        async def renew() -> str:
+            from .async_chatgpt import AsyncChatGPT
+            async with AsyncChatGPT(session_token=cookie) as client:
+                token = client.auth_token
+                if not token:
+                    token = await client.fetch_auth_token()
+                if not token:
+                    raise StaleSessionError("CFFI renewal returned no access token")
+                return str(token)
+
+        token = run_async_sync(renew)
+        updated = BrowserSessionSnapshot.from_dict(snapshot.to_dict())
+        updated.access_token = token
+        updated.captured_at = float(self.now())
+        save_browser_session_snapshot(updated, profile_dir=profile_dir, snapshot_path=snapshot_path)
+        status = self.status_from_snapshot(updated)
+        return {"transport": "curl_cffi", "browser_used": False, "renewed": True,
+                "session": status}
 
     def refresh(self, **kwargs: Any) -> dict[str, Any]:
         kwargs["save"] = True
