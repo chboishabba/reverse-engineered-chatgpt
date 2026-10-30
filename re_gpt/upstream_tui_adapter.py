@@ -7,6 +7,7 @@ Attribution: https://github.com/tritao/chatgpt-web (original TUI authors).
 from __future__ import annotations
 
 import argparse
+import asyncio
 import importlib.util
 from pathlib import Path
 from typing import Any
@@ -62,13 +63,14 @@ class ReGptTuiCallbacks:
         return list_synced_roster(limit=500)
 
     def load_conversation(self, conversation_id: str) -> dict[str, Any]:
-        # No browser fallback; graph broker validates canonical read.
+        """Synchronize the selected graph before serving its PG projection."""
         try:
-            return read_pg_conversation(conversation_id)
-        except KeyError:
-            # A selected roster-only thread gets priority over the background queue.
             hydrate_one(conversation_id)
+        except Exception:
+            # An already-hydrated thread remains readable during a transient
+            # network/session failure; a missing thread still fails closed.
             return read_pg_conversation(conversation_id)
+        return read_pg_conversation(conversation_id)
 
     def send_prompt(self, conversation_id, prompt, attachments, on_event, register_connection):
         # Do not reuse tritao's HTTP sender; no automatic retries or DOM.
@@ -150,7 +152,7 @@ def collect_remote_catalog(chatgpt, *, page_size: int = 100, max_pages: int = 10
 
 
 def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
-                      replace_control_socket: bool = False):
+                      replace_control_socket: bool = False, sync_interval: float = 15.0):
     if not filename.is_file():
         raise FileNotFoundError(filename)
     spec = importlib.util.spec_from_file_location("chatgpt_upstream_terminal_ui", filename)
@@ -166,6 +168,63 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             self.activity_log = []
+            self._sync_in_flight = False
+
+        async def reconcile_active_conversation(self):
+            """Refresh an idle selected thread without touching active streams."""
+            while True:
+                await asyncio.sleep(sync_interval)
+                if (self.busy or self.loading_conversation or self._sync_in_flight
+                        or not self.conversation_id):
+                    continue
+                conversation_id = self.conversation_id
+                self._sync_in_flight = True
+
+                def refresh():
+                    try:
+                        conversation = self.load_conversation(conversation_id)
+                        messages = []
+                        for message in conversation.get("messages", []):
+                            visible = module.visible_chat_message(message)
+                            if visible is not None:
+                                messages.append(visible)
+                    except Exception:
+                        conversation = None
+                        messages = None
+
+                    def apply():
+                        self._sync_in_flight = False
+                        if (conversation is None or self.busy
+                                or self.conversation_id != conversation_id):
+                            return
+                        with self.lock:
+                            changed = messages != self.messages
+                            if changed:
+                                self.messages = messages
+                        if changed:
+                            self.title = conversation.get("title") or self.title
+                            self.status = "Conversation synchronized"
+                            self.app.invalidate()
+
+                    self.event_loop.call_soon_threadsafe(apply)
+
+                from threading import Thread
+                Thread(target=refresh, daemon=True,
+                       name="re-gpt-active-conversation-sync").start()
+
+        def run(self):
+            """Preserve upstream startup while adding the idle sync task."""
+            self.reset_terminal_session()
+            self.commit_initial_history()
+
+            def started():
+                self.event_loop = asyncio.get_running_loop()
+                self.app.create_background_task(self.animate_activity())
+                self.app.create_background_task(self.reconcile_active_conversation())
+                if self.load_on_start and self.conversation_id is not None:
+                    self.resume_conversation(self.conversation_id)
+
+            self.app.run(pre_run=started)
 
         def handle_command(self, command):
             if command.strip() == "/activity":
@@ -268,12 +327,17 @@ def main(argv=None):
     parser.add_argument("--control-socket", type=Path, help="Opt-in local TUI state/control Unix socket")
     parser.add_argument("--replace-control-socket", action="store_true",
                         help="Replace an unreachable, owner-owned control socket")
+    parser.add_argument("--sync-interval", type=float, default=15.0,
+                        help="Seconds between idle active-thread reconciliations")
     args = parser.parse_args(argv)
     callbacks = ReGptTuiCallbacks(model=args.model)
     if args.replace_control_socket and args.control_socket is None:
         parser.error("--replace-control-socket requires --control-socket")
+    if args.sync_interval < 2:
+        parser.error("--sync-interval must be at least 2 seconds")
     run_tui = load_upstream_tui(args.upstream_tui, control_socket=args.control_socket,
-                                replace_control_socket=args.replace_control_socket)
+                                replace_control_socket=args.replace_control_socket,
+                                sync_interval=args.sync_interval)
     run_tui(callbacks.list_conversations, callbacks.load_conversation,
             callbacks.send_prompt, conversation_id=args.conversation_id,
             model=args.model, upload_image=None, rename_conversation=None,
