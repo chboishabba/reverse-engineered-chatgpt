@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .graph_broker import fetch_exact_graph
-from .pg_conversation_read import list_pg_conversations, read_pg_conversation
+from .pg_conversation_read import list_pg_conversations, list_synced_roster, read_pg_conversation
 from .pg_hydration import roster_page, hydrate_one, hydrate_pending
 from .terminal_activity import activity_from_progress
 from .tui_state_server import TuiStateServer
@@ -62,7 +62,7 @@ class ReGptTuiCallbacks:
                 finally:
                     self._roster_refresh_started = False
             Thread(target=refresh, daemon=True, name="re-gpt-pg-roster-refresh").start()
-        return list_pg_conversations(limit=500)
+        return list_synced_roster(limit=500)
 
     def load_conversation(self, conversation_id: str) -> dict[str, Any]:
         # No browser fallback; graph broker validates canonical read.
