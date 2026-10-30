@@ -67,6 +67,38 @@ def list_pg_conversations(*, query: str = "", limit: int = 100, offset: int = 0,
         connection.close()
 
 
+def list_synced_roster(*, query="", limit=100, connect=None):
+    """Picker projection combining hydrated corpus and roster-only identities."""
+    if not isinstance(query, str) or len(query) > 500:
+        raise ValueError("invalid query")
+    if type(limit) is not int or not 1 <= limit <= 500:
+        raise ValueError("invalid limit")
+    conn = (connect or _connect)()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT r.conversation_id, r.title, r.remote_updated, r.state
+                FROM ops.chat_hydration_roster r
+                WHERE (%s='' OR r.title ILIKE %s OR r.conversation_id ILIKE %s)
+                ORDER BY r.remote_updated DESC NULLS LAST, r.observed_at DESC
+                LIMIT %s
+            """, (query, '%' + query + '%', '%' + query + '%', limit))
+            rows = cur.fetchall()
+        known = [{"id": str(r[0]), "title": str(r[1]), "update_time": str(r[2] or ""),
+                  "hydration_state": str(r[3])} for r in rows]
+    finally:
+        conn.close()
+    if len(known) < limit:
+        existing = {r["id"] for r in known}
+        for item in list_pg_conversations(query=query, limit=limit, connect=connect):
+            if item["id"] not in existing:
+                known.append(item)
+                existing.add(item["id"])
+                if len(known) >= limit:
+                    break
+    return known
+
+
 def read_pg_conversation(conversation_id: str, *, connect=None, limit: int = 10000):
     """Display original stored message bodies and provenance, without writes."""
     if not isinstance(conversation_id, str) or not conversation_id or len(conversation_id) > 150:
