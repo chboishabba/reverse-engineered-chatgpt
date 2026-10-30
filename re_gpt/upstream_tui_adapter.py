@@ -13,6 +13,7 @@ from typing import Any
 
 from .graph_broker import fetch_exact_graph
 from .terminal_activity import activity_from_progress
+from .tui_state_server import TuiStateServer
 from .mutation_service import MutationService
 from .storage import extract_ordered_messages
 from .sync_chatgpt import SyncChatGPT
@@ -127,7 +128,7 @@ def collect_remote_catalog(chatgpt, *, page_size: int = 100, max_pages: int = 10
     return collected
 
 
-def load_upstream_tui(filename: Path):
+def load_upstream_tui(filename: Path, *, control_socket: Path | None = None):
     if not filename.is_file():
         raise FileNotFoundError(filename)
     spec = importlib.util.spec_from_file_location("chatgpt_upstream_terminal_ui", filename)
@@ -181,7 +182,16 @@ def load_upstream_tui(filename: Path):
                 self.send_prompt = original
 
     def launch(*args, **kwargs):
-        ActivityChatTui(*args, **kwargs).run()
+        tui = ActivityChatTui(*args, **kwargs)
+        if control_socket is None:
+            tui.run()
+        else:
+            server = TuiStateServer(tui, control_socket)
+            server.start()
+            try:
+                tui.run()
+            finally:
+                server.close()
     return launch
 
 
@@ -190,9 +200,10 @@ def main(argv=None):
     parser.add_argument("--upstream-tui", type=Path, required=True)
     parser.add_argument("--conversation-id")
     parser.add_argument("--model")
+    parser.add_argument("--control-socket", type=Path, help="Opt-in local TUI state/control Unix socket")
     args = parser.parse_args(argv)
     callbacks = ReGptTuiCallbacks(model=args.model)
-    run_tui = load_upstream_tui(args.upstream_tui)
+    run_tui = load_upstream_tui(args.upstream_tui, control_socket=args.control_socket)
     run_tui(callbacks.list_conversations, callbacks.load_conversation,
             callbacks.send_prompt, conversation_id=args.conversation_id,
             model=args.model, upload_image=None, rename_conversation=None,
