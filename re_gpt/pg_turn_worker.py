@@ -163,8 +163,15 @@ def process_one(*,connect=_connect,service_factory=MutationService):
                 sync_state="hydrated"
             except Exception:
                 sync_state="sync_pending"
+        auto_review=None
+        if final=="complete" and sync_state=="hydrated":
+            try:
+                from .workspace_auto_policy import maybe_enqueue_local_review
+                auto_review=maybe_enqueue_local_review(cid,parent_job_id=jid)
+            except Exception:
+                auto_review=None
         emit({"kind":"job_terminal","state":final,
-              "sync_state":sync_state,**receipt})
+              "sync_state":sync_state,"auto_review_queued":bool(auto_review),**receipt})
         return {"job_id":jid,"state":final,"events":seq}
     except Exception as exc:
         # A transport exception does not prove the server rejected the write.
