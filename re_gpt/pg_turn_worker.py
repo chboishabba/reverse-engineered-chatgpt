@@ -110,6 +110,41 @@ def finish(job_id,state,*,receipt=None,error_class=None,connect=_connect):
                 if cur.rowcount!=1: raise RuntimeError("job no longer running")
     finally: conn.close()
 
+def job_status(job_id,*,connect=_connect):
+    if not isinstance(job_id,str) or not job_id or len(job_id)>150:
+        raise ValueError("invalid job ID")
+    conn=connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT conversation_id,actor,provider,state,
+                mutation_operation_id,error_class,created_at,started_at,finished_at
+                FROM ops.chat_conversation_job WHERE job_id=%s""",(job_id,))
+            row=cur.fetchone()
+        if row is None: raise KeyError("job not found")
+        return {"job_id":job_id,"conversation_id":row[0],"actor":row[1],
+                "provider":row[2],"state":row[3],"mutation_operation_id":row[4],
+                "error_class":row[5],"created_at":str(row[6]),
+                "started_at":str(row[7]) if row[7] else None,
+                "finished_at":str(row[8]) if row[8] else None}
+    finally: conn.close()
+
+def cancel_queued(job_id,*,connect=_connect):
+    if not isinstance(job_id,str) or not job_id or len(job_id)>150:
+        raise ValueError("invalid job ID")
+    conn=connect()
+    try:
+        with conn.transaction():
+            with conn.cursor() as cur:
+                cur.execute("""UPDATE ops.chat_conversation_job
+                    SET state='failed_precommit',error_class='cancelled_before_dispatch',
+                        finished_at=now()
+                    WHERE job_id=%s AND state='queued' RETURNING conversation_id""",
+                    (job_id,))
+                row=cur.fetchone()
+        return {"job_id":job_id,"cancelled":bool(row),
+                "reason":"only queued, unstarted jobs can be cancelled"}
+    finally: conn.close()
+
 def execute_local_job(prompt):
     """Opt-in configured agent CLI; input via stdin, never shell."""
     raw=os.environ.get("ITIR_LOCAL_AGENT_ARGV")
