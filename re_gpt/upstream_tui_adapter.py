@@ -16,6 +16,7 @@ from .conversation_sync import ConversationRevisionWatcher
 from .pg_conversation_read import list_synced_roster, read_pg_conversation
 from .pg_hydration import roster_page, hydrate_one, hydrate_pending
 from .terminal_activity import activity_from_progress
+from .terminal_rich_display import terminal_display
 from .tui_state_server import TuiStateServer
 from .mutation_service import MutationService
 from .storage import extract_ordered_messages
@@ -170,6 +171,12 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
             super().__init__(*args, **kwargs)
             self.activity_log = []
             self.revisions = ConversationRevisionWatcher(interval=sync_interval)
+
+        def render_message(self, role, text, width, separated, active):
+            # Display projection only: PG, clipboard and stream buffers retain
+            # unmodified source. Render cache is keyed by upstream source.
+            return super().render_message(
+                role, terminal_display(text), width, separated, active)
 
         def resume_conversation(self, conversation_id):
             previous = self.conversation_id
