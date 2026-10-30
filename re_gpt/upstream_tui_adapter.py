@@ -61,7 +61,8 @@ class ReGptTuiCallbacks:
         if conversation_id:
             def progress(event):
                 channel = str(event.get("channel") or "final")
-                if event.get("kind") == "token_delta" and channel == "final" and event.get("delta"):
+                if (event.get("kind") == "token_delta" and channel == "final"
+                        and event.get("recipient") in (None, "", "all") and event.get("delta")):
                     on_event({"type": "delta", "text": str(event["delta"])})
                 activity = activity_from_progress(event)
                 if activity is not None:
