@@ -24,3 +24,13 @@ Set `ITIR_PG_DSN` to an authorised PostgreSQL DSN, and install `psycopg` in the 
 7. TUI state socket remains optional for debugging a *running* UI; it is not a prerequisite for account access or programmatic search.
 
 No local tests, CI or Agda/Lean kernel verification were executed in this GitHub-only implementation environment.
+
+## Hydration workflow continuation (2026-10-30)
+
+Implementation in `re_gpt/pg_hydration.py` adds an explicit PG-owned roster queue at `ops.chat_hydration_roster`, a bounded `roster_page` operation, `hydrate_one` (selected exact graph, five-level content-addressed PG ingest), and `hydrate_pending` (bounded worker pass). It reuses the existing ITIR corpus table identity and the `fetch_exact_graph` direct read broker. Nothing writes a second SQLite history store. The roster queue keeps `queued`, `hydrated` or `error` dispositions and attempt counts. The TUI initiates a best-effort background roster refresh once per picker load, serves already committed PG rows immediately, and fetches an unhydrated selected thread into PG before display. The response path hydrates after a proven complete mutation, without resubmitting that mutation.
+
+The combined picker is backed by roster metadata and hydrated corpus records. **Its first returned list is a snapshot:** background discoveries appear the next time the picker is opened; reactive updates are still a residual. Durable worker jobs require a separately scheduled process/MCP invocation; a daemon thread is not a cross-restart background service. Queue failures use `error` and currently require an explicit retry policy to requeue; concurrency leasing, staleness TTL, revision-safe upsert and active-branch path identity remain residuals. The source-only Python importer is not yet verified against the deployed PG constraints nor checked for full parity with SLR's production Rust source-store writer; migrate ingestion to the SLR production adapter after checking exact schema.
+
+MCP adds `itir.chatgpt.pg_roster_sync`, `itir.chatgpt.pg_hydrate_selected`, and `itir.chatgpt.pg_hydrate_pending` (mutating PG but never ChatGPT threads). The earlier `pg_search` and `pg_read` remain read-only. No agent requires a TUI, terminal or socket.
+
+These additions are **source-written**, with new offline fixtures but no live database acceptance test for this tranche. The previous 35-conversation live query and 7-message read validate an earlier projection, not the new ingestion writer.
