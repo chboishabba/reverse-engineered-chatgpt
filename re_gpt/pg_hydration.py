@@ -124,6 +124,13 @@ def _persist_graph(conn, cid: str, graph: dict[str, Any]):
             doc = "document:" + digest
             span = "mention:document:" + digest + ":0:" + str(len(body))
             message_ref = "message:" + cid + ":" + node_id
+            # Existing identity with different source is a revision conflict, not
+            # a successful hydration. Do not silently overwrite canonical text.
+            cur.execute("SELECT source_revision_ref FROM corpus.chat_archive_message WHERE message_ref=%s",
+                        (message_ref,))
+            existing = cur.fetchone()
+            if existing and existing[0] != "source:sha256:" + digest:
+                raise ValueError("canonical message revision conflict: " + message_ref)
             created = msg.get("create_time")
             try:
                 ts = datetime.fromtimestamp(float(created), timezone.utc).isoformat() if created else "1970-01-01T00:00:00+00:00"
