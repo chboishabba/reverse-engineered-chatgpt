@@ -6,6 +6,8 @@ Unknown outcomes are held for reconciliation and never automatically retried.
 """
 from __future__ import annotations
 import json
+import os
+import subprocess
 import time
 import uuid
 from .pg_conversation_read import _connect
@@ -30,19 +32,21 @@ def ensure_job_schema(conn):
           finished_at TIMESTAMPTZ,
           UNIQUE (conversation_id,job_id)
         )""")
+        cur.execute("ALTER TABLE ops.chat_conversation_job ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'chatgpt'")
         cur.execute("""CREATE UNIQUE INDEX IF NOT EXISTS chat_job_one_active
             ON ops.chat_conversation_job(conversation_id)
             WHERE state IN ('running','commit_unknown')""")
         cur.execute("""CREATE INDEX IF NOT EXISTS chat_conversation_job_queue
           ON ops.chat_conversation_job(created_at) WHERE state='queued'""")
 
-def queue_turn(conversation_id,prompt,*,actor="human",job_id=None,connect=_connect):
+def queue_turn(conversation_id,prompt,*,actor="human",job_id=None,provider="chatgpt",connect=_connect):
     if not isinstance(conversation_id,str) or not conversation_id or len(conversation_id)>150:
         raise ValueError("conversation_id required; create new conversations via existing service")
     if not isinstance(prompt,str) or not prompt.strip() or len(prompt)>200000:
         raise ValueError("invalid prompt")
     if not isinstance(actor,str) or not actor or len(actor)>80:
         raise ValueError("invalid actor")
+    if provider not in {"chatgpt","local"}: raise ValueError("unsupported execution provider")
     identifier=job_id or str(uuid.uuid4())
     if not isinstance(identifier,str) or not identifier or len(identifier)>150:
         raise ValueError("invalid job_id")
@@ -52,20 +56,20 @@ def queue_turn(conversation_id,prompt,*,actor="human",job_id=None,connect=_conne
             ensure_job_schema(conn)
             with conn.cursor() as cur:
                 cur.execute("""INSERT INTO ops.chat_conversation_job
-                   (job_id,conversation_id,actor,prompt,state)
-                   VALUES (%s,%s,%s,%s,'queued')
+                   (job_id,conversation_id,actor,prompt,state,provider)
+                   VALUES (%s,%s,%s,%s,'queued',%s)
                    ON CONFLICT (job_id) DO NOTHING RETURNING job_id""",
-                   (identifier,conversation_id,actor,prompt))
+                   (identifier,conversation_id,actor,prompt,provider))
                 created=cur.fetchone()
                 if not created:
-                    cur.execute("""SELECT conversation_id,actor,prompt
+                    cur.execute("""SELECT conversation_id,actor,prompt,provider
                       FROM ops.chat_conversation_job WHERE job_id=%s""",(identifier,))
                     old=cur.fetchone()
-                    if old!=(conversation_id,actor,prompt):
+                    if old!=(conversation_id,actor,prompt,provider):
                         raise ValueError("conflicting idempotency key")
     finally: conn.close()
     return {"job_id":identifier,"conversation_id":conversation_id,
-            "state":"queued","created":bool(created)}
+            "state":"queued","provider":provider,"created":bool(created)}
 
 def claim_next(*,connect=_connect):
     conn=connect()
@@ -73,7 +77,7 @@ def claim_next(*,connect=_connect):
         with conn.transaction():
             ensure_job_schema(conn)
             with conn.cursor() as cur:
-                cur.execute("""SELECT job_id,conversation_id,prompt,actor
+                cur.execute("""SELECT job_id,conversation_id,prompt,actor,provider
                   FROM ops.chat_conversation_job j WHERE state='queued'
                     AND NOT EXISTS (
                       SELECT 1 FROM ops.chat_conversation_job active
@@ -87,7 +91,7 @@ def claim_next(*,connect=_connect):
                   SET state='running',started_at=now()
                   WHERE job_id=%s""",(row[0],))
                 return {"job_id":row[0],"conversation_id":row[1],
-                        "prompt":row[2],"actor":row[3]}
+                        "prompt":row[2],"actor":row[3],"provider":row[4]}
     finally: conn.close()
 
 def finish(job_id,state,*,receipt=None,error_class=None,connect=_connect):
@@ -106,6 +110,24 @@ def finish(job_id,state,*,receipt=None,error_class=None,connect=_connect):
                 if cur.rowcount!=1: raise RuntimeError("job no longer running")
     finally: conn.close()
 
+def execute_local_job(prompt):
+    """Opt-in configured agent CLI; input via stdin, never shell."""
+    raw=os.environ.get("ITIR_LOCAL_AGENT_ARGV")
+    if not raw:
+        raise RuntimeError("local agent adapter not configured")
+    argv=json.loads(raw)
+    if (not isinstance(argv,list) or not argv or len(argv)>24
+        or any(not isinstance(item,str) or not item or len(item)>500 for item in argv)):
+        raise ValueError("invalid ITIR_LOCAL_AGENT_ARGV")
+    env={name:value for name,value in os.environ.items()
+         if name in {"HOME","PATH","LANG","LC_ALL","XDG_CONFIG_HOME","XDG_DATA_HOME","XDG_RUNTIME_DIR"}}
+    completed=subprocess.run(argv,input=prompt,text=True,capture_output=True,
+                             timeout=900,check=False,env=env)
+    if completed.returncode:
+        raise RuntimeError("local agent execution failed")
+    return completed.stdout[:500000]
+
+
 def process_one(*,connect=_connect,service_factory=MutationService):
     job=claim_next(connect=connect)
     if job is None: return None
@@ -117,6 +139,12 @@ def process_one(*,connect=_connect,service_factory=MutationService):
         append_event(cid,jid,seq,str(event.get("kind") or "progress"),
                      dict(event),connect=connect)
     try:
+        if job.get("provider")=="local":
+            response=execute_local_job(job["prompt"])
+            emit({"kind":"agent_response","provider":"local","body":response})
+            finish(jid,"complete",receipt={"state":"complete","provider":"local"},connect=connect)
+            emit({"kind":"job_terminal","state":"complete","provider":"local"})
+            return {"job_id":jid,"state":"complete","events":seq}
         result=service_factory().continue_thread(
             cid,job["prompt"],write_transport="async",dom_fallback=False,
             follow=True,follow_timeout=300,progress_callback=emit)
