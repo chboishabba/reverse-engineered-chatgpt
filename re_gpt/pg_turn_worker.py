@@ -91,6 +91,10 @@ def claim_next(*,connect=_connect):
                 cur.execute("SELECT pg_try_advisory_xact_lock(hashtext(%s))",(row[1],))
                 lock=cur.fetchone()
                 if not lock or not lock[0]: return None
+                cur.execute("""SELECT 1 FROM ops.chat_conversation_job
+                  WHERE conversation_id=%s AND state IN ('running','commit_unknown')
+                  LIMIT 1""",(row[1],))
+                if cur.fetchone(): return None
                 cur.execute("""UPDATE ops.chat_conversation_job
                   SET state='running',started_at=now()
                   WHERE job_id=%s""",(row[0],))
