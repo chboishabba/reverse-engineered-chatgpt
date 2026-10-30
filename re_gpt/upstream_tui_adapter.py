@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .graph_broker import fetch_exact_graph
+from .pg_conversation_read import list_pg_conversations, read_pg_conversation
 from .terminal_activity import activity_from_progress
 from .tui_state_server import TuiStateServer
 from .mutation_service import MutationService
@@ -46,13 +47,11 @@ class ReGptTuiCallbacks:
     def list_conversations(self) -> list[dict[str, Any]]:
         # Remote catalog is a *non-authoritative* temporary picker source.
         # Never translate malformed/empty pages into a misleading search miss.
-        with SyncChatGPT(session_token=get_session_token()) as chatgpt:
-            return collect_remote_catalog(chatgpt)
+        return list_pg_conversations(limit=500)
 
     def load_conversation(self, conversation_id: str) -> dict[str, Any]:
         # No browser fallback; graph broker validates canonical read.
-        result = fetch_exact_graph(conversation_id, adapter_order=("async", "sync"))
-        return project_chat(conversation_id, result.graph)
+        return read_pg_conversation(conversation_id)
 
     def send_prompt(self, conversation_id, prompt, attachments, on_event, register_connection):
         # Do not reuse tritao's HTTP sender; no automatic retries or DOM.
