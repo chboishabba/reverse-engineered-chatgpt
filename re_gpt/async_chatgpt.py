@@ -485,6 +485,7 @@ class AsyncChatGPT:
         client_contextual_info: Optional[dict] = None,
         user_agent: Optional[str] = None,
         browser_session: Any = None,
+        auto_check_websocket: bool = True,
     ):
         """
         Initializes an instance of the class.
@@ -503,6 +504,7 @@ class AsyncChatGPT:
             client_contextual_info (Optional[dict]): Client context payload for chats.
             user_agent (Optional[str]): User agent string override.
             browser_session (Any): Optional BrowserSessionSnapshot, dict, or profile/snapshot path to replay.
+            auto_check_websocket (bool): Probe websocket availability during session startup.
         """
         self.proxies = proxies
         self.exit_callback_function = exit_callback_function
@@ -527,6 +529,7 @@ class AsyncChatGPT:
         self._replayed_browser_snapshot = None
 
         self.websocket_mode = websocket_mode
+        self.auto_check_websocket = bool(auto_check_websocket)
         self.ws_loop = None
         self.ws_conversation_map = {}
         self.default_model = default_model
@@ -700,7 +703,11 @@ class AsyncChatGPT:
             else:
                 self.auth_cookie = await self.fetch_free_mode_cookies()
 
-        if not self.websocket_mode and getattr(self, "_replayed_browser_snapshot", None) is None:
+        if (
+            self.auto_check_websocket
+            and not self.websocket_mode
+            and getattr(self, "_replayed_browser_snapshot", None) is None
+        ):
             self.websocket_mode = await self.check_websocket_availability()
 
         if self.websocket_mode:
@@ -829,6 +836,47 @@ class AsyncChatGPT:
 
         return response.json()
 
+    async def _backend_json_get(
+        self,
+        route: str,
+        *,
+        params: Optional[dict[str, Any]] = None,
+        operation: str = "backend_json_get",
+    ) -> dict[str, Any]:
+        """GET one authenticated backend JSON route through the active CFFI session."""
+        if self.session is None:
+            raise RuntimeError("AsyncChatGPT session is not active")
+        url = CHATGPT_API.format(route)
+        headers = dict(self.build_request_headers())
+        headers["Accept"] = "application/json"
+        headers.pop("Content-Type", None)
+        self._debug_request_context(headers)
+        started = time.monotonic()
+        response = await self.session.get(
+            url=url,
+            headers=headers,
+            params=params or None,
+        )
+        elapsed_ms = (time.monotonic() - started) * 1000.0
+        if response.status_code != 200:
+            raise UnexpectedResponseError(
+                f"HTTP {response.status_code} during {operation}",
+                "",
+            )
+        try:
+            payload = response.json()
+        except Exception as exc:
+            raise UnexpectedResponseError(exc, "") from exc
+        if not isinstance(payload, dict):
+            raise UnexpectedResponseError(
+                f"{operation} returned a non-object JSON payload",
+                "",
+            )
+        self._debug_log(
+            f"{operation} route={route} status={response.status_code} elapsed_ms={elapsed_ms:.1f}"
+        )
+        return payload
+
     async def fetch_conversation(
         self,
         conversation_id: str,
@@ -841,42 +889,23 @@ class AsyncChatGPT:
         if not conversation_id:
             raise ValueError("conversation_id must be provided")
 
-        url = CHATGPT_API.format(f"conversation/{conversation_id}")
-        headers = dict(self.build_request_headers())
-        headers["Accept"] = "application/json"
-        headers.pop("Content-Type", None)
-        self._debug_request_context(headers)
-
         params: dict[str, str] = {}
         if since_message_id:
             params["since_message_id"] = since_message_id
         if since_time is not None:
             params["since_time"] = str(since_time)
 
-        started = time.monotonic()
-        response = await self.session.get(url=url, headers=headers, params=params or None)
-        elapsed_ms = (time.monotonic() - started) * 1000.0
-
-        if response.status_code != 200:
-            raise UnexpectedResponseError(
-                f"HTTP {response.status_code} when fetching {conversation_id}",
-                getattr(response, "text", ""),
-            )
-
-        try:
-            payload = response.json()
-        except Exception as exc:
-            raise UnexpectedResponseError(exc, getattr(response, "text", ""))
-
-        mapping = payload.get("mapping", {}) if isinstance(payload, dict) else {}
-        current_node = payload.get("current_node") if isinstance(payload, dict) else None
+        payload = await self._backend_json_get(
+            f"conversation/{conversation_id}",
+            params=params,
+            operation="fetch_conversation",
+        )
+        mapping = payload.get("mapping", {})
+        current_node = payload.get("current_node")
         self._debug_log(
             f"fetch_conversation_tail id={conversation_id} "
-            f"mapping_count={len(mapping)} current_node={current_node or ''}"
-        )
-
-        self._debug_log(
-            f"fetch_conversation id={conversation_id} status={response.status_code} elapsed_ms={elapsed_ms:.1f}"
+            f"mapping_count={len(mapping) if isinstance(mapping, dict) else 0} "
+            f"current_node={current_node or ''}"
         )
         return payload
 
@@ -1127,21 +1156,23 @@ class AsyncChatGPT:
             "limit": limit,
             "order": "updated",
         }
-        url = CHATGPT_API.format("conversations")
-        headers = dict(self.build_request_headers())
-        headers["Accept"] = "application/json"
-        headers.pop("Content-Type", None)
-        started = time.monotonic()
-        response = await self.session.get(
-            url=url, params=params, headers=headers
+        payload = await self._backend_json_get(
+            "conversations",
+            params=params,
+            operation="list_conversations_page",
         )
-        payload = response.json()
-        items = payload.get("items", []) if isinstance(payload, dict) else []
-        elapsed_ms = (time.monotonic() - started) * 1000.0
+        items = payload.get("items", [])
         self._debug_log(
-            f"list_conversations_page offset={offset} limit={limit} items={len(items)} elapsed_ms={elapsed_ms:.1f}"
+            f"list_conversations_page offset={offset} limit={limit} "
+            f"items={len(items) if isinstance(items, list) else 0}"
         )
         return payload
+
+    async def get_conversations(
+        self, offset: Optional[int] = 0, limit: Optional[int] = 28
+    ) -> dict:
+        """Compatibility alias for one authenticated async roster page."""
+        return await self.list_conversations_page(offset=offset, limit=limit)
 
     async def list_all_conversations(self, limit: int = 28) -> list[dict]:
         """Asynchronously retrieve metadata for all conversations.

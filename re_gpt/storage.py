@@ -66,7 +66,7 @@ def extract_ordered_messages(chat: Mapping[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(mapping, Mapping):
         return messages
 
-    for node in mapping.values():
+    for node_key, node in mapping.items():
         if not isinstance(node, Mapping):
             continue
 
@@ -109,6 +109,9 @@ def extract_ordered_messages(chat: Mapping[str, Any]) -> list[dict[str, Any]]:
                 "author": author,
                 "content": "\n".join(parts),
                 "create_time": create_time,
+                "source_message_id": str(message.get("id") or "").strip() or None,
+                "node_id": str(node_key or "").strip() or None,
+                "parent_node_id": str(node.get("parent") or "").strip() or None,
             }
         )
 
@@ -175,6 +178,11 @@ class ConversationStorage:
         self._conversation_key_cache: dict[str, str] = {}
         self._message_table_columns = self._column_names("messages")
         self._has_message_key_column = "message_key" in self._message_table_columns
+        self._has_graph_identity_columns = {
+            "source_message_id",
+            "node_id",
+            "parent_node_id",
+        }.issubset(self._message_table_columns)
         self._conversation_table_columns = self._column_names("conversations")
         self._backfill_conversation_metadata()
 
@@ -200,6 +208,9 @@ class ConversationStorage:
                     content TEXT NOT NULL,
                     create_time REAL,
                     message_key TEXT,
+                    source_message_id TEXT,
+                    node_id TEXT,
+                    parent_node_id TEXT,
                     PRIMARY KEY (conversation_id, message_index, author)
                 )
                 """
@@ -229,6 +240,21 @@ class ConversationStorage:
             "messages",
             "message_key",
             "ALTER TABLE messages ADD COLUMN message_key TEXT",
+        )
+        self._ensure_column(
+            "messages",
+            "source_message_id",
+            "ALTER TABLE messages ADD COLUMN source_message_id TEXT",
+        )
+        self._ensure_column(
+            "messages",
+            "node_id",
+            "ALTER TABLE messages ADD COLUMN node_id TEXT",
+        )
+        self._ensure_column(
+            "messages",
+            "parent_node_id",
+            "ALTER TABLE messages ADD COLUMN parent_node_id TEXT",
         )
         self._ensure_column(
             "conversations",
@@ -940,13 +966,19 @@ class ConversationStorage:
                 author,
                 content,
                 create_time,
-                message_key
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                message_key,
+                source_message_id,
+                node_id,
+                parent_node_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(conversation_id, message_index, author)
             DO UPDATE SET
                 content = excluded.content,
                 create_time = excluded.create_time,
-                message_key = excluded.message_key
+                message_key = excluded.message_key,
+                source_message_id = COALESCE(excluded.source_message_id, messages.source_message_id),
+                node_id = COALESCE(excluded.node_id, messages.node_id),
+                parent_node_id = COALESCE(excluded.parent_node_id, messages.parent_node_id)
         """
         insert_sql_without_key = """
             INSERT INTO messages (
@@ -984,6 +1016,9 @@ class ConversationStorage:
                         content,
                         create_time,
                         message_key,
+                        message.get("source_message_id"),
+                        message.get("node_id"),
+                        message.get("parent_node_id"),
                     )
                 else:
                     params = (
