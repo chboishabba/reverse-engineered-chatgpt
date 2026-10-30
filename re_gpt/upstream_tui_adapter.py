@@ -15,6 +15,7 @@ from typing import Any
 from .pg_conversation_subscriptions import PGConversationSubscriber
 from .pg_turn_worker import queue_turn
 from .workspace_routing import parse_route
+from .workspace_projection import read_workspace_conversation
 from .pg_conversation_read import list_synced_roster, read_pg_conversation
 from .pg_hydration import roster_page, hydrate_one, hydrate_pending
 from .terminal_activity import activity_from_progress
@@ -70,7 +71,7 @@ class ReGptTuiCallbacks:
     def load_conversation(self, conversation_id: str) -> dict[str, Any]:
         """Synchronize the selected graph before serving its PG projection."""
         try:
-            return read_pg_conversation(conversation_id)
+            return read_workspace_conversation(conversation_id)
         except KeyError:
             # Selected-but-unhydrated roster entries are prioritized; already
             # hydrated reads never depend on network/session availability.
@@ -244,7 +245,7 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
                         self.app.invalidate()
                     return
                 try:
-                    conversation = read_pg_conversation(self.conversation_id)
+                    conversation = read_workspace_conversation(self.conversation_id)
                     messages = [visible for message in conversation["messages"]
                                 if (visible := module.visible_chat_message(message)) is not None]
                 except Exception:
