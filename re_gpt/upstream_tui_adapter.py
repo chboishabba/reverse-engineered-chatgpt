@@ -17,6 +17,7 @@ from .pg_turn_worker import queue_turn
 from .pg_conversation_read import list_synced_roster, read_pg_conversation
 from .pg_hydration import roster_page, hydrate_one, hydrate_pending
 from .terminal_activity import activity_from_progress
+from .terminal_rich_display import terminal_display
 from .tui_state_server import TuiStateServer
 from .mutation_service import MutationService
 from .storage import extract_ordered_messages
@@ -179,6 +180,10 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
             self.activity_log = []
             self.revisions = PGConversationSubscriber(interval=sync_interval)
             self._event_buffers = {}
+
+        def render_message(self, role, text, width, separated, active):
+            return super().render_message(
+                role, terminal_display(text), width, separated, active)
 
         def resume_conversation(self, conversation_id):
             previous = self.conversation_id
