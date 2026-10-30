@@ -198,17 +198,20 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
                     for event in receipt.get("events", []):
                         if event.get("kind") == "token_delta":
                             op = event.get("operation_id")
+                            key = (receipt["conversation_id"], op)
                             delta = event.get("payload", {}).get("delta")
                             if isinstance(delta, str) and op:
-                                self._event_buffers[op] = (
-                                    self._event_buffers.get(op, "") + delta)
-                    if self._event_buffers and self.messages:
+                                self._event_buffers[key] = (
+                                    self._event_buffers.get(key, "") + delta)
+                    current_buffers = {key: value for key, value in self._event_buffers.items()
+                                       if key[0] == self.conversation_id}
+                    if current_buffers and self.messages:
                         # Current conversation is verified above; preserve the
                         # source conversation's immutable event attribution.
                         with self.lock:
                             if self.messages[-1].get("role") == "assistant":
-                                op = next(reversed(self._event_buffers))
-                                self.messages[-1]["text"] = self._event_buffers[op]
+                                op = next(reversed(current_buffers))
+                                self.messages[-1]["text"] = current_buffers[op]
                         self.app.invalidate()
                     return
                 try:
