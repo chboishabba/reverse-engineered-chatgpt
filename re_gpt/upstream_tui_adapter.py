@@ -98,7 +98,12 @@ class ReGptTuiCallbacks:
                 f"Operation {result.get('operation_id')} state={state}; "
                 "do not resend. Reconcile using re-gpt operation status.")
         resolved_id = result.get("conversation_id") or conversation_id
-        # A read is safe; no second mutation is sent on a failed read.
+        # Commit is already proven. Rehydrate the selected conversation into PG
+        # before projecting it; a failed read must never repeat the POST.
+        try:
+            hydrate_one(resolved_id)
+        except Exception:
+            pass  # Keep already committed answer visible; receipt remains in re-gpt.
         try:
             rendered = self.load_conversation(resolved_id)
         except Exception:
