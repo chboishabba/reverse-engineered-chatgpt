@@ -11,15 +11,12 @@ import importlib.util
 from pathlib import Path
 from typing import Any
 
-from .graph_broker import fetch_exact_graph
-from .pg_conversation_read import list_pg_conversations, list_synced_roster, read_pg_conversation
+from .pg_conversation_read import list_synced_roster, read_pg_conversation
 from .pg_hydration import roster_page, hydrate_one, hydrate_pending
 from .terminal_activity import activity_from_progress
 from .tui_state_server import TuiStateServer
 from .mutation_service import MutationService
 from .storage import extract_ordered_messages
-from .sync_chatgpt import SyncChatGPT
-from .utils import get_session_token
 
 
 def project_chat(conversation_id: str, graph: dict[str, Any]) -> dict[str, Any]:
@@ -181,6 +178,49 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None):
                         "\n".join(json.dumps(item, ensure_ascii=False, default=str) for item in selected))
                 return
             return super().handle_command(command)
+
+        def open_resume(self):
+            """Load picker data off-loop, but mutate prompt_toolkit state on-loop.
+
+            Upstream's loader thread assigns ``resume_filtered`` while the
+            renderer may be calculating wrapped cursor positions.  That races
+            scrolling keys (notably a held PageDown) and can produce an index
+            error inside prompt_toolkit.
+            """
+            if self.busy or self.loading_conversation or self.resume_visible:
+                return
+            self.resume_visible = True
+            self.resume_loading = True
+            self.resume_items = []
+            self.resume_filtered = []
+            self.resume_index = 0
+            self.resume_search.text = ""
+            self.status = "Loading recent conversations…"
+            self.app.layout.focus(self.resume_search)
+            self.app.invalidate()
+
+            def apply_items(items=None, error=None):
+                if not self.resume_visible:
+                    return
+                self.resume_loading = False
+                if error is None:
+                    self.resume_items = items
+                    self.filter_resume()
+                    self.status = f"{len(items)} recent conversations"
+                else:
+                    self.status = f"Conversation list failed: {error}"
+                self.app.invalidate()
+
+            def load_items():
+                try:
+                    items = self.list_conversations()
+                except Exception as exc:
+                    self.event_loop.call_soon_threadsafe(apply_items, None, exc)
+                else:
+                    self.event_loop.call_soon_threadsafe(apply_items, items, None)
+
+            from threading import Thread
+            Thread(target=load_items, daemon=True, name="re-gpt-resume-loader").start()
 
         def run_send(self, prompt, attachments):
             original = self.send_prompt
