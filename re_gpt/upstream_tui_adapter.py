@@ -68,12 +68,12 @@ class ReGptTuiCallbacks:
     def load_conversation(self, conversation_id: str) -> dict[str, Any]:
         """Synchronize the selected graph before serving its PG projection."""
         try:
-            hydrate_one(conversation_id)
-        except Exception:
-            # An already-hydrated thread remains readable during a transient
-            # network/session failure; a missing thread still fails closed.
             return read_pg_conversation(conversation_id)
-        return read_pg_conversation(conversation_id)
+        except KeyError:
+            # Selected-but-unhydrated roster entries are prioritized; already
+            # hydrated reads never depend on network/session availability.
+            hydrate_one(conversation_id)
+            return read_pg_conversation(conversation_id)
 
     def send_prompt(self, conversation_id, prompt, attachments, on_event, register_connection):
         # Do not reuse tritao's HTTP sender; no automatic retries or DOM.
