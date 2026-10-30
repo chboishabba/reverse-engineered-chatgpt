@@ -66,6 +66,24 @@ def _cookie_expiry(snapshot: BrowserSessionSnapshot, name: str) -> float | None:
     return max(values) if values else None
 
 
+def _session_cookie_value(snapshot: BrowserSessionSnapshot) -> str | None:
+    """Return an unsegmented or browser-segmented NextAuth session cookie."""
+    cookies = snapshot.cookie_map()
+    base = "__Secure-next-auth.session-token"
+    if cookies.get(base):
+        return cookies[base]
+    chunks: list[tuple[int, str]] = []
+    for name, value in cookies.items():
+        if not name.startswith(base + "."):
+            continue
+        suffix = name[len(base) + 1:]
+        if suffix.isdigit() and value:
+            chunks.append((int(suffix), value))
+    if not chunks or [index for index, _ in sorted(chunks)] != list(range(len(chunks))):
+        return None
+    return "".join(value for _, value in sorted(chunks))
+
+
 def _expiry_state(expiry: float | None, *, now: float, skew: float) -> dict[str, Any]:
     if expiry is None:
         return {"state": "unknown_expiry", "expires_at": None, "seconds_remaining": None}
@@ -209,7 +227,7 @@ class SessionLifecycle:
         snapshot = self.snapshot_loader(profile_dir=profile_dir, snapshot_path=snapshot_path)
         if snapshot is None:
             raise StaleSessionError("No owned session snapshot; interactive sign-in required")
-        cookie = snapshot.cookie_map().get("__Secure-next-auth.session-token")
+        cookie = _session_cookie_value(snapshot)
         if not cookie:
             raise StaleSessionError("No complete session cookie available for CFFI renewal")
 

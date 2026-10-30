@@ -1,6 +1,6 @@
 from unittest.mock import patch
 import pytest
-from re_gpt.session_lifecycle import SessionLifecycle, StaleSessionError
+from re_gpt.session_lifecycle import SessionLifecycle, StaleSessionError, _session_cookie_value
 from re_gpt.browser_session_replay import BrowserSessionSnapshot
 
 
@@ -13,6 +13,14 @@ def test_missing_cookie_fails_before_network():
     snap = BrowserSessionSnapshot(access_token="old", cookies=[])
     with pytest.raises(StaleSessionError, match="complete session cookie"):
         SessionLifecycle(snapshot_loader=lambda **kw: snap).refresh_cffi()
+
+
+def test_segmented_session_cookie_is_reassembled():
+    snap = BrowserSessionSnapshot(cookies=[
+        {"name": "__Secure-next-auth.session-token.1", "value": "second"},
+        {"name": "__Secure-next-auth.session-token.0", "value": "first"},
+    ])
+    assert _session_cookie_value(snap) == "firstsecond"
 
 
 def test_successful_cffi_renewal_persists_only_after_success():
