@@ -101,6 +101,23 @@ def load_upstream_tui(filename: Path):
     # Preserve upstream prompt, scrollback, Markdown and keyboard behaviour.
     # Extend only event handling, because upstream ignores activity events.
     class ActivityChatTui(module.ChatTui):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.activity_log = []
+
+        def handle_command(self, command):
+            if command.strip() == "/activity":
+                import json
+                with self.lock:
+                    selected = list(self.activity_log[-30:])
+                if not selected:
+                    self.append_system("No activity events received in this session.")
+                else:
+                    self.append_system("Observed activity (latest 30):\n" +
+                        "\n".join(json.dumps(item, ensure_ascii=False, default=str) for item in selected))
+                return
+            return super().handle_command(command)
+
         def run_send(self, prompt, attachments):
             original = self.send_prompt
 
@@ -108,6 +125,10 @@ def load_upstream_tui(filename: Path):
                 def dispatch(event):
                     if event.get("type") == "activity":
                         activity = event.get("activity") or {}
+                        with self.lock:
+                            self.activity_log.append(activity)
+                            if len(self.activity_log) > 500:
+                                self.activity_log = self.activity_log[-500:]
                         self.status = str(activity.get("summary") or "Tool activity")[:160]
                         self.app.invalidate()
                     else:
