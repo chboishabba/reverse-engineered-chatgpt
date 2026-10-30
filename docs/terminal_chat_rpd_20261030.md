@@ -46,3 +46,32 @@ python -m re_gpt.upstream_tui_adapter --upstream-tui /path/to/chatgpt-web/chatgp
 The current upstream TUI has no incorporated local math graphics; `terminal_projection` remains a separate source-only stage pending graphics negotiation. Existing docs and status are **not** claims of full ChatGPT feature parity. CLI image descriptors, rename and canonical PG history query remain explicit follow-up adapters. `SyncChatGPT.list_conversations_page` currently provides a bounded remote picker, not a substitute for ITIR PostgreSQL.
 
 Critical safety: continuation uses `write_transport=async, dom_fallback=False` and emits `commit_unknown` as a hold, never a resend; no credential material enters UI callbacks. Current adapter has **source-written/offline-test-only** status. GitHub tool writes were available but local checkout/test execution was blocked by network DNS. No CI or Agda/Lean kernel verification claimed. Next discriminator: execute isolated mock callback tests, then test actual re-gpt session with one sacrificial thread and review operation receipt. Upstream repository tree had no LICENSE file; dynamic loading from a separately installed checkout avoids embedding its code, and any later distribution must establish reuse permissions.
+
+## SSE activity / full tool payload continuation (2026-10-30)
+
+User requirement supersedes the metadata-only limitation in re-gpt PR #54:
+**retain and show available tool request bodies, arguments and results**, not only
+their labels. Current source-written implementation adds `terminal_activity.py`,
+emits observed tool-call/result `body` separately from SSE `token_delta`, and
+introduces `/activity` in the reused upstream TUI subclass to inspect in-memory
+redacted activity records. Its normal status shows the current activity summary;
+ordinary final-channel response streaming remains separate.
+
+Distinguish precisely:
+- Observed tool body from ChatGPT SSE: retained in the TUI activity log.
+- Structured `arguments` or `result`: retained if present in progress events;
+  currently not guaranteed by the upstream SSE decoder for every tool family.
+- Reasoning status or model-exposed summary: may be displayed where provided.
+- Hidden/private chain-of-thought: not available and not reverse engineered or
+  fabricated. A `thinking` event must not be misrepresented as its text.
+- Known sensitive key names are recursively redacted before display. This is a
+  first conservative policy, **not** a comprehensive sensitive-data scrubber.
+- Activity log is in-memory and bounded to 500 entries; no new persistent
+  database was added. Durable retention belongs on the ITIR sole PostgreSQL
+  spine, with authorization, encryption/redaction and retention controls.
+
+Residuals before production use: validate actual raw SSE tool envelopes;
+replace heuristic parsing with typed tool schema adapters; support safe
+export of tool evidence to PostgreSQL; test clipboard/scrollback security and
+long/multimessage streams; close upstream LaTeX typesetting and rich citation
+markup rendering. These changes are source-written, not locally executed.
