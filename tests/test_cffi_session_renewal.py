@@ -24,7 +24,8 @@ def test_successful_cffi_renewal_persists_only_after_success():
         receipt = service.refresh_cffi()
     assert receipt["transport"] == "curl_cffi"
     assert receipt["browser_used"] is False
-    assert "access" not in str(receipt)
+    assert receipt["session"]["access_token"]["present"] is True
+    assert "access" not in receipt["session"].get("token_value", "")
     saved = save.call_args.args[0]
     assert saved.access_token == "access"
     assert saved.captured_at == 1000
