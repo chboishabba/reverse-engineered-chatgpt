@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .graph_broker import fetch_exact_graph
+from .terminal_activity import activity_from_progress
 from .mutation_service import MutationService
 from .storage import extract_ordered_messages
 from .sync_chatgpt import SyncChatGPT
@@ -59,8 +60,12 @@ class ReGptTuiCallbacks:
                 "Clipboard attachment descriptors need explicit re-gpt staging adapter")
         if conversation_id:
             def progress(event):
-                if event.get("kind") == "token_delta" and event.get("delta"):
+                channel = str(event.get("channel") or "final")
+                if event.get("kind") == "token_delta" and channel == "final" and event.get("delta"):
                     on_event({"type": "delta", "text": str(event["delta"])})
+                activity = activity_from_progress(event)
+                if activity is not None:
+                    on_event({"type": "activity", "activity": activity})
             result = self.service.continue_thread(
                 conversation_id, prompt, write_transport="async", dom_fallback=False,
                 follow=True, follow_timeout=300, progress_callback=progress)
@@ -93,7 +98,31 @@ def load_upstream_tui(filename: Path):
     spec.loader.exec_module(module)
     if not callable(getattr(module, "run_tui", None)):
         raise RuntimeError("Upstream chatgpt_tui.py has no run_tui")
-    return module.run_tui
+    # Preserve upstream prompt, scrollback, Markdown and keyboard behaviour.
+    # Extend only event handling, because upstream ignores activity events.
+    class ActivityChatTui(module.ChatTui):
+        def run_send(self, prompt, attachments):
+            original = self.send_prompt
+
+            def with_activity(conversation_id, text, files, on_event, register):
+                def dispatch(event):
+                    if event.get("type") == "activity":
+                        activity = event.get("activity") or {}
+                        self.status = str(activity.get("summary") or "Tool activity")[:160]
+                        self.app.invalidate()
+                    else:
+                        on_event(event)
+                return original(conversation_id, text, files, dispatch, register)
+
+            self.send_prompt = with_activity
+            try:
+                super().run_send(prompt, attachments)
+            finally:
+                self.send_prompt = original
+
+    def launch(*args, **kwargs):
+        ActivityChatTui(*args, **kwargs).run()
+    return launch
 
 
 def main(argv=None):
