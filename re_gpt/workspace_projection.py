@@ -13,7 +13,13 @@ def read_workspace_conversation(conversation_id, *,read=read_pg_conversation,
     cursor=0
     seen=0
     while seen<max_events:
-        batch=replay(conversation_id,after=cursor,limit=min(500,max_events-seen))
+        try:
+            batch=replay(conversation_id,after=cursor,limit=min(500,max_events-seen))
+        except Exception as exc:
+            # Pre-migration installations must still read the PG corpus.
+            if getattr(exc, "sqlstate", None) == "42P01":
+                break
+            raise
         events=batch["events"]
         if not events: break
         for event in events:
