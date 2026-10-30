@@ -98,6 +98,7 @@ class ReGptTuiCallbacks:
                     if not route.explicit else
                     [queue_turn(conversation_id,route.prompt,provider=provider)
                      for provider in route.targets])
+            on_event({"type": "queued_jobs", "jobs": jobs})
             on_event({"type": "replace", "text":
                       "[Queued: " + ", ".join(j["provider"] + " " + j["job_id"] for j in jobs) + "]"})
             return {"conversation_id": conversation_id, "conversation": None,
@@ -196,6 +197,7 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
             self.activity_log = []
             self.revisions = PGConversationSubscriber(interval=sync_interval)
             self._event_buffers = {}
+            self._pending_job_ids = {}
 
         def render_message(self, role, text, width, separated, active):
             return super().render_message(
@@ -216,7 +218,10 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
                 if self.busy or self.loading_conversation:
                     self.event_loop.call_later(0.5, apply)
                     return
-                if not receipt.get("source_changed"):
+                needs_reload = (receipt.get("source_changed")
+                    or any(e.get("kind") in {"agent_response","job_terminal"}
+                           for e in receipt.get("events", [])))
+                if not needs_reload:
                     for event in receipt.get("events", []):
                         kind = event.get("kind")
                         if kind in {"tool_invocation", "tool_result", "thinking", "reasoning_summary"}:
@@ -236,8 +241,9 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
                             if isinstance(delta, str) and op:
                                 self._event_buffers[key] = (
                                     self._event_buffers.get(key, "") + delta)
+                    allowed = set(self._pending_job_ids.get(self.conversation_id, ()))
                     current_buffers = {key: value for key, value in self._event_buffers.items()
-                                       if key[0] == self.conversation_id}
+                                       if key[0] == self.conversation_id and key[1] in allowed}
                     if current_buffers and self.messages:
                         # Current conversation is verified above; preserve the
                         # source conversation's immutable event attribution.
@@ -351,6 +357,11 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
 
             def with_activity(conversation_id, text, files, on_event, register):
                 def dispatch(event):
+                    if event.get("type") == "queued_jobs":
+                        ids = [job.get("job_id") for job in event.get("jobs", [])]
+                        self._pending_job_ids.setdefault(conversation_id, []).extend(
+                            jid for jid in ids if isinstance(jid, str))
+                        return
                     if event.get("type") == "activity":
                         activity = event.get("activity") or {}
                         with self.lock:
