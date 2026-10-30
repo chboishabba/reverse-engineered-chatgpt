@@ -30,3 +30,5 @@ Create a low-DOM terminal presentation of authenticated ChatGPT conversations, *
 
 ## Max-cut / Pareto / QID
 The highest-alpha cut lies between the existing canonical re-gpt read/operation boundary and a terminal renderer. Reuse upstream persistence and downstream formal read models. Test bounded projections and interruption states before choosing a full TUI toolkit. Avoid CI claims: no runtime or Agda/Lean verification established by this document.
+## Source-written continuation (2026-10-30)
+Added `re_gpt/terminal_view.py`, a pipe-friendly read-only projection of stdin to original source, source-indexed segment JSONL, or math-source lines. It is intentionally not a second chat transport, TUI framework, or PG store. The scanner was corrected to consider `\\(`/`\\[` openers and to bound fence-prefix scanning. Local CLI execution was unavailable because the checkout cannot be materialized from GitHub in this runtime; these remain source-written changes. Follow-up: execute tests against an actual checkout, add capability-negotiated formula renderer, and wire canonical re-gpt streaming/read UI after production SLR read models are checked. No CI/kernel claims.
