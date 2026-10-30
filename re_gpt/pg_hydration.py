@@ -94,6 +94,11 @@ def _persist_graph(conn, cid: str, graph: dict[str, Any]):
     mapping = graph.get("mapping")
     if not isinstance(mapping, dict) or not mapping:
         raise ValueError("noncanonical or empty graph")
+    active_nodes = set()
+    current = graph.get("current_node")
+    while isinstance(current, str) and current in mapping and current not in active_nodes:
+        active_nodes.add(current)
+        current = mapping[current].get("parent") if isinstance(mapping[current], dict) else None
     count = 0
     with conn.cursor() as cur:
         for node_key, node in mapping.items():
@@ -152,11 +157,12 @@ def _persist_graph(conn, cid: str, graph: dict[str, Any]):
                  document_ref,source_revision_ref,full_message_span_ref,
                  identity_verified,candidate_only,creates_semantic_authority,
                  applicability_promoted,claim_truth_promoted)
-                VALUES (%s,%s,%s,%s,'active',%s,%s,%s,'message','remote-hydration',
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'message','remote-hydration',
                         %s,'text/plain',%s,%s,%s,true,true,false,false,false)
                 ON CONFLICT (message_ref) DO NOTHING""",
                 (message_ref,"conversation:"+cid,"node:"+node_id,
-                 "node:"+str(parent) if parent else None,ts,role,
+                 "node:"+str(parent) if parent else None,
+                 "active" if node_key in active_nodes else "inactive",ts,role,
                  str(graph.get("title") or "Untitled"),body,doc,
                  "source:sha256:"+digest,span))
             count += 1
