@@ -34,3 +34,16 @@ def test_session_status_emits_json(monkeypatch, capsys) -> None:
     code = resilience_cli.session_main(["status"])
     assert code == 0
     assert json.loads(capsys.readouterr().out)["state"] == "ready"
+
+
+def test_session_refresh_uses_cffi_receipt_without_browser_args(monkeypatch, capsys) -> None:
+    class FakeLifecycle:
+        def refresh(self, **kwargs):
+            assert "browser_mode" not in kwargs
+            return {"transport": "curl_cffi", "browser_used": False, "session": {"state": "ready"}}
+    monkeypatch.setattr(resilience_cli, "SessionLifecycle", lambda: FakeLifecycle())
+    code = resilience_cli.session_main(["refresh"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["transport"] == "curl_cffi"
+    assert payload["browser_used"] is False

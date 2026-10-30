@@ -177,13 +177,13 @@ class SessionLifecycle:
         if status["state"] == "stale":
             if auto_refresh and profile_dir is None:
                 try:
-                    refreshed = self.refresh(
+                    refreshed = self.refresh_cffi(
                         profile_dir=profile_dir,
                         snapshot_path=snapshot_path,
-                        browser_mode="displayless",
                     )
-                    if refreshed.get("state") not in {"stale", "missing"}:
-                        return refreshed
+                    session = refreshed.get("session") if isinstance(refreshed, Mapping) else None
+                    if isinstance(session, Mapping) and session.get("state") not in {"stale", "missing"}:
+                        return dict(session)
                 except Exception:
                     pass
             raise StaleSessionError(
@@ -251,8 +251,15 @@ class SessionLifecycle:
                 "session": status}
 
     def refresh(self, **kwargs: Any) -> dict[str, Any]:
-        kwargs["save"] = True
-        return self.bootstrap(**kwargs)
+        """Reauthenticate the owned session using curl_cffi only.
+
+        Browser/capture kwargs are accepted for backwards compatibility and
+        ignored. Interactive bootstrap remains available via ``bootstrap``.
+        """
+        return self.refresh_cffi(
+            profile_dir=kwargs.get("profile_dir"),
+            snapshot_path=kwargs.get("snapshot_path"),
+        )
 
     def doctor(
         self,

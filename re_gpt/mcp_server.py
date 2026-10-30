@@ -386,17 +386,11 @@ def chatgpt_session_bootstrap(
 def chatgpt_session_refresh(
     profile_dir: str | None = None,
     snapshot_path: str | None = None,
-    browser_mode: str = "displayless",
-    cdp_endpoint: str | None = None,
-    timeout: int = 30,
 ) -> dict[str, Any]:
-    """Refresh persisted owned browser session state and return only a redacted status receipt."""
-    return SessionLifecycle().refresh(
+    """Renew the owned session via CFFI only; never launch CDP/Chromium."""
+    return SessionLifecycle().refresh_cffi(
         profile_dir=profile_dir,
         snapshot_path=snapshot_path,
-        browser_mode=browser_mode,
-        cdp_endpoint=cdp_endpoint,
-        timeout=timeout,
     )
 
 

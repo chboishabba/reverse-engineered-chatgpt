@@ -39,7 +39,7 @@ def _session_parser() -> argparse.ArgumentParser:
         cmd = sub.add_parser(name)
         cmd.add_argument("--profile-dir", type=Path)
         cmd.add_argument("--snapshot-path", type=Path)
-        if name in {"bootstrap", "refresh"}:
+        if name == "bootstrap":
             cmd.add_argument("--browser-mode", choices=("displayless", "headless", "headed"), default="displayless")
             cmd.add_argument("--cdp-endpoint")
             cmd.add_argument("--timeout", type=int, default=30)
@@ -54,16 +54,23 @@ def session_main(argv: list[str] | None = None) -> int:
         result = lifecycle.status(**common)
     elif args.command == "doctor":
         result = lifecycle.doctor(**common)
-    else:
-        method = lifecycle.bootstrap if args.command == "bootstrap" else lifecycle.refresh
-        result = method(
+    elif args.command == "bootstrap":
+        result = lifecycle.bootstrap(
             **common,
             browser_mode=args.browser_mode,
             cdp_endpoint=args.cdp_endpoint,
             timeout=args.timeout,
         )
+    else:
+        result = lifecycle.refresh(**common)
     _json_print(result)
-    state = str(result.get("state") or result.get("session_state") or "unknown")
+    session = result.get("session") if isinstance(result, dict) else None
+    state = str(
+        result.get("state")
+        or result.get("session_state")
+        or (session.get("state") if isinstance(session, dict) else None)
+        or "unknown"
+    )
     return 0 if state in {"ready", "partial"} else 2
 
 

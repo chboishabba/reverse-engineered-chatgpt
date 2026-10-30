@@ -253,8 +253,9 @@ Mutation tools:
 Session/protocol tools:
 
 - `chatgpt_session_status`
-- `chatgpt_session_bootstrap`
-- `chatgpt_session_refresh`
+- `chatgpt_session_bootstrap` (explicit browser capture)
+- `chatgpt_session_refresh` (CFFI-only renewal)
+- `chatgpt_session_refresh_cffi` (CFFI-only renewal alias)
 - `chatgpt_session_doctor`
 - `chatgpt_protocol_fingerprint`
 - `chatgpt_protocol_compare`
@@ -286,12 +287,16 @@ The first validated graph wins. Browser-rendered state is useful diagnostic evid
 
 The browser remains first-class infrastructure for:
 
-- login/session bootstrap;
+- interactive login/session bootstrap (`chatgpt_session_bootstrap`, `cdp_capture`);
 - protocol discovery and drift diagnosis;
 - redaction-first request/response structure capture;
 - accessibility-compatible continuation fallback after an explicit pre-commit direct rejection;
 - same-origin/browser exact-read fallback;
 - acceptance testing.
+
+Reauthentication of an already-owned session is CFFI-only (`chatgpt_session_refresh`,
+`chatgpt_session_refresh_cffi`, and precommit `auto_refresh`); it never opens a
+browser or CDP connection.
 
 The steady-state architecture is deliberately not “open ChatGPT and scrape/drive the composer for every call.”
 

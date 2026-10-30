@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import time
+from unittest.mock import patch
 
 import pytest
 
@@ -62,7 +63,7 @@ def test_unknown_expiry_is_not_falsely_classified_stale() -> None:
     assert status["access_token"]["state"] == "unknown_expiry"
 
 
-def test_bootstrap_and_refresh_use_capture_and_return_redacted_status() -> None:
+def test_bootstrap_uses_capture_and_refresh_uses_cffi() -> None:
     now = time.time()
     calls: list[dict] = []
     snapshot = BrowserSessionSnapshot(captured_at=now, access_token=_jwt(now + 600))
@@ -73,12 +74,42 @@ def test_bootstrap_and_refresh_use_capture_and_return_redacted_status() -> None:
 
     lifecycle = SessionLifecycle(snapshot_loader=lambda **_: snapshot, capture=capture, now=lambda: now)
     boot = lifecycle.bootstrap(profile_dir="/tmp/p", browser_mode="displayless", save=True)
-    ref = lifecycle.refresh(profile_dir="/tmp/p", browser_mode="displayless")
     assert boot["state"] == "ready"
-    assert ref["state"] == "ready"
-    assert len(calls) == 2
+    assert len(calls) == 1
     assert calls[0]["save"] is True
-    assert calls[1]["save"] is True
+
+    cookie_snapshot = BrowserSessionSnapshot(cookies=[
+        {"name": "__Secure-next-auth.session-token", "value": "cookie", "domain": "chatgpt.com"}])
+    cffi_lifecycle = SessionLifecycle(
+        snapshot_loader=lambda **_: cookie_snapshot, capture=capture, now=lambda: now)
+    with patch("re_gpt.session_lifecycle.run_async_sync", return_value="access"), patch(
+        "re_gpt.session_lifecycle.save_browser_session_snapshot"):
+        ref = cffi_lifecycle.refresh(profile_dir="/tmp/p", browser_mode="displayless")
+    assert ref["transport"] == "curl_cffi"
+    assert ref["browser_used"] is False
+    assert ref["session"]["state"] == "ready"
+    assert len(calls) == 1
+
+
+def test_auto_refresh_uses_cffi_not_browser_capture() -> None:
+    now = time.time()
+    stale = BrowserSessionSnapshot(
+        captured_at=now - 60,
+        access_token=_jwt(now - 10),
+        cookies=[{"name": "__Secure-next-auth.session-token", "value": "cookie", "domain": "chatgpt.com"}],
+    )
+    calls: list[dict] = []
+
+    async def capture(**kwargs):
+        calls.append(kwargs)
+        return stale
+
+    lifecycle = SessionLifecycle(snapshot_loader=lambda **_: stale, capture=capture, now=lambda: now)
+    fresh = {"state": "ready", "access_token": {"state": "fresh"}}
+    with patch.object(lifecycle, "refresh_cffi", return_value={"session": fresh}) as refresh:
+        assert lifecycle.assert_precommit_ready(auto_refresh=True) == fresh
+    refresh.assert_called_once()
+    assert calls == []
 
 
 def test_bootstrap_without_save_builds_status_from_captured_snapshot() -> None:
