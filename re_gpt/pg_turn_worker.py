@@ -87,6 +87,10 @@ def claim_next(*,connect=_connect):
                   FOR UPDATE SKIP LOCKED LIMIT 1""")
                 row=cur.fetchone()
                 if not row: return None
+                # Claim one conversation at a time across independent workers.
+                cur.execute("SELECT pg_try_advisory_xact_lock(hashtext(%s))",(row[1],))
+                lock=cur.fetchone()
+                if not lock or not lock[0]: return None
                 cur.execute("""UPDATE ops.chat_conversation_job
                   SET state='running',started_at=now()
                   WHERE job_id=%s""",(row[0],))
@@ -224,8 +228,17 @@ def main():
     import argparse
     parser=argparse.ArgumentParser(description="Durable PG ChatGPT turn worker")
     parser.add_argument("--once",action="store_true")
+    parser.add_argument("--workers",type=int,default=2)
     args=parser.parse_args()
-    if args.once: print(json.dumps(process_one()))
-    else: serve_forever()
+    if not 1<=args.workers<=20: parser.error("workers must be 1..20")
+    if args.once:
+        print(json.dumps(process_one()))
+    elif args.workers==1:
+        serve_forever()
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            tasks=[pool.submit(serve_forever) for _ in range(args.workers)]
+            for future in tasks: future.result()
 
 if __name__=="__main__": main()
