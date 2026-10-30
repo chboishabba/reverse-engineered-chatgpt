@@ -76,8 +76,17 @@ class TuiStateServer:
         if not isinstance(request, dict):
             raise ValueError("request must be object")
         action = request.get("action", "state")
-        if action not in {"state", "open_picker", "set_query", "select"}:
+        if action not in {"state", "messages", "latest_response", "open_picker", "set_query", "select", "set_composer", "submit_composer"}:
             raise ValueError("unsupported TUI action")
+        if action == "messages":
+            start = request.get("start", 0)
+            limit = request.get("limit", 20)
+            if type(start) is not int or start < 0 or type(limit) is not int or not 1 <= limit <= 30:
+                raise ValueError("invalid message window")
+        elif action == "set_composer":
+            text = request.get("text")
+            if not isinstance(text, str) or len(text) > 16000:
+                raise ValueError("invalid composer text")
         if action == "set_query":
             query = request.get("query")
             if not isinstance(query, str) or len(query) > 200:
@@ -90,7 +99,7 @@ class TuiStateServer:
             query = None
             index = None
 
-        if action != "state":
+        if action not in {"state", "messages", "latest_response"}:
             loop = getattr(self.tui, "event_loop", None)
             if loop is None or not loop.is_running():
                 return {"ok": False, "error": "TUI event loop not running"}
@@ -101,6 +110,10 @@ class TuiStateServer:
                     elif action == "set_query" and self.tui.resume_visible:
                         self.tui.resume_search.text = query
                         self.tui.filter_resume()
+                    elif action == "set_composer":
+                        self.tui.input.text = text
+                    elif action == "submit_composer":
+                        self.tui.submit_prompt()
                     elif action == "select" and self.tui.resume_visible:
                         if index < len(self.tui.resume_filtered):
                             self.tui.resume_index = index
@@ -111,6 +124,14 @@ class TuiStateServer:
             loop.call_soon_threadsafe(dispatch)
             return {"ok": True, "queued": action}
         t = self.tui
+        if action in {"messages", "latest_response"}:
+            with t.lock:
+                messages = [dict(m) for m in t.messages]
+                cid = t.conversation_id
+            if action == "latest_response":
+                return {"ok": True, "conversation_id": cid, "message": next((m for m in reversed(messages) if m.get("role") == "assistant"), None)}
+            selected = messages[start:start + limit]
+            return {"ok": True, "conversation_id": cid, "total": len(messages), "start": start, "messages": selected, "has_more": start + len(selected) < len(messages)}
         with t.lock:
             matches = [
                 {"id": str(item.get("id") or "")[:100], "title": str(item.get("title") or "")[:160]}
@@ -121,6 +142,8 @@ class TuiStateServer:
                 "title": str(t.title)[:160],
                 "status": str(t.status)[:180],
                 "busy": bool(t.busy),
+                "composer_text": t.input.text,
+                "message_count": len(t.messages),
                 "picker_visible": bool(t.resume_visible),
                 "picker_loading": bool(t.resume_loading),
                 "picker_query": t.resume_search.text[:200],
