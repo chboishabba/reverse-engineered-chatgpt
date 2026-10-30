@@ -13,6 +13,7 @@ from typing import Any
 
 from .graph_broker import fetch_exact_graph
 from .pg_conversation_read import list_pg_conversations, read_pg_conversation
+from .pg_hydration import roster_page, hydrate_one, hydrate_pending
 from .terminal_activity import activity_from_progress
 from .tui_state_server import TuiStateServer
 from .mutation_service import MutationService
@@ -43,15 +44,34 @@ class ReGptTuiCallbacks:
 
     def __init__(self, *, model: str | None = None) -> None:
         self.service = MutationService(model=model)
+        self._roster_refresh_started = False
 
     def list_conversations(self) -> list[dict[str, Any]]:
         # Remote catalog is a *non-authoritative* temporary picker source.
         # Never translate malformed/empty pages into a misleading search miss.
+        # PG always answers immediately; network discovery never blocks the picker.
+        if not self._roster_refresh_started:
+            from threading import Thread
+            self._roster_refresh_started = True
+            def refresh():
+                try:
+                    roster_page(pages=3)
+                    hydrate_pending(limit=5)
+                except Exception:
+                    pass  # Diagnostic and retry belong in persisted PG roster state.
+                finally:
+                    self._roster_refresh_started = False
+            Thread(target=refresh, daemon=True, name="re-gpt-pg-roster-refresh").start()
         return list_pg_conversations(limit=500)
 
     def load_conversation(self, conversation_id: str) -> dict[str, Any]:
         # No browser fallback; graph broker validates canonical read.
-        return read_pg_conversation(conversation_id)
+        try:
+            return read_pg_conversation(conversation_id)
+        except KeyError:
+            # A selected roster-only thread gets priority over the background queue.
+            hydrate_one(conversation_id)
+            return read_pg_conversation(conversation_id)
 
     def send_prompt(self, conversation_id, prompt, attachments, on_event, register_connection):
         # Do not reuse tritao's HTTP sender; no automatic retries or DOM.
