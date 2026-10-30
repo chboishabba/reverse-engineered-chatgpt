@@ -401,6 +401,17 @@ def chatgpt_session_refresh(
 
 
 @mcp.tool()
+def chatgpt_session_refresh_cffi(
+    profile_dir: str | None = None,
+    snapshot_path: str | None = None,
+) -> dict[str, Any]:
+    """Renew an owned session via CFFI only; never launch CDP/Chromium."""
+    return SessionLifecycle().refresh_cffi(
+        profile_dir=profile_dir, snapshot_path=snapshot_path,
+    )
+
+
+@mcp.tool()
 def chatgpt_session_doctor(profile_dir: str | None = None, snapshot_path: str | None = None) -> dict[str, Any]:
     """Classify session failure mode and recommend bootstrap/refresh actions without secrets."""
     return SessionLifecycle().doctor(profile_dir=profile_dir, snapshot_path=snapshot_path)
