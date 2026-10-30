@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import json
 from typing import Any
 
-from .pg_conversation_read import _connect, list_pg_conversations
+from .pg_conversation_read import _connect
 from .graph_broker import fetch_exact_graph
 
 
@@ -72,7 +72,8 @@ def roster_page(*, page_size=100, pages=1, connect=_connect, client_factory=None
         snapshot = load_browser_session_snapshot()
         if snapshot is None:
             raise RuntimeError("No owned session snapshot available for roster synchronization")
-        client_factory = lambda: SyncChatGPT(browser_session=snapshot, websocket_mode=False)
+        def client_factory():
+            return SyncChatGPT(browser_session=snapshot, websocket_mode=False)
     items = []
     seen = set()
     with client_factory() as client:
@@ -185,6 +186,10 @@ def hydrate_one(cid: str, *, connect=_connect, fetcher=fetch_exact_graph):
         raise ValueError("invalid conversation id")
     result = fetcher(cid, adapter_order=("async", "sync"))
     graph = result.graph
+    revision = hashlib.sha256(json.dumps({
+        "current_node": graph.get("current_node"),
+        "mapping": sorted((graph.get("mapping") or {}).keys()),
+    }, separators=(",", ":")).encode("utf-8")).hexdigest()
     conn = connect()
     try:
         with conn.transaction():
@@ -199,7 +204,7 @@ def hydrate_one(cid: str, *, connect=_connect, fetcher=fetch_exact_graph):
                     attempt_count=ops.chat_hydration_roster.attempt_count+1,
                     last_error=NULL""", (cid,str(graph.get("title") or "Untitled")))
         return {"conversation_id": cid, "messages": count, "state": "hydrated",
-                "source": "postgresql"}
+                "source": "postgresql", "revision": revision}
     finally:
         conn.close()
 

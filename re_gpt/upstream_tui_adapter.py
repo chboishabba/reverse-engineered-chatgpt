@@ -12,6 +12,7 @@ import importlib.util
 from pathlib import Path
 from typing import Any
 
+from .conversation_sync import ConversationRevisionWatcher
 from .pg_conversation_read import list_synced_roster, read_pg_conversation
 from .pg_hydration import roster_page, hydrate_one, hydrate_pending
 from .terminal_activity import activity_from_progress
@@ -168,49 +169,31 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             self.activity_log = []
-            self._sync_in_flight = False
+            self.revisions = ConversationRevisionWatcher(interval=sync_interval)
 
-        async def reconcile_active_conversation(self):
-            """Refresh an idle selected thread without touching active streams."""
-            while True:
-                await asyncio.sleep(sync_interval)
-                if (self.busy or self.loading_conversation or self._sync_in_flight
-                        or not self.conversation_id):
-                    continue
-                conversation_id = self.conversation_id
-                self._sync_in_flight = True
+        def resume_conversation(self, conversation_id):
+            previous = self.conversation_id
+            if previous and previous != conversation_id:
+                self.revisions.unwatch(previous)
+            self.revisions.watch(conversation_id, self._apply_remote_revision)
+            return super().resume_conversation(conversation_id)
 
-                def refresh():
-                    try:
-                        conversation = self.load_conversation(conversation_id)
-                        messages = []
-                        for message in conversation.get("messages", []):
-                            visible = module.visible_chat_message(message)
-                            if visible is not None:
-                                messages.append(visible)
-                    except Exception:
-                        conversation = None
-                        messages = None
-
-                    def apply():
-                        self._sync_in_flight = False
-                        if (conversation is None or self.busy
-                                or self.conversation_id != conversation_id):
-                            return
-                        with self.lock:
-                            changed = messages != self.messages
-                            if changed:
-                                self.messages = messages
-                        if changed:
-                            self.title = conversation.get("title") or self.title
-                            self.status = "Conversation synchronized"
-                            self.app.invalidate()
-
-                    self.event_loop.call_soon_threadsafe(apply)
-
-                from threading import Thread
-                Thread(target=refresh, daemon=True,
-                       name="re-gpt-active-conversation-sync").start()
+        def _apply_remote_revision(self, _receipt):
+            def apply():
+                if self.busy or self.loading_conversation or not self.conversation_id:
+                    return
+                try:
+                    conversation = read_pg_conversation(self.conversation_id)
+                    messages = [visible for message in conversation["messages"]
+                                if (visible := module.visible_chat_message(message)) is not None]
+                except Exception:
+                    return
+                with self.lock:
+                    self.messages = messages
+                self.title = conversation.get("title") or self.title
+                self.status = "Conversation synchronized"
+                self.app.invalidate()
+            self.event_loop.call_soon_threadsafe(apply)
 
         def run(self):
             """Preserve upstream startup while adding the idle sync task."""
@@ -220,7 +203,6 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
             def started():
                 self.event_loop = asyncio.get_running_loop()
                 self.app.create_background_task(self.animate_activity())
-                self.app.create_background_task(self.reconcile_active_conversation())
                 if self.load_on_start and self.conversation_id is not None:
                     self.resume_conversation(self.conversation_id)
 
@@ -308,7 +290,10 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
     def launch(*args, **kwargs):
         tui = ActivityChatTui(*args, **kwargs)
         if control_socket is None:
-            tui.run()
+            try:
+                tui.run()
+            finally:
+                tui.revisions.close()
         else:
             server = TuiStateServer(tui, control_socket, replace_stale=replace_control_socket)
             server.start()
@@ -316,6 +301,7 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
                 tui.run()
             finally:
                 server.close()
+                tui.revisions.close()
     return launch
 
 
