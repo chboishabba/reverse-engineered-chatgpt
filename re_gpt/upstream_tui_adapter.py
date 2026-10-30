@@ -14,6 +14,7 @@ from typing import Any
 
 from .pg_conversation_subscriptions import PGConversationSubscriber
 from .pg_turn_worker import queue_turn
+from .workspace_routing import parse_route
 from .pg_conversation_read import list_synced_roster, read_pg_conversation
 from .pg_hydration import roster_page, hydrate_one, hydrate_pending
 from .terminal_activity import activity_from_progress
@@ -81,12 +82,23 @@ class ReGptTuiCallbacks:
         if attachments:
             raise NotImplementedError(
                 "Clipboard attachment descriptors need explicit re-gpt staging adapter")
+        route = parse_route(prompt)
+        if route.targets != ("chatgpt",) and (not self.server_jobs or not conversation_id):
+            raise RuntimeError("Agent routing requires --server-jobs and an existing conversation")
         if self.server_jobs and conversation_id:
-            job = queue_turn(conversation_id, prompt)
+            if "ao" in route.targets:
+                raise RuntimeError("AO routing requires a typed lane and explicit worker identity")
+            if "local" in route.targets:
+                import os
+                if not os.environ.get("ITIR_LOCAL_AGENT_ARGV"):
+                    raise RuntimeError("Configure ITIR_LOCAL_AGENT_ARGV before @local or @both")
+            jobs = [queue_turn(conversation_id, route.prompt, provider=provider)
+                    for provider in route.targets]
             on_event({"type": "replace", "text":
-                      "[Queued server job " + job["job_id"] + "]"})
+                      "[Queued: " + ", ".join(j["provider"] + " " + j["job_id"] for j in jobs) + "]"})
             return {"conversation_id": conversation_id, "conversation": None,
-                    "previous_ids": [], "job_id": job["job_id"]}
+                    "previous_ids": [], "jobs": jobs}
+        prompt = route.prompt
         if conversation_id:
             def progress(event):
                 channel = str(event.get("channel") or "final")
