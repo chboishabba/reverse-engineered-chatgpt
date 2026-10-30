@@ -16,6 +16,7 @@ from .pg_conversation_subscriptions import PGConversationSubscriber
 from .pg_turn_worker import queue_turn
 from .workspace_routing import parse_route
 from .workspace_projection import read_workspace_conversation
+from .workspace_auto_policy import get_mode, set_mode, queue_auto_turn
 from .pg_conversation_read import list_synced_roster, read_pg_conversation
 from .pg_hydration import roster_page, hydrate_one, hydrate_pending
 from .terminal_activity import activity_from_progress
@@ -93,8 +94,10 @@ class ReGptTuiCallbacks:
                 import os
                 if not os.environ.get("ITIR_LOCAL_AGENT_ARGV"):
                     raise RuntimeError("Configure ITIR_LOCAL_AGENT_ARGV before @local or @both")
-            jobs = [queue_turn(conversation_id, route.prompt, provider=provider)
-                    for provider in route.targets]
+            jobs = (queue_auto_turn(conversation_id,route.prompt)["jobs"]
+                    if not route.explicit else
+                    [queue_turn(conversation_id,route.prompt,provider=provider)
+                     for provider in route.targets])
             on_event({"type": "replace", "text":
                       "[Queued: " + ", ".join(j["provider"] + " " + j["job_id"] for j in jobs) + "]"})
             return {"conversation_id": conversation_id, "conversation": None,
@@ -271,6 +274,23 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
             self.app.run(pre_run=started)
 
         def handle_command(self, command):
+            if command.strip().startswith("/auto"):
+                _, _, requested = command.strip().partition(" ")
+                if not self.conversation_id:
+                    self.status = "Select a conversation before changing /auto"
+                elif not requested:
+                    self.status = "Auto response: " + get_mode(self.conversation_id)
+                else:
+                    try:
+                        import os
+                        if requested != "off" and not os.environ.get("ITIR_LOCAL_AGENT_ARGV"):
+                            raise RuntimeError("Local agent executable is not configured")
+                        result = set_mode(self.conversation_id, requested)
+                        self.status = "Auto response: " + result["mode"]
+                    except Exception as exc:
+                        self.status = "Auto policy refused: " + str(exc)[:110]
+                self.app.invalidate()
+                return
             if command.strip() == "/activity":
                 import json
                 with self.lock:
