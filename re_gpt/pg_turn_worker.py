@@ -30,6 +30,9 @@ def ensure_job_schema(conn):
           finished_at TIMESTAMPTZ,
           UNIQUE (conversation_id,job_id)
         )""")
+        cur.execute("""CREATE UNIQUE INDEX IF NOT EXISTS chat_job_one_active
+            ON ops.chat_conversation_job(conversation_id)
+            WHERE state IN ('running','commit_unknown')""")
         cur.execute("""CREATE INDEX IF NOT EXISTS chat_conversation_job_queue
           ON ops.chat_conversation_job(created_at) WHERE state='queued'""")
 
