@@ -86,6 +86,12 @@ def list_synced_roster(*, query="", limit=100, connect=None):
             rows = cur.fetchall()
         known = [{"id": str(r[0]), "title": str(r[1]), "update_time": str(r[2] or ""),
                   "hydration_state": str(r[3])} for r in rows]
+    except Exception as exc:
+        # An upgrade may precede creation of the PG roster table.
+        # Continue showing canonical hydrated conversations in that case.
+        if "chat_hydration_roster" not in str(exc):
+            raise CanonicalHistoryUnavailable("PostgreSQL roster projection failed") from exc
+        known = []
     finally:
         conn.close()
     if len(known) < limit:
