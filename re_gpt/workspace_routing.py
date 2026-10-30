@@ -6,6 +6,7 @@ from dataclasses import dataclass
 class Route:
     targets: tuple[str,...]
     prompt: str
+    explicit: bool = False
 
 def parse_route(prompt: str) -> Route:
     if not isinstance(prompt,str) or not prompt.strip():
@@ -19,7 +20,7 @@ def parse_route(prompt: str) -> Route:
         "@ao":("ao",),
     }
     if head.casefold() not in targets:
-        return Route(("chatgpt",),text)
+        return Route(("chatgpt",),text,False)
     if not body.strip():
         raise ValueError("route requires a nonempty task")
-    return Route(targets[head.casefold()],body.strip())
+    return Route(targets[head.casefold()],body.strip(),True)
