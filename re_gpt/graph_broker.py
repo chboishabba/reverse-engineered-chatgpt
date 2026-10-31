@@ -154,8 +154,18 @@ def _build_default_fetchers(
     cdp_endpoint: str | None,
     browser_timeout: int,
 ) -> dict[str, Callable[[str], Any]]:
-    token, default_model, agent = _resolve_direct_context(session_token, model, user_agent)
-    snapshot = load_browser_session_snapshot(profile_dir=profile_dir, max_age_seconds=3600)
+    # An owned browser snapshot is the authoritative CFFI context when the
+    # caller did not provide an explicit token. Do not let the legacy
+    # ~/.chatgpt_session fallback (which may contain a dummy token) override
+    # the fresh snapshot access token or cookie jar.
+    snapshot = load_browser_session_snapshot(profile_dir=profile_dir)
+    if session_token is not None:
+        token, default_model, agent = _resolve_direct_context(session_token, model, user_agent)
+    elif snapshot is not None and snapshot.access_token:
+        token = None
+        default_model, agent = model or get_default_model(), user_agent or get_default_user_agent()
+    else:
+        token, default_model, agent = _resolve_direct_context(None, model, user_agent)
 
     def fetch_async(conversation_id: str):
         async def run() -> tuple[dict[str, Any], dict[str, Any]]:
