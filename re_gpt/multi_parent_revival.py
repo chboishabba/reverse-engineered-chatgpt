@@ -89,6 +89,7 @@ def revive_from_handoff(
     handoff_path: Path | str,
     prompt: str,
     *,
+    request_id: str,
     db_path: Path | str = DEFAULT_DB_PATH,
     session_token: str | None = None,
     model: str | None = None,
@@ -146,6 +147,51 @@ def revive_from_handoff(
     if not isinstance(authority, dict) or authority.get("dispatch") is not False or authority.get("equivalence") != "not_established":
         raise ValueError("handoff artifact authority boundary is missing or unsafe")
     digest = hashlib.sha256(payload).hexdigest()
+    request_key = str(request_id).strip()
+    if not request_key or len(request_key) > 128:
+        raise ValueError("request_id must be a non-empty stable caller-supplied key (max 128 chars)")
+    fingerprint = hashlib.sha256(json.dumps({
+        "parents": parents, "handoff_sha256": digest,
+        "prompt_sha256": hashlib.sha256(prompt.strip().encode("utf-8")).hexdigest(),
+    }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    db_file = Path(db_path).expanduser()
+    with sqlite3.connect(db_file) as db:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS multi_parent_revival_requests (
+                request_id TEXT PRIMARY KEY,
+                request_fingerprint TEXT NOT NULL,
+                state TEXT NOT NULL,
+                child_conversation_id TEXT,
+                creation_operation_id TEXT,
+                attachment_operation_id TEXT,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+        """)
+        existing = db.execute(
+            "SELECT request_fingerprint,state,child_conversation_id,"
+            "creation_operation_id,attachment_operation_id "
+            "FROM multi_parent_revival_requests WHERE request_id=?",
+            (request_key,),
+        ).fetchone()
+        if existing:
+            if existing[0] != fingerprint:
+                raise ValueError("request_id was already used for a different revival payload")
+            return {
+                "request_id": request_key, "state": existing[1],
+                "child_conversation_id": existing[2],
+                "creation_operation_id": existing[3],
+                "attachment_operation_id": existing[4],
+                "replayed_request": True, "attachment_dispatched": False,
+                "automatic_resend_allowed": False,
+            }
+        now = time.time()
+        db.execute(
+            "INSERT INTO multi_parent_revival_requests "
+            "(request_id,request_fingerprint,state,created_at,updated_at) "
+            "VALUES (?,?, 'creation_starting', ?, ?)",
+            (request_key, fingerprint, now, now),
+        )
     service = MutationService(db_path=db_path, session_token=session_token, model=model)
     parent_list = ", ".join(f"`{item}`" for item in parents)
     created = service.new_conversation(
@@ -156,8 +202,15 @@ def revive_from_handoff(
     child = str(created.get("conversation_id") or created.get("resolved_thread_id") or "").strip()
     if not child or created.get("state") not in {"complete", "committed", "committed_pending"}:
         # In particular, commit_unknown is never retried or followed by attachment.
+        state = str(created.get("state") or "commit_unknown")
+        with sqlite3.connect(db_file) as db:
+            db.execute(
+                "UPDATE multi_parent_revival_requests SET state=?,child_conversation_id=?,"
+                "creation_operation_id=?,updated_at=? WHERE request_id=?",
+                (state, child or None, created.get("operation_id"), time.time(), request_key),
+            )
         return {
-            "state": created.get("state", "commit_unknown"),
+            "request_id": request_key, "state": state,
             "child_conversation_id": child or None,
             "creation_operation": created,
             "attachment_dispatched": False,
@@ -166,6 +219,12 @@ def revive_from_handoff(
     receipt = record_multi_parent_lineage(
         db_path, child, parents, handoff_path=artifact, handoff_sha256=digest,
     )
+    with sqlite3.connect(db_file) as db:
+        db.execute(
+            "UPDATE multi_parent_revival_requests SET state='attachment_starting',"
+            "child_conversation_id=?,creation_operation_id=?,updated_at=? WHERE request_id=?",
+            (child, created.get("operation_id"), time.time(), request_key),
+        )
     attached = service.continue_thread(
         child,
         f"Attach and inspect the candidate-only revival handoff. "
@@ -179,13 +238,19 @@ def revive_from_handoff(
     )
     operation_id = str(attached.get("operation_id") or "").strip() or None
     state = str(attached.get("state") or "unknown")
-    with sqlite3.connect(Path(db_path).expanduser()) as db:
+    with sqlite3.connect(db_file) as db:
         db.execute(
             "UPDATE conversation_lineage_multi_parent SET attachment_operation_id=?,"
             "attachment_state=?,updated_at=? WHERE child_conversation_id=?",
             (operation_id, state, time.time(), child),
         )
+        db.execute(
+            "UPDATE multi_parent_revival_requests SET state=?,attachment_operation_id=?,"
+            "updated_at=? WHERE request_id=?",
+            (state, operation_id, time.time(), request_key),
+        )
     return {
+        "request_id": request_key,
         "state": state,
         "child_conversation_id": child,
         "canonical_parent_thread_ids": parents,
@@ -200,6 +265,7 @@ def revive_from_handoff(
             "verified_by_mutation_service": bool(attached.get("canonical_attachment_count")),
         },
         "attachment_dispatched": True,
+        "replayed_request": False,
         "automatic_resend_allowed": False,
         "transport": "direct_async_cffi",
         "browser_dom_allowed": False,
