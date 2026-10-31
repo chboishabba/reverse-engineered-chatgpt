@@ -35,7 +35,7 @@ class MultiParentRevivalTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.db = Path(self.temp.name) / "operations.sqlite"
         self.artifact = Path(self.temp.name) / "handoff.json"
-        self.artifact.write_text('{"version":"itir.pnf.multi_parent_handoff.v1","parents":[{"canonical_thread_id":"canonical-p1"},{"canonical_thread_id":"canonical-p2"}],"candidate_world":{"status":"candidate_only"},"formal_gap":{"selected_context_sufficiency_proved":false}}')
+        self.artifact.write_text('{"version":"itir.pnf.multi_parent_handoff.v1","parents":[{"canonical_thread_id":"canonical-p1"},{"canonical_thread_id":"canonical-p2"}],"candidate_world":{"status":"candidate_only","reviewed_world_model":false,"formal_proof":false,"cross_parent_equivalences":[]},"formal_gap":{"selected_context_sufficiency_proved":false},"authority":{"dispatch":false,"equivalence":"not_established"}}')
         self.parents = ["canonical-p1", "canonical-p2"]
 
     def test_lineage_receipt_preserves_ordered_independent_parents(self):
