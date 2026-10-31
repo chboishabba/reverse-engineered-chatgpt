@@ -77,8 +77,11 @@ class MultiParentRevivalTests(unittest.TestCase):
 
         with patch("re_gpt.multi_parent_revival.MutationService", Uncertain):
             result = revive_from_handoff(self.parents, self.artifact, "continue work", request_id="req-uncertain", db_path=self.db)
+            replay = revive_from_handoff(self.parents, self.artifact, "continue work", request_id="req-uncertain", db_path=self.db)
         self.assertFalse(result["attachment_dispatched"])
         self.assertFalse(result["automatic_resend_allowed"])
+        self.assertTrue(replay["replayed_request"])
+        self.assertEqual(Uncertain.new_count, 1)
         with sqlite3.connect(self.db) as db:
             table = db.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' "
@@ -91,9 +94,12 @@ class MultiParentRevivalTests(unittest.TestCase):
 
         with patch("re_gpt.multi_parent_revival.MutationService", Ambiguous):
             result = revive_from_handoff(self.parents, self.artifact, "continue work", request_id="req-ambiguous", db_path=self.db)
+            replay = revive_from_handoff(self.parents, self.artifact, "continue work", request_id="req-ambiguous", db_path=self.db)
         self.assertEqual(result["state"], "commit_unknown")
         self.assertEqual(result["attachment_receipt"]["operation_id"], "attach-op")
         self.assertFalse(result["automatic_resend_allowed"])
+        self.assertTrue(replay["replayed_request"])
+        self.assertEqual(Ambiguous.continue_count, 1)
 
     def test_repeated_request_id_never_dispatches_twice(self):
         with patch("re_gpt.multi_parent_revival.MutationService", FakeMutationService):
