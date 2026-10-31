@@ -110,6 +110,8 @@ def revive_from_handoff(
     payload = artifact.read_bytes()
     if not payload:
         raise ValueError("handoff artifact is empty")
+    if len(payload) > 100_000:
+        raise ValueError("handoff artifact exceeds the 100000-byte transport ceiling")
     try:
         handoff = json.loads(payload)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
