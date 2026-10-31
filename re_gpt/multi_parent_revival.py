@@ -244,7 +244,7 @@ def revive_from_handoff(
     follow: bool = True,
     follow_timeout: float = 180.0,
 ) -> dict[str, Any]:
-    """Create one fresh child and attach one explicit handoff artifact exactly once."""
+    """Attempt one fresh child and at most one explicit handoff attachment."""
     if any(not isinstance(item, str) for item in parent_thread_ids):
         raise ValueError("parent_thread_ids must contain canonical string IDs")
     parents = [item.strip() for item in parent_thread_ids]
