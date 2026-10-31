@@ -16,6 +16,154 @@ from typing import Any, Sequence
 from .mutation_service import MutationService
 from .storage import DEFAULT_DB_PATH
 
+_HANDOFF_KEYS = {
+    "version", "child_thread_id", "parent_count", "parents", "candidate_world",
+    "materialization", "lineage_receipt", "governance", "authority",
+    "formal_gap", "packet_id",
+}
+_SOURCE_REF_KEYS = {
+    "message_id", "source_message_id", "node_id", "parent_node_id",
+    "branch_membership", "source_thread_id", "lineage_status", "ts", "role",
+    "body_sha256", "archive_locator",
+}
+_SPAN_KEYS = {"kind", "start", "end", "authority"}
+
+
+def _validate_handoff(handoff: Any, parents: list[str]) -> None:
+    """Validate the complete non-promoting handoff boundary before any write."""
+    if not isinstance(handoff, dict) or set(handoff) != _HANDOFF_KEYS:
+        raise ValueError("handoff artifact has an unsupported or incomplete field set")
+    if handoff.get("version") != "itir.pnf.multi_parent_handoff.v1":
+        raise ValueError("unsupported multi-parent handoff artifact version")
+    if handoff.get("parent_count") != len(parents):
+        raise ValueError("handoff parent_count does not match explicit parent IDs")
+    artifact_parents = handoff.get("parents")
+    if (
+        not isinstance(artifact_parents, list)
+        or len(artifact_parents) != len(parents)
+        or any(not isinstance(item, dict) for item in artifact_parents)
+        or [item.get("canonical_thread_id") for item in artifact_parents] != parents
+    ):
+        raise ValueError("handoff artifact parent order does not match explicit parent_thread_ids")
+
+    for parent in artifact_parents:
+        if set(parent) != {
+            "canonical_thread_id", "packet_id", "source_refs", "span_receipt",
+            "semantic_pnf_execution",
+        }:
+            raise ValueError("parent projection has an unsupported field set")
+        refs = parent.get("source_refs")
+        if not isinstance(refs, list):
+            raise ValueError("parent source_refs must be an array")
+        for ref in refs:
+            if not isinstance(ref, dict) or set(ref) != _SOURCE_REF_KEYS:
+                raise ValueError("source references must contain coordinates and digests only")
+            if not isinstance(ref.get("body_sha256"), str) or len(ref["body_sha256"]) != 64:
+                raise ValueError("source reference requires a body SHA-256")
+        spans_receipt = parent.get("span_receipt")
+        if not isinstance(spans_receipt, dict) or spans_receipt.get("full_thread_scanned") is not True:
+            raise ValueError("parent projection requires a full-thread scan receipt")
+        semantic = parent.get("semantic_pnf_execution")
+        if (
+            not isinstance(semantic, dict)
+            or semantic.get("candidate_only") is not True
+            or semantic.get("no_promotion") is not True
+            or semantic.get("status") != "typed_pnf_not_compiled"
+        ):
+            raise ValueError("parent semantic projection must remain an uncompiled candidate")
+
+    candidate = handoff.get("candidate_world")
+    if (
+        not isinstance(candidate, dict)
+        or set(candidate) != {
+            "status", "nodes", "cross_parent_equivalences",
+            "cross_parent_contradictions", "reviewed_world_model", "formal_proof",
+        }
+        or candidate.get("status") != "candidate_only"
+        or candidate.get("reviewed_world_model") is not False
+        or candidate.get("formal_proof") is not False
+        or candidate.get("cross_parent_equivalences") != []
+        or candidate.get("cross_parent_contradictions") != []
+        or not isinstance(candidate.get("nodes"), list)
+        or len(candidate["nodes"]) > 80
+    ):
+        raise ValueError("handoff candidate world violates candidate-only non-promotion invariants")
+    for node in candidate["nodes"]:
+        if (
+            not isinstance(node, dict)
+            or set(node) != {"parent_thread_id", "source_ref", "candidate_spans", "authority"}
+            or node.get("parent_thread_id") not in parents
+            or node.get("authority") != "raw_source_reference_or_lexical_candidate"
+            or not isinstance(node.get("source_ref"), dict)
+            or set(node["source_ref"]) != _SOURCE_REF_KEYS
+            or not isinstance(node.get("candidate_spans"), list)
+        ):
+            raise ValueError("candidate node is outside the bounded source-reference schema")
+        for span in node["candidate_spans"]:
+            if (
+                not isinstance(span, dict)
+                or set(span) != _SPAN_KEYS
+                or span.get("authority") != "sensiblaw_public_token_span_candidate"
+                or not isinstance(span.get("start"), int)
+                or not isinstance(span.get("end"), int)
+                or span["start"] < 0
+                or span["end"] < span["start"]
+            ):
+                raise ValueError("candidate spans must be public-parser offset candidates")
+
+    materialization = handoff.get("materialization")
+    if (
+        not isinstance(materialization, dict)
+        or materialization != {
+            "artifact_content": "canonical_source_references_and_lexical_candidate_spans_only",
+            "raw_transcript_included": False,
+            "typed_world_model_included": False,
+            "reviewed_claims_included": False,
+            "proof_included": False,
+            "source_content_materialization": "not_authorized_by_read_only_projection",
+        }
+    ):
+        raise ValueError("handoff materialization exceeds the read-only candidate projection")
+
+    lineage = handoff.get("lineage_receipt")
+    if (
+        not isinstance(lineage, dict)
+        or lineage.get("relationship") != "multi_parent_proposed"
+        or lineage.get("parents") != [{"canonical_thread_id": item} for item in parents]
+        or lineage.get("parents_remain_independent_authorities") is not True
+        or lineage.get("parent_retirement") is not False
+        or lineage.get("durability") != "handoff_receipt_only_until_child_attachment_receipt"
+    ):
+        raise ValueError("handoff lineage must preserve ordered, independent parent authorities")
+
+    authority = handoff.get("authority")
+    if (
+        not isinstance(authority, dict)
+        or authority.get("canonical_archive") != "corpus_authority_read_only"
+        or authority.get("transport_receipts") != "bounded_operation_evidence_only"
+        or authority.get("candidate_world") != "not_reviewed_not_promoted"
+        or authority.get("equivalence") != "not_established"
+        or authority.get("formal_proof") != "not_established"
+        or authority.get("dispatch") is not False
+        or authority.get("automatic_resend") is not False
+    ):
+        raise ValueError("handoff authority boundary is missing or unsafe")
+    gap = handoff.get("formal_gap")
+    if (
+        not isinstance(gap, dict)
+        or gap.get("status") != "open"
+        or gap.get("selected_context_sufficiency_proved") is not False
+    ):
+        raise ValueError("handoff must preserve the open selected-context sufficiency gap")
+    governance = handoff.get("governance")
+    if (
+        not isinstance(governance, dict)
+        or governance.get("dispatch_allowed") is not False
+        or governance.get("automatic_resend_allowed") is not False
+        or governance.get("browser_dom_allowed") is not False
+    ):
+        raise ValueError("handoff governance must remain read-only and no-resend")
+
 
 def record_multi_parent_lineage(
     db_path: Path | str,
@@ -97,7 +245,9 @@ def revive_from_handoff(
     follow_timeout: float = 180.0,
 ) -> dict[str, Any]:
     """Create one fresh child and attach one explicit handoff artifact exactly once."""
-    parents = [str(item).strip() for item in parent_thread_ids]
+    if any(not isinstance(item, str) for item in parent_thread_ids):
+        raise ValueError("parent_thread_ids must contain canonical string IDs")
+    parents = [item.strip() for item in parent_thread_ids]
     if not 2 <= len(parents) <= 10 or any(not item for item in parents):
         raise ValueError("parent_thread_ids must contain 2..10 canonical IDs")
     if len(set(parents)) != len(parents):
@@ -116,38 +266,7 @@ def revive_from_handoff(
         handoff = json.loads(payload)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("handoff artifact must be UTF-8 JSON") from exc
-    if not isinstance(handoff, dict) or handoff.get("version") != "itir.pnf.multi_parent_handoff.v1":
-        raise ValueError("unsupported multi-parent handoff artifact version")
-    artifact_parents = handoff.get("parents")
-    if (
-        not isinstance(artifact_parents, list)
-        or len(artifact_parents) != len(parents)
-        or any(not isinstance(item, dict) for item in artifact_parents)
-        or [item.get("canonical_thread_id") for item in artifact_parents] != parents
-    ):
-        raise ValueError("handoff artifact parent order does not match explicit parent_thread_ids")
-    candidate_world = handoff.get("candidate_world")
-    formal_gap = handoff.get("formal_gap")
-    authority = handoff.get("authority")
-    materialization = handoff.get("materialization")
-    if (
-        not isinstance(materialization, dict)
-        or materialization.get("raw_transcript_included") is not False
-        or materialization.get("source_content_materialization") != "not_authorized_by_read_only_projection"
-    ):
-        raise ValueError("handoff artifact must preserve the read-only source-content boundary")
-    if (
-        not isinstance(candidate_world, dict)
-        or candidate_world.get("status") != "candidate_only"
-        or candidate_world.get("reviewed_world_model") is not False
-        or candidate_world.get("formal_proof") is not False
-        or candidate_world.get("cross_parent_equivalences") != []
-    ):
-        raise ValueError("handoff artifact is not an unpromoted candidate-only world")
-    if not isinstance(formal_gap, dict) or formal_gap.get("selected_context_sufficiency_proved") is not False:
-        raise ValueError("handoff artifact must preserve the open selected-context sufficiency gap")
-    if not isinstance(authority, dict) or authority.get("dispatch") is not False or authority.get("equivalence") != "not_established":
-        raise ValueError("handoff artifact authority boundary is missing or unsafe")
+    _validate_handoff(handoff, parents)
     digest = hashlib.sha256(payload).hexdigest()
     request_key = str(request_id).strip()
     if not request_key or len(request_key) > 128:
@@ -195,7 +314,7 @@ def revive_from_handoff(
             (request_key, fingerprint, now, now),
         )
     service = MutationService(db_path=db_path, session_token=session_token, model=model)
-    parent_list = ", ".join(f"`{item}`" for item in parents)
+    parent_list = ", ".join(f"\`{item}\`" for item in parents)
     created = service.new_conversation(
         f"Governed multi-parent revival. Canonical parents: {parent_list}. "
         f"Candidate handoff SHA-256: {digest}. The attached artifact is candidate-only.",
@@ -203,7 +322,6 @@ def revive_from_handoff(
     )
     child = str(created.get("conversation_id") or created.get("resolved_thread_id") or "").strip()
     if not child or created.get("state") not in {"complete", "committed", "committed_pending"}:
-        # In particular, commit_unknown is never retried or followed by attachment.
         state = str(created.get("state") or "commit_unknown")
         with sqlite3.connect(db_file) as db:
             db.execute(
