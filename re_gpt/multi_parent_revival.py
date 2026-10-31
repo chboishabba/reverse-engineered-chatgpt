@@ -109,6 +109,23 @@ def revive_from_handoff(
     payload = artifact.read_bytes()
     if not payload:
         raise ValueError("handoff artifact is empty")
+    try:
+        handoff = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("handoff artifact must be UTF-8 JSON") from exc
+    if not isinstance(handoff, dict) or handoff.get("version") != "itir.pnf.multi_parent_handoff.v1":
+        raise ValueError("unsupported multi-parent handoff artifact version")
+    artifact_parents = handoff.get("parents")
+    if not isinstance(artifact_parents, list) or [
+        item.get("canonical_thread_id") for item in artifact_parents if isinstance(item, dict)
+    ] != parents:
+        raise ValueError("handoff artifact parent order does not match explicit parent_thread_ids")
+    candidate_world = handoff.get("candidate_world")
+    formal_gap = handoff.get("formal_gap")
+    if not isinstance(candidate_world, dict) or candidate_world.get("status") != "candidate_only":
+        raise ValueError("handoff artifact is not explicitly candidate-only")
+    if not isinstance(formal_gap, dict) or formal_gap.get("selected_context_sufficiency_proved") is not False:
+        raise ValueError("handoff artifact must preserve the open selected-context sufficiency gap")
     digest = hashlib.sha256(payload).hexdigest()
     service = MutationService(db_path=db_path, session_token=session_token, model=model)
     parent_list = ", ".join(f"`{item}`" for item in parents)
