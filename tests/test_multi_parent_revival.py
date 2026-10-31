@@ -76,7 +76,7 @@ class MultiParentRevivalTests(unittest.TestCase):
             created_state = "commit_unknown"
 
         with patch("re_gpt.multi_parent_revival.MutationService", Uncertain):
-            result = revive_from_handoff(self.parents, self.artifact, "continue work", db_path=self.db)
+            result = revive_from_handoff(self.parents, self.artifact, "continue work", request_id="req-uncertain", db_path=self.db)
         self.assertFalse(result["attachment_dispatched"])
         self.assertFalse(result["automatic_resend_allowed"])
         with sqlite3.connect(self.db) as db:
@@ -90,7 +90,7 @@ class MultiParentRevivalTests(unittest.TestCase):
             attached_state = "commit_unknown"
 
         with patch("re_gpt.multi_parent_revival.MutationService", Ambiguous):
-            result = revive_from_handoff(self.parents, self.artifact, "continue work", db_path=self.db)
+            result = revive_from_handoff(self.parents, self.artifact, "continue work", request_id="req-ambiguous", db_path=self.db)
         self.assertEqual(result["state"], "commit_unknown")
         self.assertEqual(result["attachment_receipt"]["operation_id"], "attach-op")
         self.assertFalse(result["automatic_resend_allowed"])
