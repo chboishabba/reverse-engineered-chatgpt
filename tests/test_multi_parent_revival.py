@@ -12,17 +12,21 @@ from re_gpt.multi_parent_revival import record_multi_parent_lineage, revive_from
 class FakeMutationService:
     created_state = "complete"
     attached_state = "complete"
+    new_count = 0
+    continue_count = 0
 
     def __init__(self, **kwargs):
         self.new_calls = []
         self.continue_calls = []
 
     def new_conversation(self, prompt, **kwargs):
+        type(self).new_count += 1
         self.new_calls.append((prompt, kwargs))
         return {"state": self.created_state, "conversation_id": "child-1",
                 "operation_id": "create-op"}
 
     def continue_thread(self, conversation_id, prompt, **kwargs):
+        type(self).continue_count += 1
         self.continue_calls.append((conversation_id, prompt, kwargs))
         return {"state": self.attached_state, "operation_id": "attach-op",
                 "attachment_ids": ["file-1"], "canonical_attachment_count": 1,
@@ -37,6 +41,8 @@ class MultiParentRevivalTests(unittest.TestCase):
         self.artifact = Path(self.temp.name) / "handoff.json"
         self.artifact.write_text('{"version":"itir.pnf.multi_parent_handoff.v1","parents":[{"canonical_thread_id":"canonical-p1"},{"canonical_thread_id":"canonical-p2"}],"candidate_world":{"status":"candidate_only","reviewed_world_model":false,"formal_proof":false,"cross_parent_equivalences":[]},"formal_gap":{"selected_context_sufficiency_proved":false},"authority":{"dispatch":false,"equivalence":"not_established"},"materialization":{"raw_transcript_included":false,"source_content_materialization":"not_authorized_by_read_only_projection"}}')
         self.parents = ["canonical-p1", "canonical-p2"]
+        FakeMutationService.new_count = 0
+        FakeMutationService.continue_count = 0
 
     def test_lineage_receipt_preserves_ordered_independent_parents(self):
         receipt = record_multi_parent_lineage(
@@ -53,7 +59,7 @@ class MultiParentRevivalTests(unittest.TestCase):
 
     def test_create_once_then_attach_with_owned_async_receipt(self):
         with patch("re_gpt.multi_parent_revival.MutationService", FakeMutationService):
-            result = revive_from_handoff(self.parents, self.artifact, "continue work", db_path=self.db)
+            result = revive_from_handoff(self.parents, self.artifact, "continue work", request_id="req-1", db_path=self.db)
         self.assertEqual(result["child_conversation_id"], "child-1")
         self.assertEqual(result["canonical_parent_thread_ids"], self.parents)
         self.assertTrue(result["attachment_receipt"]["verified_by_mutation_service"])
@@ -89,13 +95,25 @@ class MultiParentRevivalTests(unittest.TestCase):
         self.assertEqual(result["attachment_receipt"]["operation_id"], "attach-op")
         self.assertFalse(result["automatic_resend_allowed"])
 
+    def test_repeated_request_id_never_dispatches_twice(self):
+        with patch("re_gpt.multi_parent_revival.MutationService", FakeMutationService):
+            first = revive_from_handoff(
+                self.parents, self.artifact, "continue work", request_id="stable-req", db_path=self.db)
+            second = revive_from_handoff(
+                self.parents, self.artifact, "continue work", request_id="stable-req", db_path=self.db)
+        self.assertFalse(first["replayed_request"])
+        self.assertTrue(second["replayed_request"])
+        self.assertFalse(second["attachment_dispatched"])
+        self.assertEqual(FakeMutationService.new_count, 1)
+        self.assertEqual(FakeMutationService.continue_count, 1)
+
     def test_rejects_duplicate_or_out_of_range_parent_sets(self):
         with self.assertRaises(ValueError):
             record_multi_parent_lineage(
                 self.db, "child", ["same", "same"], handoff_path=self.artifact,
                 handoff_sha256="b" * 64)
         with self.assertRaises(ValueError):
-            revive_from_handoff(["only-one"], self.artifact, "continue", db_path=self.db)
+            revive_from_handoff(["only-one"], self.artifact, "continue", request_id="req-bad", db_path=self.db)
 
 
 if __name__ == "__main__":
