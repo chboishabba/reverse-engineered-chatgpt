@@ -263,7 +263,7 @@ Session/protocol tools:
 
 Read/diagnostic tools include `chatgpt_view`, `chatgpt_list`, and `chatgpt_live_status`.
 
-The multi-parent revival adapter is deliberately separate from the legacy one-parent `revive_thread` transcript-export path. It accepts an explicit handoff artifact and canonical parent IDs from ITIR, creates one fresh conversation, attaches the artifact once through `MutationService`, and records ordered lineage edges plus the attachment receipt in operational receipt storage. It does not select or read corpus transcripts. `commit_unknown` on creation prevents attachment; an uncertain attachment is never automatically resent. The lineage store is adapter evidence, not canonical archive authority.
+The multi-parent revival adapter is deliberately separate from the legacy one-parent `revive_thread` transcript-export path. It accepts an explicit handoff artifact, canonical parent IDs and a stable caller-supplied request ID from ITIR, creates one fresh conversation, attaches the artifact once through `MutationService`, and records ordered lineage edges plus the attachment receipt in operational receipt storage. The request ID is claimed before either write; repeating it returns the existing receipt and never dispatches again. It does not select or read corpus transcripts. `commit_unknown` on creation prevents attachment; an uncertain attachment is never automatically resent. The lineage store is adapter evidence, not canonical archive authority.
 
 ## Mutation states
 
