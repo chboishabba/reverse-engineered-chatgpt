@@ -209,6 +209,20 @@ class MultiParentRevivalTests(unittest.TestCase):
                     request_id="unsafe-materialization", db_path=self.db)
         self.assertEqual(FakeMutationService.new_count, 0)
 
+    def test_mcp_entrypoint_requires_and_forwards_request_id(self):
+        from re_gpt.mcp_server import chatgpt_revive_multi
+
+        with patch(
+            "re_gpt.multi_parent_revival.revive_from_handoff",
+            return_value={"state": "accepted"},
+        ) as revive:
+            result = chatgpt_revive_multi(
+                self.parents, str(self.artifact), "continue work",
+                request_id="stable-mcp-request", db_path=str(self.db), follow=False,
+            )
+        self.assertEqual(result, {"state": "accepted"})
+        self.assertEqual(revive.call_args.kwargs["request_id"], "stable-mcp-request")
+
     def test_rejects_duplicate_or_out_of_range_parent_sets(self):
         with self.assertRaises(ValueError):
             record_multi_parent_lineage(
