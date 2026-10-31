@@ -83,7 +83,7 @@ class MultiParentRevivalTests(unittest.TestCase):
         class Ambiguous(FakeMutationService):
             attached_state = "commit_unknown"
 
-        with patch("re_gpt.multi_parent_revival.MutationService", Ambiguous) as service_cls:
+        with patch("re_gpt.multi_parent_revival.MutationService", Ambiguous):
             result = revive_from_handoff(self.parents, self.artifact, "continue work", db_path=self.db)
         self.assertEqual(result["state"], "commit_unknown")
         self.assertEqual(result["attachment_receipt"]["operation_id"], "attach-op")
