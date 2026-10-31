@@ -116,16 +116,28 @@ def revive_from_handoff(
     if not isinstance(handoff, dict) or handoff.get("version") != "itir.pnf.multi_parent_handoff.v1":
         raise ValueError("unsupported multi-parent handoff artifact version")
     artifact_parents = handoff.get("parents")
-    if not isinstance(artifact_parents, list) or [
-        item.get("canonical_thread_id") for item in artifact_parents if isinstance(item, dict)
-    ] != parents:
+    if (
+        not isinstance(artifact_parents, list)
+        or len(artifact_parents) != len(parents)
+        or any(not isinstance(item, dict) for item in artifact_parents)
+        or [item.get("canonical_thread_id") for item in artifact_parents] != parents
+    ):
         raise ValueError("handoff artifact parent order does not match explicit parent_thread_ids")
     candidate_world = handoff.get("candidate_world")
     formal_gap = handoff.get("formal_gap")
-    if not isinstance(candidate_world, dict) or candidate_world.get("status") != "candidate_only":
-        raise ValueError("handoff artifact is not explicitly candidate-only")
+    authority = handoff.get("authority")
+    if (
+        not isinstance(candidate_world, dict)
+        or candidate_world.get("status") != "candidate_only"
+        or candidate_world.get("reviewed_world_model") is not False
+        or candidate_world.get("formal_proof") is not False
+        or candidate_world.get("cross_parent_equivalences") != []
+    ):
+        raise ValueError("handoff artifact is not an unpromoted candidate-only world")
     if not isinstance(formal_gap, dict) or formal_gap.get("selected_context_sufficiency_proved") is not False:
         raise ValueError("handoff artifact must preserve the open selected-context sufficiency gap")
+    if not isinstance(authority, dict) or authority.get("dispatch") is not False or authority.get("equivalence") != "not_established":
+        raise ValueError("handoff artifact authority boundary is missing or unsafe")
     digest = hashlib.sha256(payload).hexdigest()
     service = MutationService(db_path=db_path, session_token=session_token, model=model)
     parent_list = ", ".join(f"`{item}`" for item in parents)
