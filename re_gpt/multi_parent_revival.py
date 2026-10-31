@@ -126,6 +126,13 @@ def revive_from_handoff(
     candidate_world = handoff.get("candidate_world")
     formal_gap = handoff.get("formal_gap")
     authority = handoff.get("authority")
+    materialization = handoff.get("materialization")
+    if (
+        not isinstance(materialization, dict)
+        or materialization.get("raw_transcript_included") is not False
+        or materialization.get("source_content_materialization") != "not_authorized_by_read_only_projection"
+    ):
+        raise ValueError("handoff artifact must preserve the read-only source-content boundary")
     if (
         not isinstance(candidate_world, dict)
         or candidate_world.get("status") != "candidate_only"
