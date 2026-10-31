@@ -223,6 +223,19 @@ class MultiParentRevivalTests(unittest.TestCase):
         self.assertEqual(result, {"state": "accepted"})
         self.assertEqual(revive.call_args.kwargs["request_id"], "stable-mcp-request")
 
+    def test_rejects_scalar_parent_container_and_nonstring_request_id(self):
+        with patch("re_gpt.multi_parent_revival.MutationService", FakeMutationService):
+            with self.assertRaisesRegex(ValueError, "sequence of canonical string IDs"):
+                revive_from_handoff(
+                    "ab", self.artifact, "continue work",
+                    request_id="scalar-parents", db_path=self.db)
+            with self.assertRaisesRegex(ValueError, "request_id must be a caller-supplied string"):
+                revive_from_handoff(
+                    self.parents, self.artifact, "continue work",
+                    request_id=123, db_path=self.db)
+        self.assertEqual(FakeMutationService.new_count, 0)
+        self.assertEqual(FakeMutationService.continue_count, 0)
+
     def test_rejects_duplicate_or_out_of_range_parent_sets(self):
         with self.assertRaises(ValueError):
             record_multi_parent_lineage(
