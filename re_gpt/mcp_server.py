@@ -679,6 +679,28 @@ def chatgpt_revive(
 
 
 @mcp.tool()
+def chatgpt_revive_multi(
+    parent_thread_ids: list[str],
+    handoff_path: str,
+    prompt: str,
+    db_path: str | None = None,
+    follow: bool = True,
+    follow_timeout: float = 180.0,
+) -> dict[str, Any]:
+    """Create one fresh child from an explicit candidate handoff and 2..10 canonical parents."""
+    from .multi_parent_revival import revive_from_handoff
+
+    return revive_from_handoff(
+        parent_thread_ids,
+        Path(handoff_path).expanduser(),
+        prompt,
+        db_path=Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH,
+        follow=follow,
+        follow_timeout=follow_timeout,
+    )
+
+
+@mcp.tool()
 def chatgpt_list(
     limit: int = 20,
     query: str | None = None,
