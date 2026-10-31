@@ -245,6 +245,8 @@ def revive_from_handoff(
     follow_timeout: float = 180.0,
 ) -> dict[str, Any]:
     """Create one fresh child and attach one explicit handoff artifact exactly once."""
+    if isinstance(parent_thread_ids, (str, bytes)) or not isinstance(parent_thread_ids, Sequence):
+        raise ValueError("parent_thread_ids must be a sequence of canonical string IDs")
     if any(not isinstance(item, str) for item in parent_thread_ids):
         raise ValueError("parent_thread_ids must contain canonical string IDs")
     parents = [item.strip() for item in parent_thread_ids]
@@ -268,7 +270,9 @@ def revive_from_handoff(
         raise ValueError("handoff artifact must be UTF-8 JSON") from exc
     _validate_handoff(handoff, parents)
     digest = hashlib.sha256(payload).hexdigest()
-    request_key = str(request_id).strip()
+    if not isinstance(request_id, str):
+        raise ValueError("request_id must be a caller-supplied string")
+    request_key = request_id.strip()
     if not request_key or len(request_key) > 128:
         raise ValueError("request_id must be a non-empty stable caller-supplied key (max 128 chars)")
     fingerprint = hashlib.sha256(json.dumps({
