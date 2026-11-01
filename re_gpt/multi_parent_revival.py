@@ -1,20 +1,92 @@
 """Multi-parent revival adapter over an explicit candidate handoff artifact.
 
 Canonical source selection belongs to ITIR. This module accepts only an explicit
-handoff file and canonical parent IDs; its SQLite rows are transport/lineage
-receipts, never corpus content or source-selection authority.
+handoff file and canonical parent IDs; PostgreSQL ops rows are the durable
+idempotency/lineage receipts, never corpus content or source-selection authority.
+SQLite remains a compatibility receipt store only when no PostgreSQL DSN exists.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import sqlite3
+import os
 import time
 from pathlib import Path
 from typing import Any, Sequence
 
 from .mutation_service import MutationService
 from .storage import DEFAULT_DB_PATH
+
+
+def _pg_dsn() -> str | None:
+    return os.environ.get("ITIR_PG_DSN") or os.environ.get("DATABASE_URL")
+
+
+class _PostgresReceiptStore:
+    """Durable idempotency and lineage receipts in the canonical ops schema."""
+    def __init__(self, dsn: str):
+        try:
+            import psycopg
+        except ImportError as exc:
+            raise RuntimeError("psycopg is required for PostgreSQL revival receipts") from exc
+        self.db = psycopg.connect(dsn, connect_timeout=3)
+        with self.db.cursor() as cur:
+            cur.execute("CREATE SCHEMA IF NOT EXISTS ops")
+            cur.execute("""CREATE TABLE IF NOT EXISTS ops.multi_parent_revival_request (
+                request_id TEXT PRIMARY KEY, request_fingerprint TEXT NOT NULL,
+                state TEXT NOT NULL, child_conversation_id TEXT,
+                creation_operation_id TEXT, attachment_operation_id TEXT,
+                created_at DOUBLE PRECISION NOT NULL, updated_at DOUBLE PRECISION NOT NULL
+            )""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS ops.conversation_lineage_multi_parent (
+                child_conversation_id TEXT PRIMARY KEY, handoff_path TEXT NOT NULL,
+                handoff_sha256 TEXT NOT NULL, attachment_operation_id TEXT,
+                attachment_state TEXT NOT NULL, created_at DOUBLE PRECISION NOT NULL,
+                updated_at DOUBLE PRECISION NOT NULL
+            )""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS ops.conversation_lineage_multi_parent_edges (
+                child_conversation_id TEXT NOT NULL REFERENCES ops.conversation_lineage_multi_parent(child_conversation_id),
+                parent_ordinal INTEGER NOT NULL, canonical_parent_thread_id TEXT NOT NULL,
+                PRIMARY KEY (child_conversation_id, parent_ordinal),
+                UNIQUE (child_conversation_id, canonical_parent_thread_id)
+            )""")
+        self.db.commit()
+
+    def close(self):
+        self.db.close()
+
+    def claim(self, request_id, fingerprint, now):
+        with self.db.cursor() as cur:
+            cur.execute("SELECT request_fingerprint,state,child_conversation_id,creation_operation_id,attachment_operation_id FROM ops.multi_parent_revival_request WHERE request_id=%s", (request_id,))
+            existing = cur.fetchone()
+            if existing:
+                if existing[0] != fingerprint:
+                    raise ValueError("request_id was already used for a different revival payload")
+                return {"request_id": request_id, "state": existing[1], "child_conversation_id": existing[2], "creation_operation_id": existing[3], "attachment_operation_id": existing[4], "replayed_request": True, "attachment_dispatched": False, "automatic_resend_allowed": False}
+            cur.execute("INSERT INTO ops.multi_parent_revival_request (request_id,request_fingerprint,state,created_at,updated_at) VALUES (%s,%s,'creation_starting',%s,%s)", (request_id, fingerprint, now, now))
+        self.db.commit()
+        return None
+
+    def update_request(self, request_id, **fields):
+        assignments = ",".join(f"{key}=%s" for key in fields)
+        values = [*fields.values(), time.time(), request_id]
+        with self.db.cursor() as cur:
+            cur.execute(f"UPDATE ops.multi_parent_revival_request SET {assignments},updated_at=%s WHERE request_id=%s", values)
+        self.db.commit()
+
+    def lineage(self, child, parents, handoff_path, digest, attachment_operation_id=None, attachment_state="pending"):
+        now = time.time()
+        with self.db.cursor() as cur:
+            cur.execute("INSERT INTO ops.conversation_lineage_multi_parent (child_conversation_id,handoff_path,handoff_sha256,attachment_operation_id,attachment_state,created_at,updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s)", (child, handoff_path, digest, attachment_operation_id, attachment_state, now, now))
+            cur.executemany("INSERT INTO ops.conversation_lineage_multi_parent_edges (child_conversation_id,parent_ordinal,canonical_parent_thread_id) VALUES (%s,%s,%s)", [(child, i, parent) for i, parent in enumerate(parents)])
+        self.db.commit()
+        return {"child_conversation_id": child, "canonical_parent_thread_ids": list(parents), "handoff_sha256": digest, "attachment_operation_id": attachment_operation_id, "attachment_state": attachment_state, "receipt_store_authority": "postgresql_ops_receipt"}
+
+    def update_lineage(self, child, operation_id, state):
+        with self.db.cursor() as cur:
+            cur.execute("UPDATE ops.conversation_lineage_multi_parent SET attachment_operation_id=%s,attachment_state=%s,updated_at=%s WHERE child_conversation_id=%s", (operation_id, state, time.time(), child))
+        self.db.commit()
 
 _HANDOFF_KEYS = {
     "version", "child_thread_id", "parent_count", "parents", "candidate_world",
@@ -187,6 +259,14 @@ def record_multi_parent_lineage(
     if len(handoff_sha256) != 64:
         raise ValueError("handoff SHA-256 is required")
     path = str(Path(handoff_path).expanduser().resolve())
+    dsn = _pg_dsn()
+    if dsn:
+        store = _PostgresReceiptStore(dsn)
+        try:
+            return store.lineage(child, parents, path, handoff_sha256,
+                                 attachment_operation_id, attachment_state)
+        finally:
+            store.close()
     now = time.time()
     with sqlite3.connect(Path(db_path).expanduser()) as db:
         db.execute("""
@@ -280,8 +360,15 @@ def revive_from_handoff(
         "prompt_sha256": hashlib.sha256(prompt.strip().encode("utf-8")).hexdigest(),
     }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
     db_file = Path(db_path).expanduser()
-    with sqlite3.connect(db_file) as db:
-        db.execute("""
+    pg_store = _PostgresReceiptStore(_pg_dsn()) if _pg_dsn() else None
+    if pg_store:
+        replay = pg_store.claim(request_key, fingerprint, time.time())
+        if replay:
+            pg_store.close()
+            return replay
+    else:
+        with sqlite3.connect(db_file) as db:
+            db.execute("""
             CREATE TABLE IF NOT EXISTS multi_parent_revival_requests (
                 request_id TEXT PRIMARY KEY,
                 request_fingerprint TEXT NOT NULL,
@@ -292,31 +379,31 @@ def revive_from_handoff(
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL
             )
-        """)
-        existing = db.execute(
-            "SELECT request_fingerprint,state,child_conversation_id,"
-            "creation_operation_id,attachment_operation_id "
-            "FROM multi_parent_revival_requests WHERE request_id=?",
-            (request_key,),
-        ).fetchone()
-        if existing:
-            if existing[0] != fingerprint:
-                raise ValueError("request_id was already used for a different revival payload")
-            return {
-                "request_id": request_key, "state": existing[1],
-                "child_conversation_id": existing[2],
-                "creation_operation_id": existing[3],
-                "attachment_operation_id": existing[4],
-                "replayed_request": True, "attachment_dispatched": False,
-                "automatic_resend_allowed": False,
-            }
-        now = time.time()
-        db.execute(
-            "INSERT INTO multi_parent_revival_requests "
-            "(request_id,request_fingerprint,state,created_at,updated_at) "
-            "VALUES (?,?, 'creation_starting', ?, ?)",
-            (request_key, fingerprint, now, now),
-        )
+            """)
+            existing = db.execute(
+                "SELECT request_fingerprint,state,child_conversation_id,"
+                "creation_operation_id,attachment_operation_id "
+                "FROM multi_parent_revival_requests WHERE request_id=?",
+                (request_key,),
+            ).fetchone()
+            if existing:
+                if existing[0] != fingerprint:
+                    raise ValueError("request_id was already used for a different revival payload")
+                return {
+                    "request_id": request_key, "state": existing[1],
+                    "child_conversation_id": existing[2],
+                    "creation_operation_id": existing[3],
+                    "attachment_operation_id": existing[4],
+                    "replayed_request": True, "attachment_dispatched": False,
+                    "automatic_resend_allowed": False,
+                }
+            now = time.time()
+            db.execute(
+                "INSERT INTO multi_parent_revival_requests "
+                "(request_id,request_fingerprint,state,created_at,updated_at) "
+                "VALUES (?,?, 'creation_starting', ?, ?)",
+                (request_key, fingerprint, now, now),
+            )
     service = MutationService(db_path=db_path, session_token=session_token, model=model)
     parent_list = ", ".join(f"\`{item}\`" for item in parents)
     created = service.new_conversation(
@@ -327,8 +414,13 @@ def revive_from_handoff(
     child = str(created.get("conversation_id") or created.get("resolved_thread_id") or "").strip()
     if not child or created.get("state") not in {"complete", "committed", "committed_pending"}:
         state = str(created.get("state") or "commit_unknown")
-        with sqlite3.connect(db_file) as db:
-            db.execute(
+        if pg_store:
+            pg_store.update_request(request_key, state=state, child_conversation_id=child or None,
+                                    creation_operation_id=created.get("operation_id"))
+            pg_store.close()
+        else:
+            with sqlite3.connect(db_file) as db:
+                db.execute(
                 "UPDATE multi_parent_revival_requests SET state=?,child_conversation_id=?,"
                 "creation_operation_id=?,updated_at=? WHERE request_id=?",
                 (state, child or None, created.get("operation_id"), time.time(), request_key),
@@ -343,8 +435,13 @@ def revive_from_handoff(
     receipt = record_multi_parent_lineage(
         db_path, child, parents, handoff_path=artifact, handoff_sha256=digest,
     )
-    with sqlite3.connect(db_file) as db:
-        db.execute(
+    if pg_store:
+        pg_store.update_request(request_key, state="attachment_starting",
+                                child_conversation_id=child,
+                                creation_operation_id=created.get("operation_id"))
+    else:
+        with sqlite3.connect(db_file) as db:
+            db.execute(
             "UPDATE multi_parent_revival_requests SET state='attachment_starting',"
             "child_conversation_id=?,creation_operation_id=?,updated_at=? WHERE request_id=?",
             (child, created.get("operation_id"), time.time(), request_key),
@@ -362,8 +459,14 @@ def revive_from_handoff(
     )
     operation_id = str(attached.get("operation_id") or "").strip() or None
     state = str(attached.get("state") or "unknown")
-    with sqlite3.connect(db_file) as db:
-        db.execute(
+    if pg_store:
+        pg_store.update_lineage(child, operation_id, state)
+        pg_store.update_request(request_key, state=state,
+                                attachment_operation_id=operation_id)
+        pg_store.close()
+    else:
+        with sqlite3.connect(db_file) as db:
+            db.execute(
             "UPDATE conversation_lineage_multi_parent SET attachment_operation_id=?,"
             "attachment_state=?,updated_at=? WHERE child_conversation_id=?",
             (operation_id, state, time.time(), child),
