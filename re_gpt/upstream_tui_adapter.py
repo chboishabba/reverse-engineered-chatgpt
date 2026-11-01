@@ -158,9 +158,51 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
     # Extend only event handling, because upstream ignores activity events.
     class ActivityChatTui(module.ChatTui):
         def __init__(self, *args, **kwargs):
+            self._prompt_history: list[str] = []
+            self._prompt_history_index: int | None = None
+            self._prompt_history_draft = ""
             super().__init__(*args, **kwargs)
             self.activity_log = []
             self.revisions = ConversationRevisionWatcher(interval=sync_interval)
+
+        def make_bindings(self):
+            bindings = super().make_bindings()
+
+            def prompt_input_active() -> bool:
+                return (not self.resume_visible
+                        and self.app.layout.current_control is self.input.control)
+
+            @bindings.add("up", filter=prompt_input_active, eager=True)
+            def prompt_history_up(_event: Any) -> None:
+                if not self._prompt_history:
+                    return
+                if self._prompt_history_index is None:
+                    self._prompt_history_draft = self.input.text
+                    self._prompt_history_index = len(self._prompt_history) - 1
+                else:
+                    self._prompt_history_index = max(0, self._prompt_history_index - 1)
+                self.input.text = self._prompt_history[self._prompt_history_index]
+
+            @bindings.add("down", filter=prompt_input_active, eager=True)
+            def prompt_history_down(_event: Any) -> None:
+                if self._prompt_history_index is None:
+                    return
+                if self._prompt_history_index >= len(self._prompt_history) - 1:
+                    self._prompt_history_index = None
+                    self.input.text = self._prompt_history_draft
+                    return
+                self._prompt_history_index += 1
+                self.input.text = self._prompt_history[self._prompt_history_index]
+
+            return bindings
+
+        def run_send(self, prompt: str, attachments: list[dict[str, Any]]) -> None:
+            if prompt.strip() and (not self._prompt_history or self._prompt_history[-1] != prompt):
+                self._prompt_history.append(prompt)
+                self._prompt_history = self._prompt_history[-100:]
+            self._prompt_history_index = None
+            self._prompt_history_draft = ""
+            return super().run_send(prompt, attachments)
 
         def resume_conversation(self, conversation_id):
             previous = self.conversation_id
