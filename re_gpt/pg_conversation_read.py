@@ -6,10 +6,20 @@ Network hydration is a separate operation. SLR remains semantic runtime owner.
 from __future__ import annotations
 
 import os
+from urllib.parse import urlparse
 
 
 class CanonicalHistoryUnavailable(RuntimeError):
     pass
+
+
+def _normalize_query(query: str) -> str:
+    value = query.strip()
+    if value.startswith(("https://chatgpt.com/c/", "https://www.chatgpt.com/c/")):
+        path = urlparse(value).path.rstrip("/")
+        if path.startswith("/c/") and path[3:]:
+            return path[3:]
+    return value
 
 
 def _connect():
@@ -35,6 +45,7 @@ def list_pg_conversations(*, query: str = "", limit: int = 100, offset: int = 0,
     """
     if not isinstance(query, str) or len(query) > 500:
         raise ValueError("invalid search text")
+    query = _normalize_query(query)
     if type(limit) is not int or not 1 <= limit <= 500:
         raise ValueError("invalid limit")
     if type(offset) is not int or not 0 <= offset <= 1_000_000:
@@ -71,6 +82,7 @@ def list_synced_roster(*, query="", limit=100, connect=None):
     """Picker projection combining hydrated corpus and roster-only identities."""
     if not isinstance(query, str) or len(query) > 500:
         raise ValueError("invalid query")
+    query = _normalize_query(query)
     if type(limit) is not int or not 1 <= limit <= 500:
         raise ValueError("invalid limit")
     conn = (connect or _connect)()

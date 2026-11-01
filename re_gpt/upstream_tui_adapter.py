@@ -46,21 +46,12 @@ class ReGptTuiCallbacks:
         self._roster_refresh_started = False
 
     def list_conversations(self) -> list[dict[str, Any]]:
-        # Remote catalog is a *non-authoritative* temporary picker source.
-        # Never translate malformed/empty pages into a misleading search miss.
-        # PG always answers immediately; network discovery never blocks the picker.
-        if not self._roster_refresh_started:
-            from threading import Thread
-            self._roster_refresh_started = True
-            def refresh():
-                try:
-                    roster_page(pages=3)
-                    hydrate_pending(limit=5)
-                except Exception:
-                    pass  # Diagnostic and retry belong in persisted PG roster state.
-                finally:
-                    self._roster_refresh_started = False
-            Thread(target=refresh, daemon=True, name="re-gpt-pg-roster-refresh").start()
+        # The picker loader already runs off-loop. Refresh the bounded roster
+        # before taking its snapshot so new threads are searchable immediately.
+        try:
+            roster_page(pages=3)
+        except Exception:
+            pass  # Existing PG rows remain readable during a transient outage.
         return list_synced_roster(limit=500)
 
     def load_conversation(self, conversation_id: str) -> dict[str, Any]:

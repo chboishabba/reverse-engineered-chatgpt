@@ -33,6 +33,15 @@ def test_conversation_preserves_message_text_and_provenance():
     assert cursor.execute.call_args.args[1] == ("conversation:abc", 10000)
 
 
+def test_catalog_normalizes_chatgpt_conversation_url():
+    conn, cursor = fake([("abc", "Yang Mills Formalisation Audit", "2026-11-01", 4)])
+    result = list_pg_conversations(
+        query="https://chatgpt.com/c/abc?src=history_search", connect=lambda: conn)
+    assert result[0]["id"] == "abc"
+    params = cursor.execute.call_args.args[1]
+    assert params[:4] == ("conversation:%", "abc", "%abc%", "%abc%")
+
+
 def test_rejects_invalid_pagination_without_connecting():
     import pytest
     with pytest.raises(ValueError):
