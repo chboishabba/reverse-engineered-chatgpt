@@ -11,6 +11,7 @@ import asyncio
 import importlib.util
 from pathlib import Path
 from typing import Any
+from prompt_toolkit.filters import Condition
 
 from .conversation_sync import ConversationRevisionWatcher
 from .pg_conversation_read import list_synced_roster, read_pg_conversation
@@ -172,7 +173,9 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
                 return (not self.resume_visible
                         and self.app.layout.current_control is self.input.control)
 
-            @bindings.add("up", filter=prompt_input_active, eager=True)
+            prompt_input_filter = Condition(prompt_input_active)
+
+            @bindings.add("up", filter=prompt_input_filter, eager=True)
             def prompt_history_up(_event: Any) -> None:
                 if not self._prompt_history:
                     return
@@ -183,7 +186,7 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
                     self._prompt_history_index = max(0, self._prompt_history_index - 1)
                 self.input.text = self._prompt_history[self._prompt_history_index]
 
-            @bindings.add("down", filter=prompt_input_active, eager=True)
+            @bindings.add("down", filter=prompt_input_filter, eager=True)
             def prompt_history_down(_event: Any) -> None:
                 if self._prompt_history_index is None:
                     return
