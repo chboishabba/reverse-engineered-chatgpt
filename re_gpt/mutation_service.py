@@ -115,11 +115,13 @@ class MutationService:
         db_path: Path | str = DEFAULT_DB_PATH,
         session_token: str | None = None,
         model: str | None = None,
+        reasoning_effort: str = "medium",
         export_json: bool = False,
     ) -> None:
         self.db_path = Path(db_path).expanduser()
         self.session_token = session_token
         self.model = model
+        self.reasoning_effort = reasoning_effort
         self.export_json = export_json
 
     def operation_status(self, operation_id: str) -> dict[str, Any] | None:
@@ -522,6 +524,7 @@ class MutationService:
                 browser_mode=browser_mode,
                 cdp_endpoint=cdp_endpoint,
                 browser_timeout=browser_timeout,
+                reasoning_effort=self.reasoning_effort,
             )
         except ExplicitAsyncWriteRejection as exc:
             state = (
@@ -856,6 +859,7 @@ class MutationService:
                             progress_callback(event) if progress_callback is not None else None,
                         ),
                         allow_browser_bootstrap=False,
+                        reasoning_effort=self.reasoning_effort,
                     )
                 except ExplicitAsyncWriteRejection as exc:
                     if not allow_dom_fallback:

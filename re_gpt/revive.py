@@ -151,6 +151,7 @@ def revive_thread(
     db_path: Path | str = DEFAULT_DB_PATH,
     session_token: str | None = None,
     model: str | None = None,
+    reasoning_effort: str = "medium",
 ) -> dict[str, Any]:
     """Revive an existing long-running thread into a fresh thread with context attached."""
     service = MutationService(
@@ -172,6 +173,7 @@ def revive_thread(
         cdp_endpoint=cdp_endpoint,
         browser_timeout=browser_timeout,
         follow=False,
+        reasoning_effort=reasoning_effort,
     )
     new_cid = str(init_res.get("conversation_id") or init_res.get("resolved_thread_id") or "").strip()
     if not new_cid:

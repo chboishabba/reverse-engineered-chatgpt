@@ -323,6 +323,7 @@ def revive_from_handoff(
     model: str | None = None,
     follow: bool = True,
     follow_timeout: float = 180.0,
+    reasoning_effort: str = "medium",
 ) -> dict[str, Any]:
     """Create one fresh child and attach one explicit handoff artifact exactly once."""
     if isinstance(parent_thread_ids, (str, bytes)) or not isinstance(parent_thread_ids, Sequence):
@@ -404,7 +405,8 @@ def revive_from_handoff(
                 "VALUES (?,?, 'creation_starting', ?, ?)",
                 (request_key, fingerprint, now, now),
             )
-    service = MutationService(db_path=db_path, session_token=session_token, model=model)
+    service = MutationService(db_path=db_path, session_token=session_token, model=model,
+                              reasoning_effort=reasoning_effort)
     parent_list = ", ".join(f"\`{item}\`" for item in parents)
     created = service.new_conversation(
         f"Governed multi-parent revival. Canonical parents: {parent_list}. "

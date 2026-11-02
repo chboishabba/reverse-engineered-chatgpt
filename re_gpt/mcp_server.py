@@ -150,8 +150,23 @@ def compact_operation_payload(result: Any) -> Any:
     return result
 
 
-def _service(db_path: str | None = None) -> MutationService:
-    return MutationService(db_path=Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH)
+REASONING_EFFORTS = frozenset({"low", "medium", "high"})
+
+
+def _controls(model: str | None, reasoning_effort: str) -> tuple[str, str]:
+    selected_model = (model or get_default_model() or "gpt-6-thinking").strip()
+    if not selected_model:
+        raise ValueError("model must be non-empty")
+    if reasoning_effort not in REASONING_EFFORTS:
+        raise ValueError("reasoning_effort must be one of: low, medium, high")
+    return selected_model, reasoning_effort
+
+
+def _service(db_path: str | None = None, *, model: str | None = None,
+             reasoning_effort: str = "medium") -> MutationService:
+    selected_model, selected_effort = _controls(model, reasoning_effort)
+    return MutationService(db_path=Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH,
+                           model=selected_model, reasoning_effort=selected_effort)
 
 def _normalized_timestamp(value: Any) -> float:
     """Normalize legacy numeric or ISO-8601 SQLite timestamps to epoch seconds."""
@@ -282,6 +297,8 @@ def chatgpt_continue(
     auto_latex_bridge: bool = False,
     pnf_mode: bool = False,
     reconcile_attempts: int = 3,
+    model: str | None = None,
+    reasoning_effort: str = "medium",
 ) -> dict[str, Any]:
     """Continue via direct async CFFI; DOM fallback is explicit diagnostic opt-in only."""
     resolved_prompt = expand_worker_prompt(prompt, preset=preset)
@@ -297,7 +314,10 @@ def chatgpt_continue(
         except Exception:
             pass
 
-    result = _service(db_path).continue_thread(
+    selected_model, selected_effort = _controls(model, reasoning_effort)
+    service = (_service(db_path) if model is None and reasoning_effort == "medium"
+               else _service(db_path, model=selected_model, reasoning_effort=selected_effort))
+    result = service.continue_thread(
         conversation_id,
         resolved_prompt,
         attachments=attachments or (),
@@ -307,15 +327,21 @@ def chatgpt_continue(
         reconcile_attempts=reconcile_attempts,
     )
     compacted = compact_operation_payload(result)
+    compacted["controls"] = {"model": selected_model, "reasoning_effort": selected_effort}
     if bridge_payload is not None:
         compacted["latex_bridge"] = bridge_payload
     return compacted
 
 
 @mcp.tool()
-def chatgpt_new(prompt: str, follow: bool = False, db_path: str | None = None) -> dict[str, Any]:
+def chatgpt_new(prompt: str, follow: bool = False, db_path: str | None = None,
+                model: str | None = None, reasoning_effort: str = "medium") -> dict[str, Any]:
     """Create a new conversation through the direct async API and return its assigned conversation ID."""
-    return _service(db_path).new_conversation(prompt, follow=follow)
+    selected_model, selected_effort = _controls(model, reasoning_effort)
+    service = (_service(db_path) if model is None and reasoning_effort == "medium"
+               else _service(db_path, model=selected_model, reasoning_effort=selected_effort))
+    result = service.new_conversation(prompt, follow=follow)
+    return dict(result) | {"controls": {"model": selected_model, "reasoning_effort": selected_effort}}
 
 
 @mcp.tool()
@@ -704,6 +730,8 @@ def chatgpt_revive_multi(
     db_path: str | None = None,
     follow: bool = True,
     follow_timeout: float = 180.0,
+    model: str | None = None,
+    reasoning_effort: str = "medium",
 ) -> dict[str, Any]:
     """Create one fresh child from an explicit candidate handoff and 2..10 canonical parents."""
     from .multi_parent_revival import revive_from_handoff
@@ -716,6 +744,8 @@ def chatgpt_revive_multi(
         db_path=Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH,
         follow=follow,
         follow_timeout=follow_timeout,
+        model=model,
+        reasoning_effort=reasoning_effort,
     )
 
 

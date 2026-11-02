@@ -50,6 +50,13 @@ Exact-read adapter cooldown and latency telemetry live in PostgreSQL
 available through an explicit legacy test path. Reset is explicit and governed;
 it is never performed as part of a read or retry.
 
+Governed mutation controls accept an explicit model slug and
+`reasoning_effort` of `low`, `medium`, or `high`. The default model is the
+configured current GPT-6-family slug, falling back to `gpt-6-thinking`; the
+default effort is `medium`. These values are forwarded in the direct CFFI
+payload and echoed in the operation receipt. The endpoint accepts the field,
+but model availability and actual reasoning behavior remain backend-controlled.
+
 ## What works
 
 The API-first product surface includes:

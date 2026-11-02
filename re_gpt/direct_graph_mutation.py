@@ -217,6 +217,7 @@ async def probe_direct_graph_mutation_once(
     browser_timeout: int = 30,
     allow_browser_bootstrap: bool = True,
     client_factory: Callable[..., Any] = AsyncChatGPT,
+    reasoning_effort: str = "medium",
 ) -> DirectGraphMutationResult:
     if operation not in GRAPH_MUTATIONS:
         raise ValueError(f"unsupported graph mutation: {operation}")
@@ -397,6 +398,7 @@ async def probe_direct_graph_mutation_once(
                 attachment_metadata=staged_metadata,
                 snapshot=snapshot if snapshot is not None and snapshot.has_fresh_sentinel() else None,
             )
+            payload["reasoning_effort"] = reasoning_effort
 
             use_replayed_sentinel = snapshot is not None and snapshot.has_fresh_sentinel()
             seq += 1
