@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from .adapter_health import AdapterHealthStore
+from .pg_adapter_health import PostgresAdapterHealthStore
 from .async_bridge import run_async_sync
 from .async_chatgpt import AsyncChatGPT
 from .browser_observer import fetch_conversation_same_origin
@@ -271,9 +272,10 @@ def fetch_exact_graph(
     ))
     resolved_health_db = health_db_path
     if resolved_health_db is None and not injected_fetchers:
-        resolved_health_db = DEFAULT_DB_PATH
-
-    health = AdapterHealthStore(resolved_health_db, now=health_now) if resolved_health_db is not None else None
+        health = PostgresAdapterHealthStore(now=health_now)
+    else:
+        # Explicit SQLite is retained only for isolated legacy-test callers.
+        health = AdapterHealthStore(resolved_health_db, now=health_now) if resolved_health_db is not None else None
     try:
         effective_order: Sequence[str] = adapter_order
         health_skipped: tuple[str, ...] = ()

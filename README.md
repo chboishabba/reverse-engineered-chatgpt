@@ -37,6 +37,19 @@ ProtocolDrift ---------> redacted structural compatibility
 
 The exactly-once rule is fundamental: once a conversation POST may have been dispatched, an uncertain outcome is **read/reconciled, never automatically resent**.
 
+Resume and operational health
+
+The TUI resume picker reads titles and IDs from the ITIR PostgreSQL projection.
+An explicit bounded roster refresh may add remote title-only identities to
+`ops.chat_hydration_roster`; opening the picker does not perform an unbounded
+remote sync. Selecting an ID reads PostgreSQL first and performs one exact
+headless graph hydration only when stored content is unavailable.
+
+Exact-read adapter cooldown and latency telemetry live in PostgreSQL
+`ops.adapter_health` and `ops.adapter_latency_samples`. SQLite health is only
+available through an explicit legacy test path. Reset is explicit and governed;
+it is never performed as part of a read or retry.
+
 ## What works
 
 The API-first product surface includes:

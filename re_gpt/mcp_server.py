@@ -15,6 +15,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from .adapter_health import AdapterHealthStore
+from .pg_adapter_health import PostgresAdapterHealthStore
 from .async_bridge import run_async_sync
 from .async_chatgpt import AsyncChatGPT
 from .browser_session_replay import load_browser_session_snapshot
@@ -426,9 +427,25 @@ def chatgpt_protocol_compare(baseline: dict[str, Any], candidate: dict[str, Any]
 @mcp.tool()
 def chatgpt_adapter_health(db_path: str | None = None, sample_limit: int = 200) -> dict[str, Any]:
     """Return persistent exact-read adapter health, cooldown and empirical latency telemetry."""
-    path = Path(db_path).expanduser() if db_path else DEFAULT_DB_PATH
-    with AdapterHealthStore(path) as store:
+    store_type = AdapterHealthStore if db_path else PostgresAdapterHealthStore
+    kwargs = {"db_path": Path(db_path).expanduser()} if db_path else {}
+    with store_type(**kwargs) if db_path else store_type() as store:
         return store.report(sample_limit=max(1, min(int(sample_limit), 2000)))
+
+
+@mcp.tool()
+def chatgpt_adapter_health_reset(adapter: str | None = None, db_path: str | None = None) -> dict[str, Any]:
+    """Explicitly clear read-adapter health telemetry; never called implicitly."""
+    if adapter is not None and (not isinstance(adapter, str) or not adapter.strip()):
+        raise ValueError("adapter must be a non-empty string")
+    if db_path:
+        with AdapterHealthStore(Path(db_path).expanduser()) as store:
+            store.reset(adapter.strip() if adapter else None)
+    else:
+        with PostgresAdapterHealthStore() as store:
+            store.reset(adapter.strip() if adapter else None)
+    return {"reset": True, "adapter": adapter.strip() if adapter else None,
+            "store": "sqlite_legacy" if db_path else "postgresql"}
 
 
 @mcp.tool()
