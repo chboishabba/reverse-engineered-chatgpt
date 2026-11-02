@@ -5,6 +5,41 @@ Produces display hints only. Never mutates canonical conversation content.
 from dataclasses import dataclass
 
 
+_COMMAND_WORDS = {
+    r"\alpha": "alpha", r"\beta": "beta", r"\gamma": "gamma",
+    r"\lambda": "lambda", r"\infty": "infinity", r"\le": "less than or equal to",
+    r"\ge": "greater than or equal to", r"\cdot": " times ",
+    r"\times": " times ", r"\pm": " plus or minus ", r"\sum": "sum",
+    r"\prod": "product", r"\sqrt": "square root of ",
+}
+
+
+def render_math_accessibly(source: str) -> str:
+    """Return a deterministic spoken-style rendering without changing source."""
+    body = source.strip()
+    for delimiter in ("$$", r"\[", r"\]", r"\(", r"\)", "$"):
+        body = body.replace(delimiter, "")
+    body = body.replace(r"\frac", " fraction ")
+    body = body.replace("{", " of ").replace("}", "")
+    for command, word in _COMMAND_WORDS.items():
+        body = body.replace(command, word)
+    body = body.replace("^", " to the power of ").replace("_", " subscript ")
+    body = " ".join(body.split())
+    return body or "empty mathematical expression"
+
+
+def render_terminal_accessibly(source: str) -> str:
+    """Render common math as accessible terminal text while preserving source elsewhere."""
+    rendered = []
+    for part in split_math(source):
+        if part.kind == "math":
+            prefix = "display math: " if part.display else "math: "
+            rendered.append(prefix + render_math_accessibly(part.source))
+        else:
+            rendered.append(part.source)
+    return "".join(rendered)
+
+
 @dataclass(frozen=True)
 class Segment:
     kind: str

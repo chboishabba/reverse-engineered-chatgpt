@@ -12,12 +12,12 @@ import argparse
 import json
 import sys
 
-from .terminal_projection import split_math, recover_source
+from .terminal_projection import split_math, recover_source, render_terminal_accessibly
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--format", choices=("source", "segments", "math-source"),
+    parser.add_argument("--format", choices=("source", "accessible", "segments", "math-source"),
                         default="source")
     args = parser.parse_args(argv)
     source = sys.stdin.read()
@@ -26,6 +26,8 @@ def main(argv=None):
         raise RuntimeError("terminal projection violated exact source preservation")
     if args.format == "source":
         sys.stdout.write(source)
+    elif args.format == "accessible":
+        sys.stdout.write(render_terminal_accessibly(source))
     elif args.format == "math-source":
         for p in parts:
             if p.kind == "math":

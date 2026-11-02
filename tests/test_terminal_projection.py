@@ -1,7 +1,7 @@
 """Offline tests for source-only terminal mathematical projection."""
 import unittest
 
-from re_gpt.terminal_projection import recover_source, split_math
+from re_gpt.terminal_projection import recover_source, render_math_accessibly, render_terminal_accessibly, split_math
 
 
 class TerminalProjectionTests(unittest.TestCase):
@@ -30,6 +30,13 @@ class TerminalProjectionTests(unittest.TestCase):
         source = r"Price \\$5, equation $x$, unchanged"
         parts = split_math(source)
         self.assertEqual(recover_source(parts), source)
+
+    def test_accessible_render_preserves_non_math_and_labels_display(self):
+        source = "Before $x^2$ after.\n\n$$\\frac{a}{b}$$"
+        rendered = render_terminal_accessibly(source)
+        self.assertIn("Before math: x to the power of 2 after.", rendered)
+        self.assertIn("display math: fraction of a of b", rendered)
+        self.assertEqual(render_math_accessibly(r"\(\alpha \ge 0\)"), "alpha greater than or equal to 0")
 
 
 if __name__ == "__main__":

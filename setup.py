@@ -13,7 +13,7 @@ setup(
     },
     packages=find_packages(),
     py_modules=["chatgpt_dom_relay"],
-    install_requires=["curl_cffi==0.14.0", "websockets==16.0"],
+    install_requires=["curl_cffi==0.14.0", "websockets==16.0", "prompt_toolkit==3.0.52"],
     extras_require={
         "browser": ["playwright>=1.47"],
         "mcp": ["mcp>=1.0"],

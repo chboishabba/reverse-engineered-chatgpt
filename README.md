@@ -149,6 +149,19 @@ python -m re_gpt.entrypoint \
   --follow
 ```
 
+### Accessible terminal math projection
+
+The read-only terminal projection preserves the original source and provides
+deterministic spoken-style labels for common inline and display math. Code
+fences and incomplete formulas remain source-only.
+
+```bash
+python -m re_gpt.terminal_view --format accessible < transcript.md
+```
+
+This is a display projection only. It is not a second transport and does not
+promote a mathematical expression to a proof or formal claim.
+
 ### Branch from an exact node
 
 ```bash
