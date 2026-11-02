@@ -20,6 +20,7 @@ from .terminal_activity import activity_from_progress
 from .tui_state_server import TuiStateServer
 from .mutation_service import MutationService
 from .storage import extract_ordered_messages
+from .terminal_projection import render_terminal_accessibly
 
 
 def project_chat(conversation_id: str, graph: dict[str, Any]) -> dict[str, Any]:
@@ -206,6 +207,15 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
             self._prompt_history_index = None
             self._prompt_history_draft = ""
             return super().run_send(prompt, attachments)
+
+        def render_message(self, role: str, text: str, width: int,
+                           separated: bool, active: bool) -> str:
+            # Rich Markdown does not render TeX. Project assistant/tool math to
+            # deterministic spoken terminal text while leaving user prompts
+            # source-preserving for copy/paste and resend.
+            if role in {"assistant", "tool"}:
+                text = render_terminal_accessibly(text)
+            return super().render_message(role, text, width, separated, active)
 
         def resume_conversation(self, conversation_id):
             previous = self.conversation_id
