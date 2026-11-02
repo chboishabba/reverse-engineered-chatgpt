@@ -1,5 +1,6 @@
 """Contract tests for tritao TUI callback adaptation; offline and no DOM."""
 import unittest
+from threading import Event
 from unittest.mock import patch
 
 from re_gpt.upstream_tui_adapter import ReGptTuiCallbacks, project_chat
@@ -37,6 +38,19 @@ class TestUpstreamTuiAdapter(unittest.TestCase):
             callbacks.list_conversations()
             callbacks.list_conversations()
         refresh.assert_called_once_with(pages=3)
+
+    def test_background_roster_refresh_is_deduplicated_and_returns_pg_rows(self):
+        callbacks = ReGptTuiCallbacks()
+        done = Event()
+        rows = [{"id": "remote-1", "title": "Remote"}]
+        with patch("re_gpt.upstream_tui_adapter.roster_page") as refresh, \
+             patch("re_gpt.upstream_tui_adapter.list_synced_roster", return_value=rows):
+            received = []
+            self.assertTrue(callbacks.refresh_roster_async(lambda items, error: (received.append((items, error)), done.set())))
+            self.assertFalse(callbacks.refresh_roster_async())
+            self.assertTrue(done.wait(1.0))
+        refresh.assert_called_once_with(pages=3)
+        self.assertEqual(received, [(rows, None)])
 
     def test_completed_mutation_emits_final_and_reads_canonical(self):
         callbacks = ReGptTuiCallbacks()

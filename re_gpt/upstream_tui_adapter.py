@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import importlib.util
 import time
+from threading import Lock, Thread
 from pathlib import Path
 from typing import Any
 from prompt_toolkit.filters import Condition
@@ -49,20 +50,57 @@ class ReGptTuiCallbacks:
         self._roster_refresh_started = False
         self._last_roster_refresh = 0.0
         self.roster_refresh_interval = 300.0
+        self._roster_refresh_lock = Lock()
+        self._roster_refresh_inflight = False
 
-    def list_conversations(self) -> list[dict[str, Any]]:
+    def list_conversations(self, *, refresh: bool = True) -> list[dict[str, Any]]:
         # The picker loader already runs off-loop. Refresh the bounded roster
         # occasionally, not on every panel open: repeated remote roster pulls
         # can trigger ChatGPT rate limits. PostgreSQL remains the picker source
         # between refreshes, and a failed refresh never hides existing rows.
         now = time.monotonic()
-        if now - self._last_roster_refresh >= self.roster_refresh_interval:
+        if refresh and now - self._last_roster_refresh >= self.roster_refresh_interval:
             try:
                 roster_page(pages=3)
                 self._last_roster_refresh = now
             except Exception:
                 pass  # Existing PG rows remain readable during a transient outage.
         return list_synced_roster(limit=500)
+
+    def refresh_roster_async(self, on_complete=None, *, force: bool = False) -> bool:
+        """Run one bounded title-only roster sync and return immediately.
+
+        The callback receives the refreshed PG picker rows. A lock prevents
+        overlapping picker opens or explicit refreshes from issuing duplicate
+        remote catalog requests.
+        """
+        now = time.monotonic()
+        with self._roster_refresh_lock:
+            if self._roster_refresh_inflight:
+                return False
+            if not force and now - self._last_roster_refresh < self.roster_refresh_interval:
+                return False
+            self._roster_refresh_inflight = True
+
+        def run():
+            try:
+                try:
+                    roster_page(pages=3)
+                    self._last_roster_refresh = time.monotonic()
+                except Exception:
+                    pass
+                rows = list_synced_roster(limit=500)
+                if on_complete is not None:
+                    on_complete(rows, None)
+            except Exception as exc:
+                if on_complete is not None:
+                    on_complete(None, exc)
+            finally:
+                with self._roster_refresh_lock:
+                    self._roster_refresh_inflight = False
+
+        Thread(target=run, daemon=True, name="re-gpt-roster-refresh").start()
+        return True
 
     def load_conversation(self, conversation_id: str) -> dict[str, Any]:
         """Synchronize the selected graph before serving its PG projection."""
@@ -273,7 +311,31 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
                     self.append_system("Observed activity (latest 30):\n" +
                         "\n".join(json.dumps(item, ensure_ascii=False, default=str) for item in selected))
                 return
+            if command.strip() == "/refresh":
+                self.refresh_resume_roster()
+                return
             return super().handle_command(command)
+
+        def refresh_resume_roster(self):
+            """Explicitly refresh the open PG-backed picker without blocking UI."""
+            if not self.resume_visible:
+                return False
+
+            def merge(items, error):
+                if error is None and items and self.resume_visible:
+                    self.resume_items = items
+                    self.filter_resume()
+                    self.status = f"{len(items)} conversations (PG)"
+                    self.app.invalidate()
+
+            started = self.refresh_roster_async(
+                lambda rows, error: self.event_loop.call_soon_threadsafe(merge, rows, error),
+                force=True,
+            )
+            if started:
+                self.status = "Refreshing conversation titles…"
+                self.app.invalidate()
+            return started
 
         def open_resume(self):
             """Load picker data off-loop, but mutate prompt_toolkit state on-loop.
@@ -307,15 +369,25 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
                     self.status = f"Conversation list failed: {error}"
                 self.app.invalidate()
 
+            def merge_items(items, error):
+                if not self.resume_visible or error is not None or not items:
+                    return
+                self.resume_items = items
+                self.filter_resume()
+                self.status = f"{len(items)} conversations (PG)"
+                self.app.invalidate()
+
             def load_items():
                 try:
-                    items = self.list_conversations()
+                    items = self.list_conversations(refresh=False)
                 except Exception as exc:
                     self.event_loop.call_soon_threadsafe(apply_items, None, exc)
                 else:
                     self.event_loop.call_soon_threadsafe(apply_items, items, None)
+                    self.refresh_roster_async(
+                        lambda rows, error: self.event_loop.call_soon_threadsafe(
+                            merge_items, rows, error))
 
-            from threading import Thread
             Thread(target=load_items, daemon=True, name="re-gpt-resume-loader").start()
 
         def run_send(self, prompt, attachments):
