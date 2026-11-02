@@ -152,8 +152,9 @@ python -m re_gpt.entrypoint \
 ### Accessible terminal math projection
 
 The read-only terminal projection preserves the original source and provides
-deterministic spoken-style labels for common inline and display math. Code
-fences and incomplete formulas remain source-only.
+deterministic Unicode pretty-printing for common inline and display math
+(for example `a ⁄ b`, `x²`, `x₁`, and `α`). Code fences, incomplete formulas,
+and unsupported TeX remain source-only.
 
 ```bash
 python -m re_gpt.terminal_view --format accessible < transcript.md

@@ -5,27 +5,107 @@ Produces display hints only. Never mutates canonical conversation content.
 from dataclasses import dataclass
 
 
-_COMMAND_WORDS = {
-    r"\alpha": "alpha", r"\beta": "beta", r"\gamma": "gamma",
-    r"\lambda": "lambda", r"\infty": "infinity", r"\le": "less than or equal to",
-    r"\ge": "greater than or equal to", r"\cdot": " times ",
-    r"\times": " times ", r"\pm": " plus or minus ", r"\sum": "sum",
-    r"\prod": "product", r"\sqrt": "square root of ",
+_COMMAND_SYMBOLS = {
+    "alpha": "α", "beta": "β", "gamma": "γ", "delta": "δ",
+    "epsilon": "ε", "theta": "θ", "lambda": "λ", "mu": "μ",
+    "pi": "π", "sigma": "σ", "phi": "φ", "omega": "ω",
+    "Gamma": "Γ", "Delta": "Δ", "Theta": "Θ", "Lambda": "Λ",
+    "Pi": "Π", "Sigma": "Σ", "Phi": "Φ", "Omega": "Ω",
+    "infty": "∞", "le": "≤", "leq": "≤", "ge": "≥", "geq": "≥",
+    "ne": "≠", "approx": "≈", "equiv": "≡", "cdot": "·",
+    "times": "×", "pm": "±", "rightarrow": "→", "to": "→",
+    "sum": "∑", "prod": "∏",
 }
+
+_SUPERSCRIPTS = str.maketrans("0123456789+-=()nilmst", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱˡᵐˢᵗ")
+_SUBSCRIPTS = str.maketrans("0123456789+-=aehijklmnoprstuvx", "₀₁₂₃₄₅₆₇₈₉₊₋₌ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ")
+
+
+class _UnsafeMath(ValueError):
+    """The small pretty-printer does not claim to understand this expression."""
+
+
+def _group(source: str, index: int) -> tuple[str, int]:
+    if index >= len(source) or source[index] != "{":
+        raise _UnsafeMath
+    value, end = _parse_sequence(source, index + 1, "}")
+    return value, end + 1
+
+
+def _atom(source: str, index: int) -> tuple[str, int]:
+    if index >= len(source):
+        raise _UnsafeMath
+    if source[index] == "{":
+        return _group(source, index)
+    if source[index] == "\\":
+        return _command(source, index)
+    if source[index] in "{}^_":
+        raise _UnsafeMath
+    return source[index], index + 1
+
+
+def _command(source: str, index: int) -> tuple[str, int]:
+    end = index + 1
+    while end < len(source) and source[end].isalpha():
+        end += 1
+    name = source[index + 1:end]
+    if name == "frac":
+        numerator, end = _group(source, end)
+        denominator, end = _group(source, end)
+        return f"{numerator} ⁄ {denominator}", end
+    if name == "sqrt":
+        radicand, end = _group(source, end)
+        return f"√{radicand}", end
+    if name in _COMMAND_SYMBOLS:
+        return _COMMAND_SYMBOLS[name], end
+    raise _UnsafeMath
+
+
+def _parse_sequence(source: str, index: int = 0, closing: str | None = None) -> tuple[str, int]:
+    output = []
+    while index < len(source):
+        char = source[index]
+        if closing and char == closing:
+            return "".join(output), index
+        if char == "\\":
+            value, index = _command(source, index)
+            output.append(value)
+            continue
+        if char in "^_":
+            value, index = _atom(source, index + 1)
+            value = value.strip()
+            if not value or any(c.isspace() for c in value):
+                raise _UnsafeMath
+            translated = value.translate(_SUPERSCRIPTS if char == "^" else _SUBSCRIPTS)
+            if translated == value and len(value) != 1:
+                raise _UnsafeMath
+            output.append(translated)
+            continue
+        if char in "{}":
+            raise _UnsafeMath
+        output.append(char)
+        index += 1
+    if closing:
+        raise _UnsafeMath
+    return "".join(output), index
 
 
 def render_math_accessibly(source: str) -> str:
-    """Return a deterministic spoken-style rendering without changing source."""
+    """Return a deterministic Unicode rendering, or the source on uncertainty."""
     body = source.strip()
-    for delimiter in ("$$", r"\[", r"\]", r"\(", r"\)", "$"):
-        body = body.replace(delimiter, "")
-    body = body.replace(r"\frac", " fraction ")
-    body = body.replace("{", " of ").replace("}", "")
-    for command, word in _COMMAND_WORDS.items():
-        body = body.replace(command, word)
-    body = body.replace("^", " to the power of ").replace("_", " subscript ")
-    body = " ".join(body.split())
-    return body or "empty mathematical expression"
+    for opener, closer in (("$$", "$$"), (r"\[", r"\]"), (r"\(", r"\)"), ("$", "$")):
+        if body.startswith(opener) and body.endswith(closer):
+            body = body[len(opener):-len(closer)]
+            break
+    if not body:
+        return "empty mathematical expression"
+    try:
+        rendered, end = _parse_sequence(body)
+        if end != len(body):
+            raise _UnsafeMath
+    except _UnsafeMath:
+        return body
+    return " ".join(rendered.split()) or "empty mathematical expression"
 
 
 def render_terminal_accessibly(source: str) -> str:

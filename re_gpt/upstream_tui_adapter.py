@@ -211,7 +211,7 @@ def load_upstream_tui(filename: Path, *, control_socket: Path | None = None,
         def render_message(self, role: str, text: str, width: int,
                            separated: bool, active: bool) -> str:
             # Rich Markdown does not render TeX. Project assistant/tool math to
-            # deterministic spoken terminal text while leaving user prompts
+            # deterministic Unicode terminal text while leaving user prompts
             # source-preserving for copy/paste and resend.
             if role in {"assistant", "tool"}:
                 text = render_terminal_accessibly(text)

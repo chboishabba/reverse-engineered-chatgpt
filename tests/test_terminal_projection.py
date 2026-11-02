@@ -34,9 +34,18 @@ class TerminalProjectionTests(unittest.TestCase):
     def test_accessible_render_preserves_non_math_and_labels_display(self):
         source = "Before $x^2$ after.\n\n$$\\frac{a}{b}$$"
         rendered = render_terminal_accessibly(source)
-        self.assertIn("Before math: x to the power of 2 after.", rendered)
-        self.assertIn("display math: fraction of a of b", rendered)
-        self.assertEqual(render_math_accessibly(r"\(\alpha \ge 0\)"), "alpha greater than or equal to 0")
+        self.assertIn("Before math: x² after.", rendered)
+        self.assertIn("display math: a ⁄ b", rendered)
+        self.assertEqual(render_math_accessibly(r"\(\alpha \ge 0\)"), "α ≥ 0")
+
+    def test_unicode_pretty_printing_handles_common_forms(self):
+        self.assertEqual(render_math_accessibly(r"\frac{\alpha^2}{x_1}"), "α² ⁄ x₁")
+        self.assertEqual(render_math_accessibly(r"\sqrt{x^2 + y^2}"), "√x² + y²")
+
+    def test_unsafe_math_is_source_preserving(self):
+        source = r"\left\langle x \middle| y \right\rangle"
+        self.assertEqual(render_math_accessibly(source), source)
+        self.assertEqual(render_math_accessibly(r"x^{n+1"), r"x^{n+1")
 
 
 if __name__ == "__main__":
