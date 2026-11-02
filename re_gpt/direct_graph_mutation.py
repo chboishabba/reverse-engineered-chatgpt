@@ -227,18 +227,23 @@ async def probe_direct_graph_mutation_once(
     if operation in {"new_conversation", "regenerate"} and local_attachments:
         raise ValueError(f"attachments are not supported for {operation}; attach on a subsequent branch/continue")
 
-    token = session_token
-    if token is None:
-        try:
-            token = get_session_token()
-        except Exception:
-            token = None
     default_model = model or get_default_model() or "gpt-4"
     agent = user_agent or get_default_user_agent()
 
     snapshot = browser_session
     if snapshot is None and (profile_dir is not None or client_factory is AsyncChatGPT):
         snapshot = load_browser_session_snapshot(profile_dir=profile_dir)
+    # A persisted browser snapshot is the canonical owned session for the
+    # direct transport.  Do not let a legacy config.ini/.chatgpt_session value
+    # override it: those files may contain a stale placeholder token while the
+    # snapshot has valid CFFI cookies and access credentials.  Only consult the
+    # legacy token path when no replayable snapshot is available.
+    token = session_token
+    if token is None and snapshot is None:
+        try:
+            token = get_session_token()
+        except Exception:
+            token = None
     if snapshot is not None and not snapshot.has_fresh_sentinel():
         try:
             refreshed = await refresh_browser_session_sentinel_async(
