@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib.util
+import time
 from pathlib import Path
 from typing import Any
 from prompt_toolkit.filters import Condition
@@ -46,14 +47,21 @@ class ReGptTuiCallbacks:
     def __init__(self, *, model: str | None = None) -> None:
         self.service = MutationService(model=model)
         self._roster_refresh_started = False
+        self._last_roster_refresh = 0.0
+        self.roster_refresh_interval = 300.0
 
     def list_conversations(self) -> list[dict[str, Any]]:
         # The picker loader already runs off-loop. Refresh the bounded roster
-        # before taking its snapshot so new threads are searchable immediately.
-        try:
-            roster_page(pages=3)
-        except Exception:
-            pass  # Existing PG rows remain readable during a transient outage.
+        # occasionally, not on every panel open: repeated remote roster pulls
+        # can trigger ChatGPT rate limits. PostgreSQL remains the picker source
+        # between refreshes, and a failed refresh never hides existing rows.
+        now = time.monotonic()
+        if now - self._last_roster_refresh >= self.roster_refresh_interval:
+            try:
+                roster_page(pages=3)
+                self._last_roster_refresh = now
+            except Exception:
+                pass  # Existing PG rows remain readable during a transient outage.
         return list_synced_roster(limit=500)
 
     def load_conversation(self, conversation_id: str) -> dict[str, Any]:

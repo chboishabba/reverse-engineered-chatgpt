@@ -30,6 +30,14 @@ class TestUpstreamTuiAdapter(unittest.TestCase):
                 callbacks.send_prompt("cid", "hello", [], lambda _: None, lambda _: None)
             self.assertEqual(mutation.call_count, 1)
 
+    def test_resume_roster_refresh_is_rate_limited(self):
+        callbacks = ReGptTuiCallbacks()
+        with patch("re_gpt.upstream_tui_adapter.roster_page") as refresh, \
+             patch("re_gpt.upstream_tui_adapter.list_synced_roster", return_value=[]):
+            callbacks.list_conversations()
+            callbacks.list_conversations()
+        refresh.assert_called_once_with(pages=3)
+
     def test_completed_mutation_emits_final_and_reads_canonical(self):
         callbacks = ReGptTuiCallbacks()
         events = []
