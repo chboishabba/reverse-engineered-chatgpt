@@ -537,12 +537,6 @@ async def probe_async_continue_once(
         raise ValueError("prompt is empty")
     local_attachments = _coerce_local_attachments(attachments)
 
-    token = session_token
-    if token is None:
-        try:
-            token = get_session_token()
-        except Exception:
-            token = None
     default_model = model or get_default_model() or "gpt-4"
     agent = user_agent or get_default_user_agent()
 
@@ -554,6 +548,16 @@ async def probe_async_continue_once(
     snapshot = browser_session
     if snapshot is None and (profile_dir is not None or client_factory is AsyncChatGPT):
         snapshot = load_browser_session_snapshot(profile_dir=profile_dir)
+    # A replayable CFFI browser snapshot owns the authenticated session.  Do
+    # not inject a stale legacy config/.chatgpt_session token alongside it;
+    # that token can override the snapshot cookies and make conversation_get
+    # fail with HTTP 403 before any write is attempted.
+    token = session_token
+    if token is None and snapshot is None:
+        try:
+            token = get_session_token()
+        except Exception:
+            token = None
     if snapshot is not None and not snapshot.has_fresh_sentinel():
         try:
             refreshed = await refresh_browser_session_sentinel_async(
