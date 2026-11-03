@@ -527,6 +527,7 @@ async def probe_async_continue_once(
     allow_browser_bootstrap: bool = True,
     client_factory: Callable[..., Any] = AsyncChatGPT,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    reasoning_effort: str = "medium",
 ) -> AsyncMutationProbeResult:
     """Perform at most one async HTTP conversation POST and return redacted evidence."""
     conversation_id = str(conversation_id or "").strip()
@@ -778,6 +779,8 @@ async def probe_async_continue_once(
                     snapshot=snapshot,
                     attachment_metadata=staged_metadata,
                 )
+                if isinstance(payload, dict):
+                    payload["reasoning_effort"] = reasoning_effort
                 trace_id = str(uuid.uuid4())
                 headers["Referer"] = f"https://chatgpt.com/c/{conversation_id}"
                 headers["x-oai-mcp-form-version"] = "2"
@@ -1018,6 +1021,7 @@ def submit_async_prompt_once(
     client_factory: Callable[..., Any] = AsyncChatGPT,
     verify_callback: Callable[[str, str], dict[str, Any]] | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    reasoning_effort: str = "medium",
 ) -> dict[str, Any]:
     """Synchronous wrapper for one-attempt async HTTP mutation probe."""
     result = run_async_sync(
@@ -1036,6 +1040,7 @@ def submit_async_prompt_once(
             allow_browser_bootstrap=allow_browser_bootstrap,
             client_factory=client_factory,
             progress_callback=progress_callback,
+            reasoning_effort=reasoning_effort,
         )
     )
     payload = result.to_dict()
